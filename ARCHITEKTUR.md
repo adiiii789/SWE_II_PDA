@@ -1,0 +1,697 @@
+# Architektur – Personal Digital Agent (PDA)
+
+Ausführliche Beschreibung, wie das Projekt aufgebaut ist und warum. Für den Einstieg (Starten, Testen, wo arbeite ich?) reicht die [README](README.md).
+
+Tray-Anwendung für Windows: Das Programm läuft im Hintergrund und zeigt ein Icon im
+Infobereich der Taskleiste.
+
+- **Linksklick** auf das Icon öffnet ein Popup: oben ein Anzeigebereich (iframe) für Daten,
+  unten ein Chat mit einem Assistenten.
+- **Rechtsklick** öffnet das Kontextmenü mit „Beenden“.
+
+Das Popup ist eine Webseite (HTML/CSS/JavaScript), die in einem eingebetteten Chromium
+(Qt WebEngine) läuft. Die Logik ist in Python geschrieben. Eine Brücke verbindet beide Seiten:
+JavaScript ruft Python-Funktionen auf, als wären es JavaScript-Funktionen, und das Backend kann
+von sich aus Nachrichten an das Frontend schicken.
+
+## Inhalt
+
+1. [Projektziel und Erweiterungspunkte](#projektziel-und-erweiterungspunkte)
+2. [Ordnerstruktur](#ordnerstruktur)
+3. [Frontend und Backend](#frontend-und-backend)
+4. [Programmstart](#programmstart)
+5. [Linksklick und Rechtsklick](#linksklick-und-rechtsklick)
+6. [Brücke JavaScript ↔ Python](#brücke-javascript--python)
+7. [Weg einer Chat-Nachricht](#weg-einer-chat-nachricht)
+8. [Frontend](#frontend)
+9. [Assistent und Schnittstellen](#assistent-und-schnittstellen)
+10. [Konfiguration](#konfiguration)
+11. [Tests und Coverage](#tests-und-coverage)
+12. [Bekannte Fallstricke](#bekannte-fallstricke)
+13. [Kurzanleitung: Erweitern](#kurzanleitung-erweitern)
+
+---
+
+## Projektziel und Erweiterungspunkte
+
+Ziel ist **ein** durchgehender persönlicher KI-Assistent mit lokalem Sprachmodell (Ollama). Er
+deckt drei Aufgabenbereiche ab, im Code **Fähigkeiten** (Skills) genannt:
+
+| Fähigkeit | Wofür | Integrationen |
+|---|---|---|
+| `morning` | kurzes Briefing über den Tag | Google Calendar, OpenWeather, Aktien-API, Musik |
+| `travel` | wie komme ich zum nächsten Termin? | Google Calendar, Google Routes, Tankerkönig |
+| `organization` („Assistant²“) | Nachrichten verfassen, Tag organisieren | Google Calendar, Gmail, Google Keep |
+
+**Warum ein Assistent statt drei?** Präferenzen, Gesprächsverlauf und Rückfragen gehören zu einer
+Person. Google Calendar brauchen alle drei Bereiche, und Anfragen mischen sie oft („Wann muss ich
+los, und schreib Max, dass ich später komme“). Das Sprachmodell wählt per Tool-Calling selbst
+die passenden Werkzeuge, ein Umschalter oder Router zwischen Assistenten ist nicht nötig.
+
+Fähigkeiten und Integrationen sind **noch nicht umgesetzt**. Die Architektur ist so
+vorbereitet, dass jede Anforderung einen festen Platz hat:
+
+| Anforderung | Wo im Code | Stand |
+|---|---|---|
+| Fähigkeiten (morning, travel, organization) | `backend/assistant/skills/` – je ein Modul mit Integrationen und Anweisungen | Ort und Konvention, noch leer |
+| Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – je ein `ToolProvider`, gebündelt per `CompositeToolProvider` | Ort, Konvention und Sammel-Provider |
+| Lokales Sprachmodell (Ollama) | `LanguageModel` in `backend/assistant/llm.py` | Schnittstelle |
+| Autonom (z. B. Briefing ohne Eingabe) | `backend/events.py`, `presenter.push(reply)` → Nachricht im Chat | Push-Kanal fertig |
+| Kontextwissen, Präferenzen per UI | `PreferenceStore` in `backend/preferences.py` | Schnittstelle |
+| Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` | Schnittstelle |
+| Kurze Antworten, Rückfragen | `Assistant.reply()`; der Assistent hält den Gesprächsverlauf | über das Protokoll möglich |
+| Langsame Aufrufe (Modell, APIs) | Bridge führt Aufrufe im Hintergrund-Thread aus | fertig |
+| PyTest | `pytest.ini`, `requirements-dev.txt` | eingerichtet |
+
+Die Konventionen für Fähigkeiten und Integrationen stehen jeweils in der `__init__.py` des Ordners.
+
+---
+
+## Ordnerstruktur
+
+```
+main.py                       Einstiegspunkt – startet das Programm
+
+frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
+  popup.html/.css/.js         Popup: Anzeige oben, Chat unten
+  theme.css                   gemeinsame Farben
+  templates/
+    default.html.j2           Standard-Template (Titel, Text, Tabelle) – weitere *.html.j2 möglich
+    view.css                  gemeinsames Layout der Ansichten
+
+backend/                      BACKEND: läuft in Python
+  api.py                      ← Schnittstelle zum Frontend (nur diese Funktionen sieht das JS)
+  events.py                   ← Ereignisse vom Backend ans Frontend (Push)
+  presenter.py                Antwort des Assistenten → {"text", "html"}; push() für autonome Nachrichten
+  config.py                   alle Einstellungen
+  views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
+  rendering.py                macht aus einer Anfrage HTML (Jinja2 bzw. eigenes HTML)
+  preferences.py              Schnittstelle: Kontextwissen, persönliche Präferenzen
+  speech.py                   Schnittstelle: Spracheingabe und -ausgabe
+  assistant/                  Fachlogik: Assistent hinter dem Chat
+    base.py                   Assistant-Protokoll, AssistantReply
+    commands.py               CommandAssistant (Platzhalter mit festen Befehlen)
+    llm.py                    LanguageModel-Protokoll (Anbindung Ollama)
+    tools.py                  ToolProvider-Protokoll + CompositeToolProvider
+    skills/                   Fähigkeiten des Assistenten (noch leer)
+  integrations/               externe Dienste als ToolProvider (noch leer)
+  bridge/                     Verbindung Frontend ↔ Backend (muss nicht angepasst werden)
+    function_registry.py      findet die Funktionen aus api.py
+    web_bridge.py             Python-Seite der Brücke (QWebChannel)
+    bridge_client.js          JS-Seite der Brücke, wird automatisch in jede Seite eingefügt
+  desktop/                    Qt-Hülle, in der das Frontend angezeigt wird
+    application.py            setzt die Bausteine zusammen
+    tray_icon.py              Tray-Icon + Kontextmenü
+    popup_window.py           Popup-Fenster + Einfahr-Animation
+    web_view.py               Browser-Ansicht mit angehängter Brücke
+
+tests/                        automatische Tests (pytest), gegliedert wie backend/
+  assistant/  bridge/  desktop/
+pytest.ini                    Testkonfiguration (Coverage bei jedem Lauf)
+```
+
+Jede Datei hat genau eine Aufgabe (Single-Responsibility-Prinzip).
+
+---
+
+## Frontend und Backend
+
+```
+┌──────────────────────────────┐            ┌──────────────────────────────────┐
+│ FRONTEND  (frontend/)        │            │ BACKEND  (backend/)              │
+│ läuft im Browser             │            │ läuft in Python                  │
+│                              │  await     │                                  │
+│ popup.js ── chat("system") ──┼──bridge/──►│ api.py ── chat() ──► assistant/  │
+│                              │            │     TemplateView/HtmlView   ◄┘   │
+│                              │            │              │                   │
+│ templates/*.html.j2 ─────────┼────────────┼──► rendering.py (Jinja2)         │
+│                              │            │              │                   │
+│ iframe.srcdoc ◄── HTML ──────┼◄── JSON ───┤ {"text": ..., "html": ...}       │
+└──────────────────────────────┘            └──────────────────────────────────┘
+               ▲  angezeigt in
+     backend/desktop/  (Tray-Icon, Popup-Fenster, WebView)
+```
+
+Die beiden Seiten kennen sich nur über **drei Verträge**:
+
+1. **Funktionen:** Jede öffentliche Funktion in [backend/api.py](backend/api.py) ist im
+   Frontend unter demselben Namen aufrufbar (`await name(...)`). Heute gibt es:
+
+   | Funktion | Argument | Rückgabe |
+   |---|---|---|
+   | `chat(message)` | Text des Nutzers | `{"text": str, "html": str \| null}` – `html` ist die fertig gerenderte Ansicht, `null` = Ansicht beibehalten |
+   | `render_view(request)` | Ansicht-Anfrage (siehe unten) | fertiges HTML fürs iframe |
+   | `start_view()` | – | HTML der Startansicht |
+
+2. **Ansicht-Anfragen:** Eine Ansicht wird immer auf eine von zwei Arten angefordert – vom
+   Assistenten im Backend ebenso wie vom Frontend über `render_view(request)`:
+
+   ```js
+   // Template aus frontend/templates/<template>.html.j2 mit Daten füllen
+   await render_view({template: "default", data: {title: "Hallo", text: "Welt"}});
+
+   // eigenes HTML unverändert anzeigen
+   await render_view({html: "<h1>Eigenes HTML</h1>"});
+   ```
+
+   In Python sind das `TemplateView(template, data)` und `HtmlView(html)` aus
+   [backend/views.py](backend/views.py). Welche Daten ein Template erwartet, steht als Kommentar
+   oben im Template (siehe [Frontend](#frontend)).
+
+3. **Ereignisse (Push):** Das Backend kann ohne Anfrage Nachrichten schicken. Im Frontend kommen
+   sie bei `onPythonEvent(name, handler)` an:
+
+   | Ereignis | Payload | Wirkung im Popup |
+   |---|---|---|
+   | `assistant_message` | `{"text": str, "html": str \| null}` (wie bei `chat`) | Nachricht im Chat, ggf. neue Ansicht |
+
+   Im Backend: `events.publish(name, payload)` aus [backend/events.py](backend/events.py), für
+   Assistenten-Nachrichten einfach `presenter.push(reply)`.
+
+Daraus folgt:
+
+- **Wer am Frontend arbeitet**, ändert nur Dateien in `frontend/` und braucht vom Backend nur
+  diese drei Verträge.
+- **Wer am Backend arbeitet**, ändert vor allem `backend/api.py` und `backend/assistant/`.
+  Solange die Verträge gleich bleiben, merkt das Frontend davon nichts.
+- **`backend/bridge/` und `backend/desktop/`** sind Infrastruktur und müssen für neue Funktionen
+  oder Ansichten nicht angefasst werden.
+
+---
+
+## Programmstart
+
+```
+main.py: main()
+ ├─ logging einrichten
+ ├─ configure_qt()          High-DPI aktivieren, eigenes Taskleisten-Icon (Windows)
+ ├─ QApplication(sys.argv)  die Qt-Anwendung (genau eine pro Prozess)
+ ├─ Application(qt_app)     ← backend/desktop/application.py
+ │   ├─ create_popup()
+ │   │   ├─ FunctionRegistry.from_module(api)   sammelt die Funktionen aus api.py
+ │   │   ├─ WebView(...)                        Browser-Ansicht
+ │   │   │   ├─ web_bridge.attach(...)          Brücke einrichten
+ │   │   │   └─ load(frontend/popup.html)
+ │   │   └─ PopupWindow(view)                   Fenster um die Ansicht
+ │   ├─ TrayIcon(...)                           Icon + Kontextmenü
+ │   └─ Signale verbinden:
+ │        tray.left_clicked   → popup.show_at_cursor
+ │        tray.quit_requested → qt_app.quit
+ └─ qt_app.exec_()          Event-Schleife läuft bis „Beenden“
+```
+
+**[main.py](main.py)** enthält nur den Start. `configure_qt()` ist eine eigene Funktion, weil
+diese Einstellungen gesetzt sein müssen, bevor die `QApplication` entsteht. Die Zeile
+`application = Application(qt_app)` hält eine Referenz auf das Objekt. Ohne sie würde Python es
+wegräumen.
+
+**[backend/desktop/application.py](backend/desktop/application.py)** ist der *Composition Root*: die einzige Stelle, an
+der die Bausteine erzeugt und verbunden werden. Die Bausteine kennen sich gegenseitig nicht. Das
+Tray-Icon weiß nichts vom Popup und meldet nur per Signal „ich wurde angeklickt“ (lose Kopplung).
+Dadurch lässt sich jeder Teil einzeln testen und austauschen.
+
+`Application` erbt bewusst **nicht** von `QApplication`, sondern bekommt sie übergeben. Qt
+erlaubt nur eine `QApplication` pro Prozess. Bei Vererbung ließe sich die Klasse in Tests nicht
+erzeugen, weil die Tests schon eine eigene `QApplication` haben.
+
+---
+
+## Linksklick und Rechtsklick
+
+**[backend/desktop/tray_icon.py](backend/desktop/tray_icon.py)**
+
+- Im Konstruktor wird ein `QMenu` mit „Beenden“ als `contextMenu` gesetzt. Bei einem
+  Rechtsklick zeigt Windows dieses Menü automatisch an.
+- Bei einem Klick ruft Qt `_on_activated(reason)` auf. Nur bei `reason == Trigger` (Linksklick)
+  wird das Signal `left_clicked` gesendet.
+- „Beenden“ sendet `quit_requested`. Was daraufhin passiert, entscheidet `application.py`.
+
+**[backend/desktop/popup_window.py](backend/desktop/popup_window.py)**
+
+- `Qt.Popup | Qt.FramelessWindowHint` ergibt ein Fenster ohne Rahmen, das sich bei einem Klick
+  daneben automatisch schließt.
+- `show_at_cursor()` berechnet die Größe als Anteil des Bildschirms (`POPUP_SIZE_RATIO`). Die
+  Endposition liegt so, dass die **untere rechte Ecke am Mauszeiger** sitzt, also dort, wo das
+  Tray-Icon ist. Eine `QPropertyAnimation` lässt das Fenster von rechts unten hineingleiten.
+- `closeEvent` versteckt das Fenster nur, statt es zu zerstören. Der Chat-Verlauf bleibt dadurch
+  erhalten, wenn man das Popup wieder öffnet.
+
+---
+
+## Brücke JavaScript ↔ Python
+
+JavaScript im Browser kann Python nicht direkt aufrufen. Qt bietet dafür **QWebChannel**: Man
+registriert ein Python-Objekt (`QObject`), und JavaScript bekommt ein Stellvertreter-Objekt,
+dessen Methoden Nachrichten an Python schicken und dessen Signale JavaScript empfangen kann. Die
+Brücke besteht aus vier Teilen.
+
+### a) `function_registry.py` – Funktionen finden
+
+```python
+FunctionRegistry.from_module(api)
+```
+
+Die Registry geht alle Einträge des Moduls durch und behält nur die, die
+
+- eine Funktion sind (`inspect.isfunction`),
+- **in diesem Modul definiert** wurden (`obj.__module__ == module.__name__`), also keine
+  importierten Funktionen,
+- **nicht mit `_` beginnen**, also nicht privat sind.
+
+`call(name, args)` ruft die passende Funktion auf oder wirft `UnknownFunctionError`. Die Datei
+braucht **kein Qt** und ist deshalb einfach zu testen.
+
+### b) `web_bridge.py` – Python-Seite
+
+- `WebBridge` ist ein `QObject` mit einem Slot und zwei Signalen:
+  - **Slot `call(call_id, name, args_json)`:** JavaScript schickt eine Aufruf-Nummer,
+    Funktionsname und Argumente. Der Slot gibt die Arbeit nur an einen **Hintergrund-Thread**
+    weiter und kehrt sofort zurück. So friert das Popup auch bei langsamen Funktionen
+    (Sprachmodell, Web-APIs) nicht ein.
+  - **Signal `finished(call_id, json)`:** Wenn die Funktion fertig ist, kommt das Ergebnis als
+    JSON-Umschlag zurück:
+    - Erfolg: `{"ok": true, "result": ...}`
+    - Fehler: `{"ok": false, "error": "Meldung"}`
+
+    Fehler werden abgefangen und protokolliert. Eine fehlerhafte Funktion lässt also nicht das
+    Programm abstürzen.
+  - **Signal `event(name, json)`:** leitet Ereignisse aus `backend/events.py` ans Frontend weiter.
+- Es gibt **genau einen** Hintergrund-Thread. Aufrufe laufen nacheinander ab, deshalb muss der
+  Assistent nicht thread-sicher sein. Ein langer Aufruf hält aber die nachfolgenden auf.
+- `attach(page, registry, event_bus)` macht vier Dinge:
+  1. `WebBridge` mit Hintergrund-Thread erzeugen und auf einem `QWebChannel` unter dem Namen
+     `"bridge"` registrieren.
+  2. Den Kanal an die Seite hängen.
+  3. Die Bridge beim `EventBus` anmelden.
+  4. Ein Skript in jede Seite einfügen (`QWebEngineScript`, Zeitpunkt `DocumentCreation`, also
+     bevor die Seite ihr eigenes JavaScript ausführt). Es besteht aus:
+     - `qwebchannel.js` (Bibliothek von Qt, aus Qts eingebauten Ressourcen),
+     - `const __PYTHON_FUNCTIONS__ = ["chat", ...];` (Liste der Funktionsnamen),
+     - `bridge_client.js`.
+- `attach` gibt eine `BridgeConnection` zurück, die der Aufrufer **behalten muss**. Ohne
+  Referenz räumt Python die Bridge weg, und JavaScript sieht ihre Methode nicht mehr.
+  `close()` meldet die Bridge ab und beendet den Thread. Danach beantwortet sie Aufrufe nur
+  noch mit einem Fehler.
+
+### c) `bridge_client.js` – JavaScript-Seite
+
+```js
+for (const name of __PYTHON_FUNCTIONS__) {
+  window[name] = (...args) => callPython(name, args);
+}
+```
+
+Für jede Python-Funktion entsteht eine gleichnamige globale JavaScript-Funktion. Deshalb kann
+`popup.js` einfach `await chat(text)` schreiben.
+
+`callPython` vergibt eine fortlaufende Aufruf-Nummer, merkt sich das zugehörige Promise und
+schickt `bridge.call(callId, name, JSON)`. Kommt `finished(callId, …)` zurück, wird das passende
+Promise erfüllt (`ok: true`) oder mit einem Fehler abgelehnt. Die Verbindung zum Kanal entsteht
+erst bei Bedarf, denn erst dann ist `qt.webChannelTransport` sicher verfügbar.
+
+`onPythonEvent(name, handler)` meldet einen Handler für Ereignisse aus dem Backend an und baut
+dabei die Verbindung auf, damit Ereignisse auch ohne vorherigen Aufruf ankommen.
+
+**Warum `await`?** Die Antwort von Python kommt asynchron über den Kanal zurück. Jeder Aufruf
+braucht daher `await`, und die aufrufende Funktion muss `async` sein.
+
+### d) `web_view.py` – alles zusammen
+
+`WebView` ist ein `QWebEngineView`. Im Konstruktor setzt die Klasse die Hintergrundfarbe (damit
+beim Laden nichts weiß aufblitzt), hängt die Brücke an, behält die Referenz darauf und lädt die
+HTML-Datei. `close_bridge()` wird beim Beenden der App aufgerufen.
+
+---
+
+## Weg einer Chat-Nachricht
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Nutzer
+    participant JS as popup.js<br/>(Frontend)
+    participant BC as bridge_client.js
+    participant WB as WebBridge<br/>(Qt-Hauptthread)
+    participant T as Hintergrund-Thread
+    participant API as api.py
+    participant A as Assistent
+    participant P as presenter.py<br/>rendering.py
+
+    U->>JS: tippt Nachricht, Enter
+    JS->>JS: addMessage(text, "user")
+    JS->>BC: await chat(text)
+    BC->>WB: bridge.call(id, "chat", JSON) über QWebChannel
+    WB->>T: Aufruf übergeben
+    Note over WB: kehrt sofort zurück,<br/>das Popup bleibt bedienbar
+    T->>API: chat(message)
+    API->>A: reply(message) mit dem kompletten Text
+    alt heute: CommandAssistant (Platzhalter)
+        A->>A: exakter Vergleich mit<br/>hilfe, uhrzeit, system, start
+    else später: Ollama-Assistent
+        A->>A: Sprachmodell versteht den Text und<br/>ruft per Tool-Calling Integrationen auf
+    end
+    A-->>API: AssistantReply(text, view)
+    API->>P: present(reply)
+    P->>P: Template + Daten zu HTML (Jinja2)
+    P-->>API: {"text", "html"}
+    API-->>T: Rückgabewert
+    T-->>WB: Signal finished(id, JSON)
+    WB-->>BC: über QWebChannel
+    BC-->>JS: Promise mit dieser id erfüllt
+    JS->>JS: showReply: Chat-Blase + iframe.srcdoc = html
+    JS-->>U: Antwort sichtbar
+```
+
+Die Schritte 1–7 (hin) und 14–19 (zurück) sind reiner Transport: Der Text kommt **unverändert**
+im Assistenten an, und die Antwort geht unverändert zurück. Was mit dem Text passiert, entscheidet
+allein der Assistent (Schritt 8 bzw. 9). Der heutige `CommandAssistant` vergleicht nur exakt mit festen Befehlen.
+Der spätere Ollama-Assistent bekommt denselben Text, versteht ihn aber und wählt selbst die
+passenden Werkzeuge. Frontend, Brücke und `api.py` bleiben dabei unverändert.
+
+Dasselbe mit den Code-Stellen, Beispiel: Eingabe **„system“** und Enter.
+
+```
+popup.js  sendMessage()
+  │  zeigt "system" als Nutzer-Blase an
+  │  const reply = await chat("system")
+  ▼
+bridge_client.js  window.chat → callPython("chat", ["system"])
+  │  bridge.call(1, "chat", '["system"]')     über QWebChannel, Aufruf-Nr. 1
+  ▼
+web_bridge.py  WebBridge.call  → übergibt an den Hintergrund-Thread, kehrt sofort zurück
+  │  (Hintergrund-Thread) registry.call("chat", ["system"])
+  ▼
+api.py  chat("system")
+  │  reply = _assistant().reply("system")
+  ▼
+assistant/commands.py  CommandAssistant.reply
+  │  "system" ist in COMMANDS → _system()
+  │  → AssistantReply("Hier sind die Systeminfos.",
+  │       TemplateView("default", {"title": "System", "columns": [...], "rows": [...]}))
+  ▼
+presenter.py  present(reply)
+  │  renderer().render(reply.view)
+  ▼
+rendering.py  ViewRenderer.render
+  │  frontend/templates/default.html.j2 mit den Daten füllen (Jinja2)
+  ▲
+  │  Signal finished(1, '{"ok": true, "result": {"text": "...", "html": "<!DOCTYPE html>..."}}')
+  ▼
+bridge_client.js  Promise von Aufruf-Nr. 1 erfüllen
+  ▼
+popup.js  showReply(reply)
+     addMessage(reply.text, "assistant")   Assistenten-Blase
+     showView(reply.html)  →  iframe.srcdoc = html
+```
+
+Beim Öffnen holt `popup.js` die Startansicht einmal mit `await start_view()`.
+
+**Nachricht ohne Eingabe (Push):** `presenter.push(reply)` → `events.publish("assistant_message",
+{...})` → Signal `event` der Bridge → `onPythonEvent("assistant_message", showReply)` in
+`popup.js`. Die Anzeige ist dieselbe wie bei einer Chat-Antwort.
+
+**Sicherheit:**
+
+- **Autoescaping:** Bei Templates maskiert Jinja2 alle Daten. Enthalten sie HTML-Code (z. B.
+  später aus einem Sprachmodell), wird er nur als Text angezeigt und nicht ausgeführt.
+- **Eigenes HTML (`HtmlView`)** wird bewusst **nicht** maskiert – es soll ja als HTML wirken.
+  Hier schützt allein die Sandbox. Für Daten, die nicht aus eurem eigenen Code stammen, daher
+  lieber ein Template verwenden.
+- **Sandbox:** Das iframe hat `sandbox="allow-scripts"` ohne `allow-same-origin`. Selbst ein
+  Skript im angezeigten HTML kommt nicht an die Popup-Seite und damit nicht an die
+  Python-Funktionen heran.
+- **Chat-Blasen:** Texte im Chat werden mit `textContent` eingefügt, nie mit `innerHTML`.
+
+---
+
+## Frontend
+
+- **[popup.html](frontend/popup.html):** oben `<iframe id="view-frame">`, unten der Chat (`#chat-panel`) mit
+  Verlauf und Eingabeformular.
+- **[popup.css](frontend/popup.css):** Flexbox-Layout. Das iframe bekommt `flex: 3`, der Chat
+  `flex: 2`. Nutzernachrichten stehen rechts, Antworten links. `box-sizing: border-box` beim
+  iframe verhindert, dass der Rahmen die Seite verbreitert und eine Scrollleiste erzeugt.
+- **[theme.css](frontend/theme.css):** Farben als CSS-Variablen. Das Popup bindet die Datei
+  ein, und die Templates betten sie in jede Ansicht ein. So steht jede Farbe nur an
+  einer Stelle.
+- **[popup.js](frontend/popup.js):** `sendMessage` zeigt die Nachricht an, ruft `chat` auf und
+  gibt die Antwort an `showReply`. `showReply` zeigt den Text an und wechselt bei Bedarf die
+  Ansicht – auch für Nachrichten, die das Backend von sich aus schickt
+  (`onPythonEvent("assistant_message", showReply)`). Fehler erscheinen als rote Blase.
+- **[templates/](frontend/templates/):** Jinja2-Templates für das iframe, angesprochen über
+  ihren Namen ohne Endung (`"default"` → `default.html.j2`). Weitere Templates legt man einfach
+  daneben. Templates betten `theme.css` und `view.css` ein (eingebettet statt verlinkt, weil das
+  iframe isoliert ist).
+
+  Das Standard-Template **[default.html.j2](frontend/templates/default.html.j2)** zeigt nur die
+  Teile, für die es Daten gibt:
+
+  | Variable | Typ | angezeigt als |
+  |---|---|---|
+  | `title` | Text (Pflicht) | Überschrift |
+  | `text` | Text (optional) | Absatz |
+  | `columns` | Liste von Texten (optional) | Tabellenkopf |
+  | `rows` | Liste von Listen (optional) | Tabelle – ohne Zeilen keine Tabelle |
+
+  Der Assistent liefert nur **Daten**, das Template entscheidet, **wie** sie angezeigt werden
+  (Trennung von Daten und Darstellung).
+
+### Rendering – [backend/rendering.py](backend/rendering.py)
+
+`ViewRenderer.render(view)` macht aus einer Ansicht-Anfrage HTML:
+
+- **`HtmlView`:** Das HTML wird unverändert zurückgegeben.
+- **`TemplateView`:** `frontend/templates/<template>.html.j2` wird mit `data` gefüllt.
+  - **Autoescaping** ist für `.html.j2` aktiv: Daten werden immer als Text ausgegeben.
+  - **Fehlende Pflichtdaten fallen sofort auf** (`StrictUndefined`): Fehlt z. B. `title`, gibt
+    es einen Fehler statt einer leeren Stelle. Optionale Felder prüft das Template mit
+    `{% if feld is defined and feld %}`.
+  - **Nur gültige Namen** (Kleinbuchstaben, Ziffern, `_`). Pfade wie `../popup` werden
+    abgelehnt, unbekannte Templates werfen `UnknownTemplateError`.
+
+Ungültige Anfragen (weder oder beides von `template`/`html`, falsche Typen) lehnt
+`view_from_dict` in [backend/views.py](backend/views.py) mit `InvalidViewRequestError` ab. Die
+Fehlermeldung kommt im Frontend als JavaScript-Fehler an.
+
+---
+
+## Assistent und Schnittstellen
+
+### Vertrag mit dem Frontend – [base.py](backend/assistant/base.py)
+
+- `AssistantReply.view`: eine Ansicht-Anfrage (`TemplateView` oder `HtmlView` aus
+  [backend/views.py](backend/views.py)) oder `None`. Gerendert wird sie von
+  `backend/rendering.py`, nicht vom Assistenten. `START_VIEW` ist die Startansicht.
+- `AssistantReply(text, view)`: die Antwort. `view=None` heißt, dass die aktuelle Ansicht
+  stehen bleibt.
+- `Assistant`: ein **Protocol**. Jede Klasse mit `reply(message) -> AssistantReply` gilt als
+  Assistent, ohne erben zu müssen. Geprüft wird die Struktur der Klasse (strukturelle
+  Typisierung).
+
+### Heutiger Platzhalter – [commands.py](backend/assistant/commands.py)
+
+`CommandAssistant` nutzt ein Wörterbuch `COMMANDS` aus Befehl → (Beschreibung, Funktion). Es
+gibt `hilfe`, `uhrzeit`, `system` und `start`. `hilfe` erzeugt seine Tabelle direkt aus
+`COMMANDS` und ist dadurch immer aktuell. Die Wochentage stehen fest auf Deutsch, damit die
+Ausgabe nicht von der Spracheinstellung des Systems abhängt.
+
+### Anbindung Ollama – [llm.py](backend/assistant/llm.py)
+
+Bisher nur Vertrag, keine Implementierung:
+
+- `ChatMessage(role, content, tool_calls)` mit `role` aus `system`, `user`, `assistant` oder
+  `tool`, entsprechend dem Chat-Format von Ollama.
+- `ToolCall(name, arguments)`: Das Modell möchte ein Werkzeug aufrufen.
+- `ModelResponse(message)` mit `wants_tools`: ob das Modell Werkzeuge nutzen will.
+- `LanguageModel.chat(messages, tools) -> ModelResponse`.
+
+### Werkzeuge und Integrationen – [tools.py](backend/assistant/tools.py)
+
+- `ToolSpec(name, description, input_schema)` entspricht einem MCP-Tool und lässt sich direkt
+  in das `tools`-Format von Ollama übersetzen.
+- `ToolResult(content, is_error)`.
+- `ToolProvider` mit `list_tools()` und `call_tool(name, arguments)`. Das ist entweder eine
+  eigene Integration in [backend/integrations/](backend/integrations/__init__.py) (z. B. Wetter)
+  oder ein MCP-Client, der die Tools eines MCP-Servers bereitstellt.
+- `CompositeToolProvider([calendar, weather, ...])` bündelt mehrere Provider zu einem. Ein
+  Assistent sieht so alle seine Werkzeuge über einen einzigen `ToolProvider`. Aufrufe gehen an
+  den Provider, der das Werkzeug anbietet. Doppelte Namen werfen `DuplicateToolError`, unbekannte
+  `UnknownToolError`.
+
+### Kontext und Sprache – [preferences.py](backend/preferences.py), [speech.py](backend/speech.py)
+
+Bisher nur Verträge, keine Implementierung:
+
+- `PreferenceStore` mit `get(key, default)`, `set(key, value)` und `all()` für Kontextwissen
+  und persönliche Präferenzen (Wohnort, Verkehrsmittel, Watchlist …). Bearbeitung „vorab per UI“
+  später über ein Template mit Formular und Funktionen in `api.py`.
+- `SpeechInput.listen() -> str` und `SpeechOutput.speak(text)`. Sprache läuft in Python, weil
+  Qt WebEngine keine Spracherkennung mitbringt. Beide dürfen blockieren, denn Bridge-Aufrufe
+  laufen im Hintergrund-Thread.
+
+### Auswahl des Assistenten – [\_\_init\_\_.py](backend/assistant/__init__.py)
+
+`create_assistant()` liest `ASSISTANT_BACKEND` aus [config.py](backend/config.py) und erzeugt den
+passenden Assistenten aus `_BACKENDS` (Factory). [api.py](backend/api.py) hält mit `@cache` genau
+**einen** Assistenten für die ganze Laufzeit, sodass sich ein späterer KI-Assistent den
+Gesprächsverlauf merken kann.
+
+### Tool-Calling und MCP
+
+Die beiden Begriffe sitzen auf verschiedenen Seiten derselben Kette:
+
+- **Tool-Calling** ist eine Fähigkeit des **Sprachmodells**. Man gibt ihm Werkzeuge (Name,
+  Beschreibung, JSON-Schema) mit, und es antwortet statt mit Text strukturiert mit einem Aufruf,
+  z. B. `get_weather(city="Mannheim")`. Das Modell führt nichts selbst aus: Der Assistent ruft das
+  Werkzeug auf und gibt das Ergebnis als `"tool"`-Nachricht zurück. Ollama unterstützt das über den
+  Parameter `tools` in `/api/chat` (das Modell muss Tool-Calling beherrschen).
+- **MCP** (Model Context Protocol) ist ein **Protokoll zwischen Programmen**: wie eine Anwendung
+  Werkzeuge von einem Server abfragt (`tools/list`) und aufruft (`tools/call`). Das Modell kommt
+  darin nicht vor. Nutzen: Ein vorhandener MCP-Server (z. B. für Google Calendar) lässt sich
+  einbinden, ohne eigenen API-Code.
+
+```
+Ollama ──tool_call: get_weather──► Assistent ──tools/call──► MCP-Server (Wetter)
+       ◄──── Ergebnis ──────────────         ◄── Ergebnis ──
+  (Tool-Calling: Modell-Seite)              (MCP: Werkzeug-Seite)
+```
+
+Im Code: `LanguageModel.chat(messages, tools)` und `ToolCall` (llm.py) sind die Modell-Seite,
+`ToolProvider` (tools.py) die Werkzeug-Seite. Ob hinter einem `ToolProvider` eigener
+Python-Code oder ein MCP-Client steckt, entscheidet ihr pro Integration – Modell und Assistent
+merken davon nichts.
+
+### So sieht der Assistent später aus
+
+```
+OllamaAssistant (erfüllt Assistant, ersetzt den CommandAssistant)
+  ├─ model: LanguageModel        ← Ollama-Client
+  ├─ skills: morning, travel, organization   (backend/assistant/skills/)
+  │    je: CompositeToolProvider([...Integrationen]) + Anweisungen fürs Modell
+  └─ preferences: PreferenceStore
+reply(message):
+  1. Nachricht an den Verlauf anhängen (Präferenzen + Anweisungen der Fähigkeiten als Kontext)
+  2. model.chat(verlauf, Werkzeuge aller Fähigkeiten)
+     (zu viele für ein kleines Modell? → nur die der passenden Fähigkeit mitgeben)
+  3. wants_tools? → tool.call_tool(...) → Ergebnis als "tool"-Nachricht → zurück zu 2
+  4. sonst: AssistantReply(text, view) – auch eine Rückfrage ist eine normale Antwort
+autonom: Auslöser einer Fähigkeit (z. B. 7 Uhr Briefing) → presenter.push(reply)
+```
+
+Zum Umstellen reichen ein Eintrag in `_BACKENDS` und eine Änderung an `ASSISTANT_BACKEND`.
+Frontend, Brücke und Popup bleiben unverändert (Open/Closed-Prinzip).
+[tests/assistant/test_assistant_interfaces.py](tests/assistant/test_assistant_interfaces.py) zeigt mit
+Beispiel-Implementierungen, dass die Schnittstellen erfüllbar sind und zusammenspielen.
+
+---
+
+## Konfiguration
+
+Alle Einstellungen stehen in [backend/config.py](backend/config.py): Pfade, Name, Icon, Popup-Größe,
+Farbe, Animationsdauer und das Assistant-Backend.
+
+- `ROOT_DIR` wird aus dem Ort der Datei berechnet, nicht aus dem aktuellen Arbeitsordner. Das
+  Programm funktioniert deshalb unabhängig davon, von wo es gestartet wird.
+- `sys._MEIPASS` ist der Entpack-Ordner, wenn das Programm mit PyInstaller zu einer EXE gepackt
+  wird.
+- Die Hintergrundfarbe steht an zwei Stellen: `POPUP_BACKGROUND` in `config.py` (für Qt, gegen
+  weißes Aufblitzen beim Laden) und `--background` in `frontend/theme.css`. Bei Änderungen
+  beide anpassen.
+
+---
+
+## Tests und Coverage
+
+```
+pip install -r requirements-dev.txt
+pytest
+```
+
+`pytest` misst bei jedem Lauf die Abdeckung (siehe [pytest.ini](pytest.ini)) und schlägt fehl,
+wenn sie unter 80 % liegt (siehe [.coveragerc](.coveragerc)). Die Tests sind als
+`unittest.TestCase` geschrieben; pytest führt sie direkt aus. Neue Tests können ebenso im
+pytest-Stil (Funktionen mit `assert`) geschrieben werden.
+
+| Testdatei | prüft |
+|---|---|
+| `test_function_registry` | nur öffentliche, eigene Funktionen werden gefunden |
+| `test_web_bridge` | JSON-Umschläge, Fehlerfälle, Hintergrund-Thread, Ereignisse, Verhalten nach `close()` |
+| `test_web_view` | **Integration:** echte Seite ruft Python im Hintergrund-Thread auf und empfängt Ereignisse |
+| `test_popup_page` | **Ende-zu-Ende:** echter Chat wechselt das iframe, Push-Nachricht erscheint |
+| `test_popup_window` | Größe, Position, Schließen versteckt nur |
+| `test_tray_icon` | Links- und Rechtsklick, Menü |
+| `test_application` | Zusammenbau, Klick öffnet Popup |
+| `test_assistant` | Befehle, Factory; jeder Befehl rendert mit dem echten Template |
+| `test_views` | Ansicht-Anfragen aus JSON, ungültige Anfragen |
+| `test_rendering` | Template-Auswahl, Standard-Template, eigenes HTML, Autoescaping, ungültige Namen |
+| `test_assistant_interfaces` | Ollama- und Tool-Verträge sind erfüllbar |
+| `test_tools` | `CompositeToolProvider`: Bündeln, Weiterleiten, doppelte/unbekannte Werkzeuge |
+| `test_events` | `EventBus`: An- und Abmelden, defekte Handler, Aufruf aus anderem Thread |
+| `test_presenter` | Antwort → `{"text", "html"}`, `push()` |
+| `test_interfaces` | Verträge für Präferenzen und Sprache sind erfüllbar |
+| `test_main`, `test_config`, `test_api` | Startlogik (mit Mocks), Dateien vorhanden, API |
+
+[tests/qt_helpers.py](tests/qt_helpers.py) enthält die gemeinsamen Hilfen:
+
+- `qt_app()` liefert die eine `QApplication` und hält sie in einer Modulvariablen fest.
+  Der Testrunner gibt Testobjekte nach dem Lauf frei. Hinge die `QApplication` nur an einem
+  Testobjekt, würde Python sie zerstören, und der nächste Test stürzte ab.
+- `wait_until()` und `run_js()` lassen Qt arbeiten, bis ein Ergebnis aus dem Browser vorliegt.
+
+Die Qt-Tests öffnen kurz echte Fenster, und während eines Laufs taucht kurz ein Tray-Icon auf.
+
+---
+
+## Bekannte Fallstricke
+
+1. **Referenzen auf Qt-Objekte halten.** Bridge, Kanal, `Application` und die `QApplication` in
+   Tests brauchen eine Python-Referenz, sonst räumt Python sie weg.
+2. **Chromium 83.** Qt 5.15 bringt eine ältere Browser-Version mit. Neuere JavaScript-Funktionen
+   wie `replaceChildren()` fehlen dort.
+3. **Offscreen-Modus.** Qts Modus ohne sichtbare Fenster (`QT_QPA_PLATFORM=offscreen`) stürzt
+   mit WebEngine ab. Deshalb öffnen die Tests echte Fenster.
+4. **Funktionen aus `api.py` laufen im Hintergrund-Thread.** Dort keine Qt-Fenster oder -Widgets
+   anfassen, die gehören in den Hauptthread. Ergebnisse gehen über den Rückgabewert oder über
+   `events.publish(...)` ans Frontend.
+5. **Keine Exceptions in Qt-Slots.** Wirft ein Slot (z. B. `WebBridge.call`) eine Exception,
+   beendet PyQt das ganze Programm. Slots fangen deshalb alles ab.
+6. **Gleiche Namen.** Gibt es in `api.py` und in JavaScript eine Funktion mit demselben Namen,
+   überschreibt die eine die andere. Das gilt auch für HTML-IDs: `id="chat"` würde die
+   Funktion `chat()` verdecken.
+
+---
+
+## Kurzanleitung: Erweitern
+
+| Ziel | Vorgehen |
+|---|---|
+| neue Python-Funktion fürs Frontend | in `backend/api.py` `def name(...)` schreiben, in JS `await name(...)` aufrufen |
+| neuer Chat-Befehl | in `backend/assistant/commands.py` eine Funktion schreiben, die eine `AssistantReply` zurückgibt, und in `COMMANDS` eintragen |
+| Daten im iframe anzeigen | im Assistenten `TemplateView("default", {"title": ..., ...})` zurückgeben, im Frontend `await render_view({template: "default", data: {...}})` |
+| eigenes HTML anzeigen | `HtmlView("<...>")` bzw. `await render_view({html: "<...>"})` |
+| neues Template | `frontend/templates/<name>.html.j2` anlegen (Vorlage: `default.html.j2`, erwartete Daten oben als Kommentar), dann per `template: "<name>"` ansprechen |
+| Ollama anbinden | `LanguageModel` (`backend/assistant/llm.py`) implementieren |
+| neue Integration (z. B. Wetter) | Modul in `backend/integrations/` mit einer Klasse, die `ToolProvider` erfüllt (Konvention in der `__init__.py`) |
+| Fähigkeit umsetzen | Modul in `backend/assistant/skills/` mit Integrationen (`CompositeToolProvider`), Anweisungen fürs Modell und optional einem autonomen Auslöser (Konvention in der `__init__.py`) |
+| Ollama-Assistent einsetzen | `Assistant` mit `LanguageModel`, Fähigkeiten und `PreferenceStore` bauen, in `_BACKENDS` eintragen, `ASSISTANT_BACKEND` umstellen |
+| Nachricht ohne Eingabe (autonom) | `presenter.push(AssistantReply(...))` aus beliebigem Thread |
+| eigenes Ereignis ans Frontend | Backend: `events.publish("name", {...})`, Frontend: `onPythonEvent("name", handler)` |
+| Präferenzen speichern | `PreferenceStore` (`backend/preferences.py`) implementieren, Einstellungs-UI als Template + Funktionen in `api.py` |
+| Sprache | `SpeechInput` / `SpeechOutput` (`backend/speech.py`) implementieren, über Funktionen in `api.py` anbinden |
+| Größe oder Farbe ändern | `backend/config.py` (Farbe zusätzlich in `frontend/theme.css`) |
+
+Beispiel für eine neue Frontend-Funktion:
+
+```python
+# backend/api.py
+def add(a, b):
+    return a + b
+```
+
+```js
+// frontend/popup.js
+const sum = await add(2, 3);
+```
+
+Funktionen mit `_` am Anfang bleiben privat. Argumente und Rückgabewerte müssen JSON-tauglich
+sein (Text, Zahlen, Listen, Dicts).

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Popup</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- sandbox ohne allow-same-origin: Inhalte im iframe kommen nicht an die
+       Popup-Seite und damit nicht an die Python-Funktionen heran. -->
+  <iframe id="view-frame" title="Anzeige" sandbox="allow-scripts"></iframe>
+
+  <!-- nicht id="chat": das würde die globale Python-Funktion chat() verdecken -->
+  <section id="chat-panel">
+    <div id="chat-history"></div>
+    <form id="input-form">
+      <input id="message-input" placeholder="Nachricht an den Assistenten…" autocomplete="off">
+      <button type="submit">Senden</button>
+    </form>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

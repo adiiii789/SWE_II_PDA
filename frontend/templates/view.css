@@ -1,0 +1,17 @@
+/* Layout der Ansicht im iframe (wird in die Templates eingebettet). */
+body {
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+h2 { margin: 0 0 12px; font-size: 18px; }
+p  { margin: 0; color: var(--text-muted); }
+
+p + table { margin-top: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+th { color: var(--text-muted); font-weight: 600; }

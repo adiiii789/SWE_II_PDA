@@ -1,0 +1,64 @@
+html, body { height: 100%; }
+
+body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+/* Oben: wechselnde Ansicht */
+#view-frame {
+  flex: 3;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+}
+
+/* Unten: Chat */
+#chat-panel {
+  flex: 2;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#chat-history {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.message {
+  max-width: 85%;
+  padding: 6px 10px;
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.message.user      { align-self: flex-end;   background: var(--accent); }
+.message.assistant { align-self: flex-start; background: var(--surface); }
+.message.error     { align-self: flex-start; background: #6A3A3A; }
+
+#input-form { display: flex; gap: 6px; }
+#message-input { flex: 1; }
+
+input, button {
+  font: inherit;
+  color: inherit;
+  background: var(--control);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+button { cursor: pointer; }
+button:hover { background: var(--control-hover); }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }

@@ -1,0 +1,19 @@
+/* Gemeinsame Farben für Popup und Templates (templates/base.html.j2 bettet diese Datei ein). */
+:root {
+  --background: #2E2E2E;   /* identisch mit POPUP_BACKGROUND in backend/config.py */
+  --surface: #383838;
+  --text: #F1F1F1;
+  --text-muted: #AAAAAA;
+  --control: #3E3E3E;
+  --control-hover: #4E4E4E;
+  --border: #555555;
+  --accent: #3A4A6A;
+}
+
+html, body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text);
+  font-family: system-ui, "Segoe UI", sans-serif;
+  font-size: 13px;
+}

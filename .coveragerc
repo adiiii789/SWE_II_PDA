@@ -1,0 +1,12 @@
+[run]
+source =
+    backend
+    main
+branch = True
+
+[report]
+fail_under = 80
+show_missing = True
+exclude_also =
+    if __name__ == .__main__.:
+    ^\s*\.\.\.$

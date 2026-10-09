@@ -1,0 +1,41 @@
+{#- Standard-Template für das iframe.
+    Aufruf: {"template": "default", "data": {...}} (siehe backend/views.py)
+    Daten:
+      title    str                        Überschrift
+      text     str, optional              Absatz unter der Überschrift
+      columns  list[str], optional        Tabellenkopf
+      rows     list[list[str]], optional  Tabellenzeilen - ohne Zeilen keine Tabelle
+    Die Styles werden eingebettet, weil das iframe isoliert ist (sandbox)
+    und keine Dateien nachladen soll. -#}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <style>
+{% include "theme.css" %}
+{% include "view.css" %}
+  </style>
+</head>
+<body>
+  <h2>{{ title }}</h2>
+
+  {% if text is defined and text %}
+  <p>{{ text }}</p>
+  {% endif %}
+
+  {% if rows is defined and rows %}
+  <table>
+    {% if columns is defined and columns %}
+    <thead>
+      <tr>{% for column in columns %}<th>{{ column }}</th>{% endfor %}</tr>
+    </thead>
+    {% endif %}
+    <tbody>
+      {% for row in rows %}
+      <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</body>
+</html>
