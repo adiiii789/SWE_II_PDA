@@ -1,7 +1,8 @@
-"""Schnittstelle zu einem Sprachmodell (geplant: Ollama).
+"""Schnittstelle zu einem Sprachmodell.
 
-Nur Datentypen und Protokoll - noch keine Implementierung. Die Typen folgen
-dem Chat-Format, das Ollama (/api/chat) und andere Anbieter gemeinsam haben.
+Nur Datentypen und Protokoll. Die Typen folgen dem Chat-Format, das Ollama
+(/api/chat) und andere Anbieter gemeinsam haben. Implementierung für Ollama:
+backend/assistant/ollama.py.
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ class ChatMessage:
     role: Role
     content: str
     tool_calls: tuple[ToolCall, ...] = ()
+    tool_name: str = ""   # nur bei role="tool": zu welchem Werkzeug das Ergebnis gehört
 
 
 @dataclass(frozen=True)

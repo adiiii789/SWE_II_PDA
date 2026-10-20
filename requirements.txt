@@ -1,3 +1,6 @@
 PyQt5==5.15.11
 PyQtWebEngine==5.15.7
 Jinja2==3.1.6
+mcp>=2.3,<3           # MCP-SDK für mcp_servers/pda_server.py (MCPServer)
+pypdf>=6.0,<7         # Text aus PDF-Anhängen (mcp_servers/file_text.py)
+openpyxl>=3.1,<4      # Text aus Excel-Anhängen (mcp_servers/file_text.py)

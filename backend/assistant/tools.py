@@ -23,9 +23,20 @@ class ToolSpec:
 
 
 @dataclass(frozen=True)
+class Attachment:
+    """Datei, die ein Werkzeug mitliefert (MCP "resource_link"), z. B. ein Mail-Anhang.
+    Das Modell sieht nur den Namen; der Chat zeigt sie zum Öffnen und Speichern an."""
+    name: str
+    uri: str                  # file:///C:/...
+    mime_type: str = ""
+    size: int | None = None
+
+
+@dataclass(frozen=True)
 class ToolResult:
     content: str
     is_error: bool = False
+    attachments: tuple[Attachment, ...] = ()
 
 
 @runtime_checkable

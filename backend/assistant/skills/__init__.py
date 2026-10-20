@@ -25,4 +25,31 @@ Konvention:
     lokales Modell zu viele, gibt der Assistent je Anfrage nur die Werkzeuge der
     passenden Fähigkeit mit - die Struktur bleibt dieselbe.
   - Kontextwissen kommt aus dem PreferenceStore (backend/preferences.py).
+  - Jedes Modul liefert ein Skill-Objekt (siehe unten); es wird in SKILLS
+    eingetragen. Der OllamaAssistant (backend/assistant/ollama_assistant.py)
+    gibt dem Modell die Werkzeuge und Anweisungen aller Fähigkeiten mit.
+
+Beispiel skills/morning.py:
+
+    SKILL = Skill(
+        name="morning",
+        instructions="Für ein Briefing: Termine, Wetter und Aktien abfragen, in 3 Sätzen zusammenfassen.",
+        tools=CompositeToolProvider([CalendarTools(), WeatherTools()]),
+    )
 """
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from backend.assistant.tools import CompositeToolProvider, ToolProvider
+
+
+@dataclass(frozen=True)
+class Skill:
+    name: str
+    instructions: str                                   # wird an die Systemanweisung angehängt
+    tools: ToolProvider = field(default_factory=lambda: CompositeToolProvider([]))
+
+
+# Hier die Fähigkeiten eintragen, z. B. [morning.SKILL, travel.SKILL, organization.SKILL]
+SKILLS: list[Skill] = []
