@@ -1,4 +1,8 @@
-"""CommandAssistant: Platzhalter-Assistent mit festen Befehlen (ohne Sprachmodell)."""
+"""CommandAssistant: Assistent mit festen Befehlen (ohne Sprachmodell).
+
+Die Befehle in COMMANDS gelten auch im OllamaAssistant: Eine Nachricht, die genau
+einem Befehl entspricht, wird sofort beantwortet, ohne das Sprachmodell zu fragen.
+"""
 from __future__ import annotations
 
 import datetime
@@ -45,11 +49,17 @@ def _start() -> AssistantReply:
     return AssistantReply("Startansicht.", START_VIEW)
 
 
+def _new_conversation() -> AssistantReply:
+    # Den Verlauf leert der OllamaAssistant, bevor er diesen Befehl ausführt.
+    return AssistantReply("Neues Gespräch begonnen.", START_VIEW)
+
+
 COMMANDS: dict[str, tuple[str, Callable[[], AssistantReply]]] = {
     "hilfe": ("Zeigt alle Befehle", _help),
     "uhrzeit": ("Zeigt Uhrzeit und Datum", _time),
     "system": ("Zeigt Systeminformationen", _system),
     "start": ("Zurück zur Startansicht", _start),
+    "neu": ("Neues Gespräch (KI vergisst den Verlauf)", _new_conversation),
 }
 
 

@@ -10,7 +10,7 @@ Noch leer. Geplante Integrationen und welche Fähigkeit (backend/assistant/skill
   Musik                morning  (Songvorschlag, Abspielen)
   Google Routes        travel   (Fahrzeit Auto / ÖPNV)
   Tankerkönig          travel   (Spritpreis-Prognose)
-  Gmail                organization  (E-Mails verfassen und senden)
+  Gmail                organization  (E-Mails verfassen, senden und lesen - als MCP-Server umgesetzt)
   Google Keep          organization  (Notizen, To-do-Listen)
 
 Konvention:
@@ -18,8 +18,9 @@ Konvention:
     die ToolProvider erfüllt (list_tools / call_tool).
   - Zugangsdaten und API-Keys nicht im Code, sondern aus der Konfiguration bzw.
     Umgebungsvariablen lesen.
-  - Alternativ läuft eine Integration als MCP-Server; dann stellt ein MCP-Client
-    (ebenfalls ein ToolProvider) ihre Werkzeuge bereit.
+  - Alternativ läuft eine Integration als MCP-Server; dann stellt MCPToolProvider
+    (mcp_client.py, ebenfalls ein ToolProvider) ihre Werkzeuge bereit. Dafür
+    genügt ein Eintrag in mcp_servers.json im Projektordner.
   - Eine Fähigkeit bündelt ihre Integrationen als CompositeToolProvider.
   - Tests ohne echte Netzwerkaufrufe (HTTP-Client mocken).
 """

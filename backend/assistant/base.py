@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from backend.assistant.tools import Attachment
 from backend.views import View
 
 
@@ -15,10 +16,26 @@ from backend.views import View
 class AssistantReply:
     text: str
     view: View | None = None   # TemplateView oder HtmlView; None = aktuelle Ansicht beibehalten
+    attachments: tuple[Attachment, ...] = ()   # Dateien im Chat, z. B. Mail-Anhänge (backend/attachments.py)
 
 
 @runtime_checkable
 class Assistant(Protocol):
     def reply(self, message: str) -> AssistantReply:
         """Antwort auf eine Chat-Nachricht des Nutzers."""
+        ...
+
+
+@runtime_checkable
+class ModelSelection(Protocol):
+    """Optional: Assistenten mit Sprachmodell, deren Modell man im Popup wählen kann."""
+
+    def available_models(self) -> list[dict]:
+        """Installierte Modelle: [{"name": str, "tools": bool}, ...]"""
+        ...
+
+    def current_model(self) -> str:
+        ...
+
+    def select_model(self, name: str) -> None:
         ...
