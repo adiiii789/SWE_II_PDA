@@ -28,14 +28,14 @@ def _ollama_assistant() -> Assistant:
     from backend.assistant.skills import SKILLS
     from backend.assistant.tools import CompositeToolProvider
     from backend.integrations.mcp_client import load_mcp_servers
-    from backend.preferences import JsonPreferenceStore
+    from backend.preferences import app_preferences
 
     model = OllamaModel(OllamaClient(config.OLLAMA_URL, config.OLLAMA_TIMEOUT_S),
                         config.OLLAMA_MODEL, config.OLLAMA_OPTIONS)
     mcp_servers = load_mcp_servers(config.MCP_SERVERS_FILE, config.ROOT_DIR)
     tools = CompositeToolProvider([*mcp_servers, *(skill.tools for skill in SKILLS)])
     instructions = "\n\n".join(skill.instructions for skill in SKILLS)
-    return OllamaAssistant(model, tools, JsonPreferenceStore(config.PREFERENCES_FILE), instructions,
+    return OllamaAssistant(model, tools, app_preferences(), instructions,
                            config.ASSISTANT_MAX_TOOL_ROUNDS, config.ASSISTANT_MAX_HISTORY)
 
 

@@ -17,8 +17,11 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from functools import cache
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
+
+from backend import config
 
 log = logging.getLogger(__name__)
 
@@ -61,3 +64,10 @@ class JsonPreferenceStore:
 
     def all(self) -> Mapping[str, Any]:
         return dict(self._values)
+
+
+@cache
+def app_preferences() -> JsonPreferenceStore:
+    """Die Präferenzen der App (config.PREFERENCES_FILE). Alle Teile nutzen dieses eine Objekt:
+    Zwei JsonPreferenceStore auf derselben Datei würden sich beim Speichern gegenseitig überschreiben."""
+    return JsonPreferenceStore(config.PREFERENCES_FILE)

@@ -38,6 +38,17 @@ PREFERENCES_FILE = APP_DATA_DIR / "preferences.json"
 ATTACHMENT_DIR = Path(os.environ.get("PDA_ATTACHMENT_DIR") or APP_DATA_DIR / "attachments")
 DOWNLOAD_DIR = Path.home() / "Downloads"   # Ziel von "Speichern"
 
+# Reise-Assistent (backend/assistant/skills/travel/). Ohne Key fällt der jeweilige Teil weg;
+# Einrichtung siehe README. Persönliche Werte (Zeitwert, Verbrauch …) stehen in den Präferenzen.
+GOOGLE_DIR = APP_DATA_DIR / "google"                    # credentials.json (OAuth-Client) und token.json
+GOOGLE_MAPS_KEY = os.environ.get("PDA_GOOGLE_MAPS_KEY", "")      # Geocoding + Routes API
+TANKERKOENIG_KEY = os.environ.get("PDA_TANKERKOENIG_KEY", "")    # Spritpreise
+FLIGHTAPI_KEY = os.environ.get("PDA_FLIGHTAPI_KEY", "")          # Flugpreise (flightapi.io)
+FR24_TOKEN = os.environ.get("PDA_FR24_TOKEN", "")                # tatsächliche Flugzeiten (Flightradar24)
+HTTP_TIMEOUT_S = 20
+TRAVEL_REMINDER_MINUTES = 15          # Erinnerung so lange vor der empfohlenen Abfahrt
+TRAVEL_CHECK_INTERVAL_S = 300         # so oft schaut die Erinnerung in den Kalender
+
 POPUP_PAGE = FRONTEND_DIR / "popup.html"
 POPUP_SIZE_RATIO = (0.3, 0.6)         # Anteil des Bildschirms (Breite, Höhe)
 POPUP_BACKGROUND = "#2E2E2E"          # identisch mit --background in frontend/theme.css

@@ -1,6 +1,6 @@
 import unittest
 
-from PyQt5.QtCore import QUrl
+from PyQt5.QtCore import QEvent, QUrl
 
 from tests.qt_helpers import qt_app, wait_until
 
@@ -14,6 +14,7 @@ class CreatePopupTest(unittest.TestCase):
     def test_popup_contains_web_view_with_api_functions(self):
         qt_app()
         popup = create_popup()
+        self.addCleanup(qt_app().sendPostedEvents, None, QEvent.DeferredDelete)   # läuft als letztes
         self.addCleanup(popup.content.deleteLater)
         self.addCleanup(popup.content.close_bridge)
         self.assertIsInstance(popup, PopupWindow)
@@ -29,7 +30,13 @@ class ApplicationTest(unittest.TestCase):
     def setUp(self):
         self.qt_app = qt_app()
         self.application = Application(self.qt_app)
-        self.addCleanup(self.application.shutdown)
+        self.addCleanup(self._shutdown)
+
+    def _shutdown(self):
+        self.application.shutdown()
+        # deleteLater() sofort ausführen: Sonst zerstört Qt die WebViews erst, während der
+        # nächste Test seine Seite lädt - das bremst deren Laden um Sekunden.
+        self.qt_app.sendPostedEvents(None, QEvent.DeferredDelete)
 
     def test_app_keeps_running_without_windows(self):
         self.assertFalse(self.qt_app.quitOnLastWindowClosed())

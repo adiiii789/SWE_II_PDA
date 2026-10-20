@@ -8,9 +8,9 @@ Das Projekt ist die **Grundlage** für einen persönlichen KI-Assistenten mit lo
 Sprachmodell (Ollama). Er hat drei **Fähigkeiten**: Morning-Briefing, Weg zum nächsten Termin
 (Travel) und Organisation von Nachrichten und Terminen (im Projektplan „Assistant²“). Der
 Assistent läuft mit einem lokalen Modell aus Ollama und nutzt Werkzeuge von **MCP-Servern**
-(eingetragen in [mcp_servers.json](mcp_servers.json)). Die Fähigkeiten selbst sind noch nicht
-umgesetzt. Feste Befehle wie `hilfe`, `uhrzeit`, `system`, `start` und `neu` funktionieren
-weiterhin ohne Modell.
+(eingetragen in [mcp_servers.json](mcp_servers.json)). Umgesetzt ist der **Reise-Assistent**
+(siehe unten); Morning-Briefing und Organisation folgen. Feste Befehle wie `hilfe`, `uhrzeit`,
+`system`, `start`, `neu` und `reise` funktionieren weiterhin ohne Modell.
 
 ## Starten
 
@@ -27,6 +27,36 @@ weiterhin ohne Modell.
 
 Windows, Python 3.12. Ohne Ollama: `set PDA_ASSISTANT_BACKEND=commands` startet nur mit den
 festen Befehlen.
+
+### Reise-Assistent
+
+„Wie komme ich zum nächsten Termin?“ – oder der feste Befehl `reise`. Der Assistent nimmt den
+nächsten Termin mit Ort aus Google Calendar. Start ist der Ort des vorigen Termins, beim ersten
+Termin des Tages die Heimatadresse (fragt der Assistent beim ersten Mal ab). Verglichen werden
+Auto, Bahn/ÖPNV, Flugzeug, Taxi, Fahrrad und zu Fuß; empfohlen wird das Verkehrsmittel mit den
+geringsten **Kosten = Preis + Reisezeit × Zeitwert** (Standard 25 €/h) – Zeit zählt also mit.
+Die Ansicht zeigt Empfehlung, Alternativen, Wegbeschreibung und eine Karte. 15 Minuten vor der
+empfohlenen Abfahrt kommt eine Erinnerung in den Chat.
+
+Einrichtung – ohne Key fällt nur der betroffene Teil weg:
+
+| Was | Wofür | Einrichtung |
+|---|---|---|
+| Google Maps (Pflicht) | Adressen, Routen, Fahrzeiten | Google Cloud Console: „Geocoding API“ und „Routes API“ aktivieren, API-Key anlegen → `setx PDA_GOOGLE_MAPS_KEY …` |
+| Google Calendar | Termine | „Google Calendar API“ aktivieren, OAuth-Client „Desktop-App“ anlegen, JSON als `%APPDATA%\PersonalDigitalAgent\google\credentials.json` speichern. Beim ersten Zugriff öffnet sich der Browser zur Anmeldung. |
+| Tankerkönig | aktuelle Spritpreise (sonst 1,80 €/l) | kostenloser Key: [creativecommons.tankerkoenig.de](https://creativecommons.tankerkoenig.de) → `setx PDA_TANKERKOENIG_KEY …` |
+| FlightAPI | Flugangebote mit Preis | [flightapi.io](https://www.flightapi.io) → `setx PDA_FLIGHTAPI_KEY …` |
+| Flightradar24 | tatsächliche Flugzeiten | [fr24api.flightradar24.com](https://fr24api.flightradar24.com) → `setx PDA_FR24_TOKEN …` |
+
+Flüge werden erst ab 300 km Luftlinie geprüft. Ohne FlightAPI, aber mit Flightradar24 gibt es
+einen „typischen Flug“ mit geschätztem Preis. **Bahnpreise:** Die DB bietet keine offene
+Preis-Schnittstelle (die inoffiziellen von bahn.de blockieren Skripte); der Preis kommt von
+Google, wo bekannt, sonst aus einer Tarif-Schätzung (mit ≈ markiert).
+
+Persönliche Werte stehen in `%APPDATA%\PersonalDigitalAgent\preferences.json`, z. B.
+`"travel_value_of_time": 40`, `"travel_deutschlandticket": true`, `"travel_fuel": "diesel"`,
+`"travel_consumption": 6.5` – alle Schlüssel in `TravelSettings`
+([planner.py](backend/assistant/skills/travel/planner.py)).
 
 ### MCP-Server einbinden
 
@@ -79,7 +109,7 @@ Für die eigentliche Projektarbeit braucht ihr nur diese Stellen:
 | Aufgabe | Ort |
 |---|---|
 | Integration eines Dienstes (Calendar, Wetter, Gmail …) | [backend/integrations/](backend/integrations/__init__.py) – Anleitung in der `__init__.py` |
-| Fähigkeit des Assistenten (morning, travel, organization) | [backend/assistant/skills/](backend/assistant/skills/__init__.py) – Anleitung in der `__init__.py` |
+| Fähigkeit des Assistenten (morning, travel, organization) | [backend/assistant/skills/](backend/assistant/skills/__init__.py) – Anleitung in der `__init__.py`, Beispiel: [travel/](backend/assistant/skills/travel/__init__.py) |
 | Darstellung im Anzeigebereich | [frontend/templates/](frontend/templates/) – Vorlage: `default.html.j2` |
 | Funktion, die das Frontend aufrufen kann | [backend/api.py](backend/api.py) |
 | eigenes Werkzeug (MCP) | [mcp_servers/pda_server.py](mcp_servers/pda_server.py) – Funktion mit `@mcp.tool()` |

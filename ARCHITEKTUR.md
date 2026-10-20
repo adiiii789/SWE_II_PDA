@@ -53,8 +53,8 @@ Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen P
 
 | Anforderung | Wo im Code | Stand |
 |---|---|---|
-| Fähigkeiten (morning, travel, organization) | `backend/assistant/skills/` – je ein `Skill` mit Integrationen und Anweisungen | `Skill`-Typ und Liste `SKILLS`, noch leer |
-| Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – je ein `ToolProvider`, gebündelt per `CompositeToolProvider` | Ort, Konvention und Sammel-Provider |
+| Fähigkeiten (morning, travel, organization) | `backend/assistant/skills/` – je ein `Skill` mit Integrationen, Anweisungen und optionalem Auslöser | travel fertig (`skills/travel/`), morning und organization offen |
+| Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – Clients für externe Dienste, als Werkzeuge über die Fähigkeiten | Google Calendar, Google Maps, Tankerkönig, FlightAPI, Flightradar24 |
 | MCP-Server als Werkzeuge | `MCPToolProvider` in `backend/integrations/mcp_client.py`, Liste in `mcp_servers.json` | fertig (stdio), eigener Server `mcp_servers/pda_server.py` |
 | Lokales Sprachmodell (Ollama) | `OllamaModel` in `backend/assistant/ollama.py`, `OllamaAssistant` in `ollama_assistant.py` | fertig, Modellwahl im Popup |
 | Autonom (z. B. Briefing ohne Eingabe) | `backend/events.py`, `presenter.push(reply)` → Nachricht im Chat | Push-Kanal fertig |
@@ -106,9 +106,16 @@ backend/                      BACKEND: läuft in Python
     ollama.py                 OllamaModel: LanguageModel über die HTTP-API von Ollama
     ollama_assistant.py       OllamaAssistant: Verlauf + Tool-Calling-Schleife
     tools.py                  ToolProvider-Protokoll + CompositeToolProvider
-    skills/                   Fähigkeiten des Assistenten (Skill-Typ, noch keine)
-  integrations/               externe Dienste als ToolProvider
+    skills/                   Fähigkeiten des Assistenten (SKILLS, start_triggers)
+      base.py                 Skill-Typ
+      travel/                 Reise-Assistent: planner, service, view, tools, reminder
+  integrations/               externe Dienste
     mcp_client.py             MCPToolProvider: Werkzeuge eines MCP-Servers (stdio)
+    http.py                   JsonHttp: gemeinsamer HTTP-Client (urllib), IntegrationError
+    google_calendar.py        Termine lesen (OAuth, Desktop-App)
+    google_maps.py            Geocoding + Routes API (Auto, ÖPNV, Fahrrad, zu Fuß)
+    tankerkoenig.py           Spritpreise
+    flights.py                Flughäfen, FlightAPI (Angebote), Flightradar24 (Flugzeiten)
   bridge/                     Verbindung Frontend ↔ Backend (muss nicht angepasst werden)
     function_registry.py      findet die Funktionen aus api.py
     web_bridge.py             Python-Seite der Brücke (QWebChannel)
@@ -567,7 +574,9 @@ reply(message):
 
 - `ToolSpec(name, description, input_schema)` entspricht einem MCP-Tool und lässt sich direkt
   in das `tools`-Format von Ollama übersetzen.
-- `ToolResult(content, is_error)`.
+- `ToolResult(content, is_error, attachments, view)`. `view` ist eine eigene Ansicht fürs iframe
+  (z. B. der Reiseplan); der Assistent zeigt die letzte mitgelieferte, sonst die Tabelle der
+  Werkzeugaufrufe. MCP-Server liefern keine Ansicht.
 - `ToolProvider` mit `list_tools()` und `call_tool(name, arguments)`. Das ist entweder eine
   eigene Integration in [backend/integrations/](backend/integrations/__init__.py) (z. B. Wetter)
   oder ein `MCPToolProvider`, der die Tools eines MCP-Servers bereitstellt (siehe unten).
@@ -696,9 +705,10 @@ OllamaAssistant (erfüllt Assistant + ModelSelection)
   ├─ tools: CompositeToolProvider
   │    ├─ MCPToolProvider "pda"  ──stdio──► mcp_servers/pda_server.py (SDK) ──SMTP/IMAP──► Mail
   │    ├─ MCPToolProvider …      ──stdio──► weitere Server aus mcp_servers.json
-  │    └─ Werkzeuge der Fähigkeiten (skills/, noch keine)
-  └─ preferences: JsonPreferenceStore
-autonom (geplant): Auslöser einer Fähigkeit (z. B. 7 Uhr Briefing) → presenter.push(reply)
+  │    └─ Werkzeuge der Fähigkeiten (skills/): TravelTools ──HTTP──► Google, Tankerkönig, Flüge
+  └─ preferences: app_preferences() (eine JsonPreferenceStore für die ganze App)
+autonom: Auslöser einer Fähigkeit (Skill.start, beim App-Start) → presenter.push(reply),
+         z. B. TravelReminder: 15 Min. vor der empfohlenen Abfahrt
 ```
 
 Sind es für ein kleines Modell zu viele Werkzeuge, kann der Assistent später je Anfrage nur die

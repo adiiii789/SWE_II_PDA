@@ -1,15 +1,17 @@
-"""Integrationen externer Dienste - jede als ToolProvider (backend/assistant/tools.py).
+"""Integrationen externer Dienste - als ToolProvider (backend/assistant/tools.py) oder als
+Client, den eine Fähigkeit in ihre Werkzeuge einbaut (z. B. skills/travel/tools.py).
 
-Noch leer. Geplante Integrationen und welche Fähigkeit (backend/assistant/skills/) sie nutzt:
+Integrationen und welche Fähigkeit (backend/assistant/skills/) sie nutzt:
 
   Integration          Fähigkeit
   -------------------  ---------------------------------------------
-  Google Calendar      morning, travel, organization  (lesen, erstellen)
+  Google Calendar      morning, travel, organization  (google_calendar.py: lesen)
   OpenWeather          morning
   Aktien-API           morning  (Recap des Vortages)
   Musik                morning  (Songvorschlag, Abspielen)
-  Google Routes        travel   (Fahrzeit Auto / ÖPNV)
-  Tankerkönig          travel   (Spritpreis-Prognose)
+  Google Maps          travel   (google_maps.py: Adressen, Routen Auto/ÖPNV/Rad/zu Fuß)
+  Tankerkönig          travel   (tankerkoenig.py: aktuelle Spritpreise)
+  FlightAPI, FR24      travel   (flights.py: Flugangebote, tatsächliche Flugzeiten)
   Gmail                organization  (E-Mails verfassen, senden und lesen - als MCP-Server umgesetzt)
   Google Keep          organization  (Notizen, To-do-Listen)
 
@@ -22,5 +24,5 @@ Konvention:
     (mcp_client.py, ebenfalls ein ToolProvider) ihre Werkzeuge bereit. Dafür
     genügt ein Eintrag in mcp_servers.json im Projektordner.
   - Eine Fähigkeit bündelt ihre Integrationen als CompositeToolProvider.
-  - Tests ohne echte Netzwerkaufrufe (HTTP-Client mocken).
+  - HTTP über JsonHttp (http.py); Tests ohne echte Netzwerkaufrufe (FakeHttp statt JsonHttp).
 """

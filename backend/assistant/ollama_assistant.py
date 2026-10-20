@@ -8,7 +8,8 @@ Ablauf von reply(message):
      auf (eigene Integrationen oder MCP-Server) und hängt jedes Ergebnis als
      "tool"-Nachricht an. Weiter bei 3 - höchstens max_tool_rounds-mal.
   5. Sonst ist der Text des Modells die Antwort. Wurden Werkzeuge genutzt,
-     zeigt die Ansicht oben eine Tabelle mit Aufrufen und Ergebnissen. Dateien,
+     zeigt die Ansicht oben die Ansicht des letzten Werkzeugs, das eine mitliefert
+     (z. B. Reiseplan), sonst eine Tabelle mit Aufrufen und Ergebnissen. Dateien,
      die Werkzeuge mitliefern (z. B. Mail-Anhänge), hängen an der Antwort.
 """
 from __future__ import annotations
@@ -24,7 +25,7 @@ from backend.assistant.llm import ChatMessage, ToolCall
 from backend.assistant.ollama import OllamaError, OllamaModel
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult
 from backend.preferences import PreferenceStore
-from backend.views import TemplateView
+from backend.views import TemplateView, View
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ class OllamaAssistant:
             del self.history[start:]   # misslungene Runde nicht im Verlauf behalten
             return AssistantReply(f"Fehler von Ollama ({self.model.name}): {error}")
         self._trim_history()
-        return AssistantReply(text, _tool_view(tool_log) if tool_log else None, _attachments(tool_log))
+        return AssistantReply(text, _view(tool_log), _attachments(tool_log))
 
     def _run(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> str:
         tools = self.tools.list_tools()
@@ -147,6 +148,14 @@ class OllamaAssistant:
         saved = self.preferences.get(MODEL_PREFERENCE)
         self.model.name = saved if saved in installed else (installed[0] if installed else "")
         return bool(self.model.name)
+
+
+def _view(tool_log: list[tuple[ToolCall, ToolResult]]) -> View | None:
+    """Ansicht des letzten Werkzeugs, das eine mitliefert; sonst die Tabelle der Aufrufe."""
+    if not tool_log:
+        return None
+    views = [result.view for _, result in tool_log if result.view is not None]
+    return views[-1] if views else _tool_view(tool_log)
 
 
 def _tool_view(tool_log: list[tuple[ToolCall, ToolResult]]) -> TemplateView:

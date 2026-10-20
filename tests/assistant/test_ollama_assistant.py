@@ -7,7 +7,7 @@ from backend.assistant.llm import ChatMessage, ModelResponse, ToolCall
 from backend.assistant.ollama import ModelInfo, OllamaError
 from backend.assistant.ollama_assistant import MODEL_PREFERENCE, OllamaAssistant
 from backend.assistant.tools import Attachment, CompositeToolProvider, ToolResult, ToolSpec
-from backend.views import START_VIEW
+from backend.views import START_VIEW, TemplateView
 
 
 class FakeModel:
@@ -106,6 +106,17 @@ class ReplyTest(unittest.TestCase):
         self.assertEqual(reply.view.data["title"], "Verwendete Werkzeuge")
         self.assertEqual(reply.view.data["rows"][0], ["echo", '{"text": "a"}', "echo: a"])
         self.assertEqual(reply.attachments, ())
+
+    def test_view_of_a_tool_replaces_the_tool_table(self):
+        class PlanTools(EchoTools):
+            def call_tool(self, name, arguments):
+                view = TemplateView("travel", {"n": arguments["text"]}) if arguments["text"] != "ohne" else None
+                return ToolResult("ok", view=view)
+
+        model = FakeModel(calls(ToolCall("echo", {"text": "1"}), ToolCall("echo", {"text": "2"}),
+                                ToolCall("echo", {"text": "ohne"})), text("Fertig"))
+        reply = make(model, PlanTools()).reply("Wie komme ich hin?")
+        self.assertEqual(reply.view, TemplateView("travel", {"n": "2"}))   # die letzte mitgelieferte Ansicht
 
     def test_attachments_of_all_tool_calls_once(self):
         plan = Attachment("plan.pdf", "file:///C:/a/plan.pdf")

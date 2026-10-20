@@ -4,6 +4,7 @@ from __future__ import annotations
 from PyQt5.QtWidgets import QApplication
 
 from backend import api, config
+from backend.assistant.skills import start_triggers
 from backend.bridge.function_registry import FunctionRegistry
 from backend.desktop.popup_window import PopupWindow
 from backend.desktop.tray_icon import TrayIcon
@@ -28,10 +29,12 @@ class Application:
         self.tray.quit_requested.connect(qt_app.quit)
         self.tray.show()
 
+        self.stop_triggers = start_triggers()   # autonome Fähigkeiten, z. B. Reise-Erinnerung
         qt_app.aboutToQuit.connect(self.shutdown)
 
     def shutdown(self) -> None:
         """Bridge-Thread beenden und Web-View freigeben (vermeidet WebEngine-Warnungen)."""
+        self.stop_triggers()
         self.tray.hide()
         self.popup.content.close_bridge()
         self.popup.content.deleteLater()

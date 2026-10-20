@@ -6,6 +6,8 @@ from backend.assistant import Assistant, ModelSelection, create_assistant
 from backend.assistant.ollama_assistant import OllamaAssistant
 from backend.assistant import commands
 from backend.assistant.commands import CommandAssistant
+from backend.assistant.skills import travel
+from backend.integrations.mcp_client import MCPToolProvider
 from backend.rendering import ViewRenderer
 from backend.views import START_VIEW
 
@@ -63,7 +65,9 @@ class CreateAssistantTest(unittest.TestCase):
         assistant = create_assistant("ollama")
         self.assertIsInstance(assistant, OllamaAssistant)
         self.assertIsInstance(assistant, ModelSelection)
-        self.assertEqual([p.name for p in assistant.tools._providers], ["pda"])   # "demo" ist abgeschaltet
+        providers = assistant.tools._providers
+        self.assertEqual([p.name for p in providers if isinstance(p, MCPToolProvider)], ["pda"])   # "demo" ist abgeschaltet
+        self.assertIn(travel.SKILL.tools, providers)   # Werkzeuge der Fähigkeiten kommen dazu
 
     def test_unknown_backend_raises(self):
         with self.assertRaisesRegex(ValueError, "does_not_exist"):

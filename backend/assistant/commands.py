@@ -49,6 +49,12 @@ def _start() -> AssistantReply:
     return AssistantReply("Startansicht.", START_VIEW)
 
 
+def _travel() -> AssistantReply:
+    # Erst hier importieren: Der Reise-Assistent zieht Integrationen nach sich.
+    from backend.assistant.skills.travel import next_trip_reply
+    return next_trip_reply()
+
+
 def _new_conversation() -> AssistantReply:
     # Den Verlauf leert der OllamaAssistant, bevor er diesen Befehl ausführt.
     return AssistantReply("Neues Gespräch begonnen.", START_VIEW)
@@ -59,6 +65,7 @@ COMMANDS: dict[str, tuple[str, Callable[[], AssistantReply]]] = {
     "uhrzeit": ("Zeigt Uhrzeit und Datum", _time),
     "system": ("Zeigt Systeminformationen", _system),
     "start": ("Zurück zur Startansicht", _start),
+    "reise": ("Bester Weg zum nächsten Termin", _travel),
     "neu": ("Neues Gespräch (KI vergisst den Verlauf)", _new_conversation),
 }
 
