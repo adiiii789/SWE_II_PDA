@@ -48,16 +48,17 @@ Person. Google Calendar brauchen alle drei Bereiche, und Anfragen mischen sie of
 los, und schreib Max, dass ich später komme“). Das Sprachmodell wählt per Tool-Calling selbst
 die passenden Werkzeuge, ein Umschalter oder Router zwischen Assistenten ist nicht nötig.
 
-Fähigkeiten und Integrationen sind **noch nicht umgesetzt**. Die Architektur ist so
-vorbereitet, dass jede Anforderung einen festen Platz hat:
+Der KI-Assistent mit Ollama und MCP-Werkzeugen läuft; die Fähigkeiten selbst und eigene
+Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen Platz:
 
 | Anforderung | Wo im Code | Stand |
 |---|---|---|
-| Fähigkeiten (morning, travel, organization) | `backend/assistant/skills/` – je ein Modul mit Integrationen und Anweisungen | Ort und Konvention, noch leer |
+| Fähigkeiten (morning, travel, organization) | `backend/assistant/skills/` – je ein `Skill` mit Integrationen und Anweisungen | `Skill`-Typ und Liste `SKILLS`, noch leer |
 | Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – je ein `ToolProvider`, gebündelt per `CompositeToolProvider` | Ort, Konvention und Sammel-Provider |
-| Lokales Sprachmodell (Ollama) | `LanguageModel` in `backend/assistant/llm.py` | Schnittstelle |
+| MCP-Server als Werkzeuge | `MCPToolProvider` in `backend/integrations/mcp_client.py`, Liste in `mcp_servers.json` | fertig (stdio), eigener Server `mcp_servers/pda_server.py` |
+| Lokales Sprachmodell (Ollama) | `OllamaModel` in `backend/assistant/ollama.py`, `OllamaAssistant` in `ollama_assistant.py` | fertig, Modellwahl im Popup |
 | Autonom (z. B. Briefing ohne Eingabe) | `backend/events.py`, `presenter.push(reply)` → Nachricht im Chat | Push-Kanal fertig |
-| Kontextwissen, Präferenzen per UI | `PreferenceStore` in `backend/preferences.py` | Schnittstelle |
+| Kontextwissen, Präferenzen per UI | `PreferenceStore` / `JsonPreferenceStore` in `backend/preferences.py` | Speicherung fertig, UI offen |
 | Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` | Schnittstelle |
 | Kurze Antworten, Rückfragen | `Assistant.reply()`; der Assistent hält den Gesprächsverlauf | über das Protokoll möglich |
 | Langsame Aufrufe (Modell, APIs) | Bridge führt Aufrufe im Hintergrund-Thread aus | fertig |
@@ -71,6 +72,15 @@ Die Konventionen für Fähigkeiten und Integrationen stehen jeweils in der `__in
 
 ```
 main.py                       Einstiegspunkt – startet das Programm
+mcp_servers.json              MCP-Server, deren Werkzeuge der Assistent nutzt
+mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von backend/)
+  pda_server.py               Server mit offiziellem SDK: Uhrzeit, Rechnen, E-Mail senden und lesen
+  basic_tools.py              Uhrzeit und Rechnen (ohne Abhängigkeiten)
+  mailer.py                   E-Mail per SMTP, nur an freigegebene Empfänger
+  inbox.py                    E-Mail und Anhänge lesen per IMAP, nur lesend
+  file_text.py                Text aus PDF, Word, Excel, PowerPoint, HTML, Textdateien
+  .env.example                Vorlage für die Mail-Einstellungen (.env wird nicht eingecheckt)
+  demo_server.py              Server ohne SDK: zeigt das Protokoll, Gegenpart in den Tests
 
 frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
   popup.html/.css/.js         Popup: Anzeige oben, Chat unten
@@ -82,19 +92,23 @@ frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
 backend/                      BACKEND: läuft in Python
   api.py                      ← Schnittstelle zum Frontend (nur diese Funktionen sieht das JS)
   events.py                   ← Ereignisse vom Backend ans Frontend (Push)
-  presenter.py                Antwort des Assistenten → {"text", "html"}; push() für autonome Nachrichten
+  presenter.py                Antwort des Assistenten → {"text", "html", "attachments"}; push() für autonome Nachrichten
+  attachments.py              Dateien im Chat (z. B. Mail-Anhänge): öffnen, speichern
   config.py                   alle Einstellungen
   views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
   rendering.py                macht aus einer Anfrage HTML (Jinja2 bzw. eigenes HTML)
-  preferences.py              Schnittstelle: Kontextwissen, persönliche Präferenzen
+  preferences.py              Kontextwissen, persönliche Präferenzen (JsonPreferenceStore)
   speech.py                   Schnittstelle: Spracheingabe und -ausgabe
   assistant/                  Fachlogik: Assistent hinter dem Chat
-    base.py                   Assistant-Protokoll, AssistantReply
-    commands.py               CommandAssistant (Platzhalter mit festen Befehlen)
-    llm.py                    LanguageModel-Protokoll (Anbindung Ollama)
+    base.py                   Assistant-Protokoll, AssistantReply, ModelSelection
+    commands.py               CommandAssistant (feste Befehle, auch im KI-Assistenten gültig)
+    llm.py                    LanguageModel-Protokoll
+    ollama.py                 OllamaModel: LanguageModel über die HTTP-API von Ollama
+    ollama_assistant.py       OllamaAssistant: Verlauf + Tool-Calling-Schleife
     tools.py                  ToolProvider-Protokoll + CompositeToolProvider
-    skills/                   Fähigkeiten des Assistenten (noch leer)
-  integrations/               externe Dienste als ToolProvider (noch leer)
+    skills/                   Fähigkeiten des Assistenten (Skill-Typ, noch keine)
+  integrations/               externe Dienste als ToolProvider
+    mcp_client.py             MCPToolProvider: Werkzeuge eines MCP-Servers (stdio)
   bridge/                     Verbindung Frontend ↔ Backend (muss nicht angepasst werden)
     function_registry.py      findet die Funktionen aus api.py
     web_bridge.py             Python-Seite der Brücke (QWebChannel)
@@ -142,6 +156,8 @@ Die beiden Seiten kennen sich nur über **drei Verträge**:
    | `chat(message)` | Text des Nutzers | `{"text": str, "html": str \| null}` – `html` ist die fertig gerenderte Ansicht, `null` = Ansicht beibehalten |
    | `render_view(request)` | Ansicht-Anfrage (siehe unten) | fertiges HTML fürs iframe |
    | `start_view()` | – | HTML der Startansicht |
+   | `list_models()` | – | `{"models": [{"name", "tools"}], "current": str \| null}` – leer ohne Sprachmodell |
+   | `select_model(name)` | Modellname | Name; Wahl bleibt gespeichert |
 
 2. **Ansicht-Anfragen:** Eine Ansicht wird immer auf eine von zwei Arten angefordert – vom
    Assistenten im Backend ebenso wie vom Frontend über `render_view(request)`:
@@ -345,10 +361,10 @@ sequenceDiagram
     Note over WB: kehrt sofort zurück,<br/>das Popup bleibt bedienbar
     T->>API: chat(message)
     API->>A: reply(message) mit dem kompletten Text
-    alt heute: CommandAssistant (Platzhalter)
-        A->>A: exakter Vergleich mit<br/>hilfe, uhrzeit, system, start
-    else später: Ollama-Assistent
-        A->>A: Sprachmodell versteht den Text und<br/>ruft per Tool-Calling Integrationen auf
+    alt fester Befehl (hilfe, uhrzeit, system, start, neu)
+        A->>A: direkt beantworten
+    else OllamaAssistant
+        A->>A: Sprachmodell versteht den Text und<br/>ruft per Tool-Calling MCP-Werkzeuge auf
     end
     A-->>API: AssistantReply(text, view)
     API->>P: present(reply)
@@ -364,9 +380,10 @@ sequenceDiagram
 
 Die Schritte 1–7 (hin) und 14–19 (zurück) sind reiner Transport: Der Text kommt **unverändert**
 im Assistenten an, und die Antwort geht unverändert zurück. Was mit dem Text passiert, entscheidet
-allein der Assistent (Schritt 8 bzw. 9). Der heutige `CommandAssistant` vergleicht nur exakt mit festen Befehlen.
-Der spätere Ollama-Assistent bekommt denselben Text, versteht ihn aber und wählt selbst die
-passenden Werkzeuge. Frontend, Brücke und `api.py` bleiben dabei unverändert.
+allein der Assistent (Schritt 8 bzw. 9). Feste Befehle werden exakt verglichen. Alles andere
+bekommt der `OllamaAssistant`: Das Modell versteht den Text und wählt selbst die passenden
+Werkzeuge. Eine Antwort des Modells dauert je nach Modell und Rechner einige Sekunden; solange
+zeigt der Chat „denkt nach …“.
 
 Dasselbe mit den Code-Stellen, Beispiel: Eingabe **„system“** und Enter.
 
@@ -488,22 +505,63 @@ Fehlermeldung kommt im Frontend als JavaScript-Fehler an.
   Assistent, ohne erben zu müssen. Geprüft wird die Struktur der Klasse (strukturelle
   Typisierung).
 
-### Heutiger Platzhalter – [commands.py](backend/assistant/commands.py)
+### Feste Befehle – [commands.py](backend/assistant/commands.py)
 
 `CommandAssistant` nutzt ein Wörterbuch `COMMANDS` aus Befehl → (Beschreibung, Funktion). Es
-gibt `hilfe`, `uhrzeit`, `system` und `start`. `hilfe` erzeugt seine Tabelle direkt aus
+gibt `hilfe`, `uhrzeit`, `system`, `start` und `neu`. `hilfe` erzeugt seine Tabelle direkt aus
 `COMMANDS` und ist dadurch immer aktuell. Die Wochentage stehen fest auf Deutsch, damit die
-Ausgabe nicht von der Spracheinstellung des Systems abhängt.
+Ausgabe nicht von der Spracheinstellung des Systems abhängt. Der `OllamaAssistant` beantwortet
+diese Befehle ebenfalls sofort, ohne das Modell zu fragen; `neu` leert dort zusätzlich den
+Gesprächsverlauf.
 
-### Anbindung Ollama – [llm.py](backend/assistant/llm.py)
+### Sprachmodell – [llm.py](backend/assistant/llm.py), [ollama.py](backend/assistant/ollama.py)
 
-Bisher nur Vertrag, keine Implementierung:
+Vertrag in `llm.py`:
 
-- `ChatMessage(role, content, tool_calls)` mit `role` aus `system`, `user`, `assistant` oder
-  `tool`, entsprechend dem Chat-Format von Ollama.
+- `ChatMessage(role, content, tool_calls, tool_name)` mit `role` aus `system`, `user`,
+  `assistant` oder `tool`, entsprechend dem Chat-Format von Ollama. `tool_name` sagt bei
+  `tool`-Nachrichten, zu welchem Werkzeug das Ergebnis gehört.
 - `ToolCall(name, arguments)`: Das Modell möchte ein Werkzeug aufrufen.
 - `ModelResponse(message)` mit `wants_tools`: ob das Modell Werkzeuge nutzen will.
 - `LanguageModel.chat(messages, tools) -> ModelResponse`.
+
+Umsetzung in `ollama.py` (nur Standardbibliothek, `urllib`):
+
+- `OllamaClient` schickt JSON an die HTTP-API (`config.OLLAMA_URL`, Standard
+  `http://localhost:11434`) und macht aus Verbindungs- und HTTP-Fehlern einen `OllamaError` mit
+  verständlicher Meldung.
+- `OllamaModel.chat` übersetzt Nachrichten und `ToolSpec`s ins Format von `POST /api/chat`
+  (`tools: [{"type": "function", "function": {name, description, parameters}}]`) und die
+  Antwort zurück in `ChatMessage`/`ToolCall`. Kann ein Modell kein Tool-Calling, fragt es
+  automatisch noch einmal ohne Werkzeuge.
+- `installed()` (`GET /api/tags`) und `available_models()` (zusätzlich `POST /api/show` →
+  `capabilities` enthält `"tools"`?) liefern die Modelle für die Auswahl im Popup.
+
+### Der KI-Assistent – [ollama_assistant.py](backend/assistant/ollama_assistant.py)
+
+```
+reply(message):
+  1. fester Befehl (hilfe, uhrzeit …)? → sofort beantworten
+  2. Modell bestimmen: config.OLLAMA_MODEL, sonst gespeicherte Wahl, sonst erstes installiertes
+  3. Nachricht an den Verlauf anhängen
+  4. model.chat([Systemanweisung, *Verlauf], alle Werkzeuge)
+  5. wants_tools? → für jeden ToolCall tools.call_tool(...)
+                   → Ergebnis als "tool"-Nachricht anhängen → zurück zu 4
+                   (höchstens ASSISTANT_MAX_TOOL_ROUNDS-mal, danach ohne Werkzeuge)
+  6. sonst: AssistantReply(Text, Tabelle der Werkzeugaufrufe oder None)
+```
+
+- Die **Systemanweisung** entsteht bei jeder Anfrage neu: Grundanweisung (Deutsch, kurz, keine
+  erfundenen Ergebnisse), aktuelles Datum mit Uhrzeit, Präferenzen aus dem `PreferenceStore` und
+  die Anweisungen aller Fähigkeiten.
+- **Fehler von Werkzeugen** (auch erfundene Werkzeugnamen) gehen als `"Fehler: …"` an das Modell
+  zurück, damit es reagieren kann. **Fehler von Ollama** (läuft nicht, Modell fehlt) werden zur
+  Antwort im Chat; die misslungene Runde verschwindet wieder aus dem Verlauf.
+- Der **Verlauf** wird auf `ASSISTANT_MAX_HISTORY` Nachrichten gekürzt, immer an einer
+  Nutzernachricht, damit keine `tool`-Nachricht ohne ihren Aufruf übrig bleibt.
+- **Modellwahl** (`ModelSelection` aus `base.py`): `available_models`, `current_model`,
+  `select_model`. Die Wahl landet als `ollama_model` im `JsonPreferenceStore`
+  (`%APPDATA%\PersonalDigitalAgent\preferences.json`).
 
 ### Werkzeuge und Integrationen – [tools.py](backend/assistant/tools.py)
 
@@ -512,7 +570,7 @@ Bisher nur Vertrag, keine Implementierung:
 - `ToolResult(content, is_error)`.
 - `ToolProvider` mit `list_tools()` und `call_tool(name, arguments)`. Das ist entweder eine
   eigene Integration in [backend/integrations/](backend/integrations/__init__.py) (z. B. Wetter)
-  oder ein MCP-Client, der die Tools eines MCP-Servers bereitstellt.
+  oder ein `MCPToolProvider`, der die Tools eines MCP-Servers bereitstellt (siehe unten).
 - `CompositeToolProvider([calendar, weather, ...])` bündelt mehrere Provider zu einem. Ein
   Assistent sieht so alle seine Werkzeuge über einen einzigen `ToolProvider`. Aufrufe gehen an
   den Provider, der das Werkzeug anbietet. Doppelte Namen werfen `DuplicateToolError`, unbekannte
@@ -520,21 +578,23 @@ Bisher nur Vertrag, keine Implementierung:
 
 ### Kontext und Sprache – [preferences.py](backend/preferences.py), [speech.py](backend/speech.py)
 
-Bisher nur Verträge, keine Implementierung:
-
 - `PreferenceStore` mit `get(key, default)`, `set(key, value)` und `all()` für Kontextwissen
-  und persönliche Präferenzen (Wohnort, Verkehrsmittel, Watchlist …). Bearbeitung „vorab per UI“
-  später über ein Template mit Formular und Funktionen in `api.py`.
-- `SpeechInput.listen() -> str` und `SpeechOutput.speak(text)`. Sprache läuft in Python, weil
+  und persönliche Präferenzen (Wohnort, Verkehrsmittel, Watchlist …). `JsonPreferenceStore`
+  speichert sie in `config.PREFERENCES_FILE`. Bearbeitung „vorab per UI“ später über ein
+  Template mit Formular und Funktionen in `api.py`.
+- Sprache, bisher nur Vertrag: `SpeechInput.listen() -> str` und `SpeechOutput.speak(text)`. Sprache läuft in Python, weil
   Qt WebEngine keine Spracherkennung mitbringt. Beide dürfen blockieren, denn Bridge-Aufrufe
   laufen im Hintergrund-Thread.
 
 ### Auswahl des Assistenten – [\_\_init\_\_.py](backend/assistant/__init__.py)
 
-`create_assistant()` liest `ASSISTANT_BACKEND` aus [config.py](backend/config.py) und erzeugt den
-passenden Assistenten aus `_BACKENDS` (Factory). [api.py](backend/api.py) hält mit `@cache` genau
-**einen** Assistenten für die ganze Laufzeit, sodass sich ein späterer KI-Assistent den
-Gesprächsverlauf merken kann.
+`create_assistant()` liest `ASSISTANT_BACKEND` aus [config.py](backend/config.py) (Standard
+`"ollama"`, per Umgebungsvariable `PDA_ASSISTANT_BACKEND=commands` umschaltbar) und erzeugt den
+passenden Assistenten aus `_BACKENDS` (Factory). Für `"ollama"` setzt `_ollama_assistant()` alles
+zusammen: `OllamaModel`, die MCP-Server aus `mcp_servers.json` plus die Werkzeuge aller
+Fähigkeiten in einem `CompositeToolProvider`, die Anweisungen der Fähigkeiten und den
+`JsonPreferenceStore`. [api.py](backend/api.py) hält mit `@cache` genau **einen** Assistenten für
+die ganze Laufzeit, sodass er sich den Gesprächsverlauf merkt.
 
 ### Tool-Calling und MCP
 
@@ -561,25 +621,89 @@ Im Code: `LanguageModel.chat(messages, tools)` und `ToolCall` (llm.py) sind die 
 Python-Code oder ein MCP-Client steckt, entscheidet ihr pro Integration – Modell und Assistent
 merken davon nichts.
 
-### So sieht der Assistent später aus
+### MCP-Client – [mcp_client.py](backend/integrations/mcp_client.py)
+
+`MCPToolProvider` erfüllt `ToolProvider` und spricht mit **einem** MCP-Server über **stdio**:
+Der Server läuft als Unterprozess, jede JSON-RPC-Nachricht ist eine Zeile auf stdin/stdout.
 
 ```
-OllamaAssistant (erfüllt Assistant, ersetzt den CommandAssistant)
-  ├─ model: LanguageModel        ← Ollama-Client
-  ├─ skills: morning, travel, organization   (backend/assistant/skills/)
-  │    je: CompositeToolProvider([...Integrationen]) + Anweisungen fürs Modell
-  └─ preferences: PreferenceStore
-reply(message):
-  1. Nachricht an den Verlauf anhängen (Präferenzen + Anweisungen der Fähigkeiten als Kontext)
-  2. model.chat(verlauf, Werkzeuge aller Fähigkeiten)
-     (zu viele für ein kleines Modell? → nur die der passenden Fähigkeit mitgeben)
-  3. wants_tools? → tool.call_tool(...) → Ergebnis als "tool"-Nachricht → zurück zu 2
-  4. sonst: AssistantReply(text, view) – auch eine Rückfrage ist eine normale Antwort
-autonom: Auslöser einer Fähigkeit (z. B. 7 Uhr Briefing) → presenter.push(reply)
+erster Zugriff:  Server starten → initialize → notifications/initialized
+list_tools():    tools/list (alle Seiten über nextCursor) → [ToolSpec], zwischengespeichert
+call_tool():     tools/call {name, arguments} → content[] als Text → ToolResult(text, isError)
 ```
 
-Zum Umstellen reichen ein Eintrag in `_BACKENDS` und eine Änderung an `ASSISTANT_BACKEND`.
-Frontend, Brücke und Popup bleiben unverändert (Open/Closed-Prinzip).
+- Ein Lese-Thread legt alles von stdout in eine Warteschlange; `_exchange` wartet darauf auf die
+  Antwort mit der passenden `id` (höchstens `timeout` Sekunden). Dazwischen beantwortet er
+  `ping` des Servers, lehnt andere Server-Anfragen ab und verwirft den Werkzeug-Zwischenspeicher
+  bei `notifications/tools/list_changed`. stderr des Servers landet im Log (DEBUG).
+- **Robust:** Startet ein Server nicht, liefert `list_tools()` eine leere Liste (Warnung im Log),
+  statt den ganzen Assistenten lahmzulegen. Stürzt er ab, wird er beim nächsten Zugriff neu
+  gestartet. Beim Beenden der App werden alle Server beendet (`atexit`).
+- Bewusst **ohne MCP-SDK**: Das SDK ist asynchron, die Bridge ruft aber synchron aus ihrem
+  Hintergrund-Thread auf. Server über HTTP (statt stdio) unterstützt der Client nicht.
+- `load_mcp_servers(path, base_dir)` liest [mcp_servers.json](mcp_servers.json) im Format von
+  Claude Desktop (`{"mcpServers": {name: {command, args, env}}}`, zusätzlich `cwd` und
+  `disabled`). `"python"` als `command` bedeutet: dasselbe Python wie das Programm.
+- [mcp_servers/pda_server.py](mcp_servers/pda_server.py) ist der eigene MCP-Server, geschrieben
+  mit dem offiziellen SDK (`mcp` 2.x, `MCPServer`; in 1.x hieß er `FastMCP`). Aus Name,
+  Beschreibung und Typ-Annotationen jeder `@mcp.tool()`-Funktion erzeugt das SDK das Werkzeug samt
+  JSON-Schema. Erwartete Fehler wirft man als `ToolError`: Ihr Text kommt als Ergebnis mit
+  `isError` beim Modell an. Andere Exceptions verbirgt das SDK. Weil es ein normaler MCP-Server ist, läuft er auch in anderen
+  MCP-Clients (Claude Desktop, VS Code, MCP Inspector über `mcp dev`).
+- **E-Mail** (`send_email`, Logik in [mailer.py](mcp_servers/mailer.py)): Versand per SMTP,
+  Zugangsdaten aus Umgebungsvariablen oder `mcp_servers/.env`. Der Assistent darf nur an
+  Adressen aus `PDA_MAIL_RECIPIENTS` schreiben. Das Modell entscheidet selbst über Tool-Aufrufe,
+  und eingeschleuster Text (z. B. aus einem Tool-Ergebnis) könnte es sonst an fremde Adressen
+  schreiben lassen. Die erlaubten Adressen stehen in der Werkzeugbeschreibung, damit das Modell
+  sie kennt.
+- **E-Mail lesen** (`list_emails`, `read_email`, Logik in [inbox.py](mcp_servers/inbox.py)): Abruf
+  per IMAP mit denselben Zugangsdaten (IMAP-Server aus dem SMTP-Server abgeleitet, abweichend über
+  `PDA_IMAP_*`). Der Ordner wird read-only geöffnet und mit `BODY.PEEK` gelesen, Mails bleiben also
+  ungelesen; Löschen oder Verschieben gibt es nicht. `list_emails` liefert eine Übersicht mit UIDs
+  (höchstens 25), `read_email` den Text einer Mail (HTML wird zu Text, gekürzt auf 8000 Zeichen,
+  dazu die Liste der Anhänge). Weil der Mailtext von Fremden stammt, ist er als Daten markiert und
+  die Werkzeugbeschreibung verbietet, Anweisungen daraus zu folgen. Verlassen darf man sich darauf
+  nicht – die eigentliche Sicherung bleibt die Freigabeliste von `send_email`.
+- **Anhänge** (`read_attachment`, Text aus [file_text.py](mcp_servers/file_text.py)): `read_email`
+  legt alle Anhänge (bis 25 MB) in `%APPDATA%/PersonalDigitalAgent/attachments/<Ordner>-<UID>/`
+  ab und gibt sie zusätzlich als MCP-`resource_link` (file://-URI) zurück; Ablagen älter als 7 Tage
+  werden aufgeräumt. `read_attachment(uid, index, part)` liest den Text eines Anhangs – PDF (pypdf,
+  höchstens 100 Seiten), Word/PowerPoint (ZIP + XML, Standardbibliothek), Excel (openpyxl), HTML,
+  weitergeleitete Mails, Textdateien – in Teilen zu 7000 Zeichen, damit jeder Teil in ein
+  Tool-Ergebnis passt. Bilder und eingescannte PDFs haben keinen Text, werden aber angehängt.
+  Dateinamen aus der Mail werden bereinigt (keine Pfadanteile, keine unter Windows verbotenen Namen).
+- **Dateien im Chat:** `MCPToolProvider` macht aus jedem `resource_link` ein `Attachment`
+  (`ToolResult.attachments`); das Modell sieht nur `[Datei im Chat angehängt: name]`. Der
+  `OllamaAssistant` sammelt die Anhänge einer Runde in `AssistantReply.attachments`. `present()`
+  meldet sie beim `AttachmentStore` ([backend/attachments.py](backend/attachments.py)) an: Der nimmt
+  nur Dateien aus `config.ATTACHMENT_DIR` an (ein anderer MCP-Server kann so keine beliebigen
+  Dateien anbieten) und gibt dem Frontend statt des Pfads eine zufällige ID. Im Chat erscheint
+  jede Datei mit „Öffnen“ (`api.open_attachment`, Standardprogramm) und „Speichern“
+  (`api.save_attachment`, Kopie in den Download-Ordner, nichts wird überschrieben). Ausführbare
+  Dateien und Office-Dateien mit Makros (`.exe`, `.js`, `.docm` …) lassen sich nur speichern.
+- [mcp_servers/demo_server.py](mcp_servers/demo_server.py) bietet dieselben Rechen- und
+  Uhrzeit-Werkzeuge ohne SDK. Er zeigt, wie wenig das Protokoll verlangt, ist in
+  `mcp_servers.json` abgeschaltet und dient als Gegenpart in den Tests.
+
+Werkzeugnamen müssen über alle Server eindeutig sein, sonst meldet der `CompositeToolProvider`
+einen `DuplicateToolError`.
+
+### Gesamtbild
+
+```
+OllamaAssistant (erfüllt Assistant + ModelSelection)
+  ├─ model: OllamaModel ──HTTP──► Ollama (lokal)
+  ├─ tools: CompositeToolProvider
+  │    ├─ MCPToolProvider "pda"  ──stdio──► mcp_servers/pda_server.py (SDK) ──SMTP/IMAP──► Mail
+  │    ├─ MCPToolProvider …      ──stdio──► weitere Server aus mcp_servers.json
+  │    └─ Werkzeuge der Fähigkeiten (skills/, noch keine)
+  └─ preferences: JsonPreferenceStore
+autonom (geplant): Auslöser einer Fähigkeit (z. B. 7 Uhr Briefing) → presenter.push(reply)
+```
+
+Sind es für ein kleines Modell zu viele Werkzeuge, kann der Assistent später je Anfrage nur die
+der passenden Fähigkeit mitgeben. Frontend, Brücke und Popup mussten für den KI-Assistenten nicht
+geändert werden, nur die Modellauswahl kam im Popup dazu (Open/Closed-Prinzip).
 [tests/assistant/test_assistant_interfaces.py](tests/assistant/test_assistant_interfaces.py) zeigt mit
 Beispiel-Implementierungen, dass die Schnittstellen erfüllbar sind und zusammenspielen.
 
@@ -625,9 +749,18 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_views` | Ansicht-Anfragen aus JSON, ungültige Anfragen |
 | `test_rendering` | Template-Auswahl, Standard-Template, eigenes HTML, Autoescaping, ungültige Namen |
 | `test_assistant_interfaces` | Ollama- und Tool-Verträge sind erfüllbar |
+| `test_ollama` | `OllamaModel`: JSON-Format von Ollama, Tool-Calls, Rückfall ohne Werkzeuge, HTTP-Fehler (ohne echtes Ollama) |
+| `test_ollama_assistant` | Tool-Schleife, Rundenbegrenzung, Verlauf, Fehler, Modellwahl (mit Attrappen) |
+| `test_mcp_client` | **Integration:** `MCPToolProvider` gegen den echten Demo-Server und Sonderfälle (Absturz, Timeout, ping, Seiten) |
+| `test_pda_server` | **Integration:** `MCPToolProvider` gegen den SDK-Server (übersprungen ohne `mcp`) |
+| `test_mailer` | Mail-Einstellungen, Freigabeliste, Versand (SMTP gemockt) |
+| `test_inbox` | Mails lesen: Einstellungen, Übersicht, Suche, HTML, Kürzen, read-only, Anhänge ablegen und in Teilen lesen, Dateinamen (IMAP nachgebaut) |
+| `test_file_text` | Text aus PDF, Word, PowerPoint, Excel, HTML, Mails, Textdateien; defekte Dateien, ZIP-Bomben (Testdateien im Test erzeugt) |
+| `test_attachments` | `AttachmentStore`: nur Dateien aus dem Anhang-Ordner, keine ausführbaren öffnen, Speichern ohne Überschreiben |
+| `test_demo_mcp_server`, `test_preferences` | Demo-Server direkt, `JsonPreferenceStore` |
 | `test_tools` | `CompositeToolProvider`: Bündeln, Weiterleiten, doppelte/unbekannte Werkzeuge |
 | `test_events` | `EventBus`: An- und Abmelden, defekte Handler, Aufruf aus anderem Thread |
-| `test_presenter` | Antwort → `{"text", "html"}`, `push()` |
+| `test_presenter` | Antwort → `{"text", "html", "attachments"}`, `push()` |
 | `test_interfaces` | Verträge für Präferenzen und Sprache sind erfüllbar |
 | `test_main`, `test_config`, `test_api` | Startlogik (mit Mocks), Dateien vorhanden, API |
 
@@ -670,10 +803,13 @@ Die Qt-Tests öffnen kurz echte Fenster, und während eines Laufs taucht kurz ei
 | Daten im iframe anzeigen | im Assistenten `TemplateView("default", {"title": ..., ...})` zurückgeben, im Frontend `await render_view({template: "default", data: {...}})` |
 | eigenes HTML anzeigen | `HtmlView("<...>")` bzw. `await render_view({html: "<...>"})` |
 | neues Template | `frontend/templates/<name>.html.j2` anlegen (Vorlage: `default.html.j2`, erwartete Daten oben als Kommentar), dann per `template: "<name>"` ansprechen |
-| Ollama anbinden | `LanguageModel` (`backend/assistant/llm.py`) implementieren |
-| neue Integration (z. B. Wetter) | Modul in `backend/integrations/` mit einer Klasse, die `ToolProvider` erfüllt (Konvention in der `__init__.py`) |
-| Fähigkeit umsetzen | Modul in `backend/assistant/skills/` mit Integrationen (`CompositeToolProvider`), Anweisungen fürs Modell und optional einem autonomen Auslöser (Konvention in der `__init__.py`) |
-| Ollama-Assistent einsetzen | `Assistant` mit `LanguageModel`, Fähigkeiten und `PreferenceStore` bauen, in `_BACKENDS` eintragen, `ASSISTANT_BACKEND` umstellen |
+| anderes Ollama-Modell | `ollama pull <modell>`, Programm neu starten, im Popup auswählen |
+| Verhalten des Modells ändern | `BASE_INSTRUCTIONS` in `backend/assistant/ollama_assistant.py`, Optionen (`temperature`, `num_ctx`) in `config.OLLAMA_OPTIONS` |
+| fertigen MCP-Server nutzen | Eintrag in `mcp_servers.json` (Format wie Claude Desktop) |
+| eigenes Werkzeug | Funktion mit `@mcp.tool()` in `mcp_servers/pda_server.py` (Docstring = Beschreibung fürs Modell) |
+| eigener weiterer MCP-Server | Python-Skript mit dem MCP-SDK nach dem Muster von `pda_server.py`, in `mcp_servers.json` eintragen |
+| neue Integration in Python (ohne MCP) | Modul in `backend/integrations/` mit einer Klasse, die `ToolProvider` erfüllt (Konvention in der `__init__.py`) |
+| Fähigkeit umsetzen | Modul in `backend/assistant/skills/` mit einem `Skill` (Integrationen, Anweisungen fürs Modell), in `SKILLS` eintragen; optional ein autonomer Auslöser |
 | Nachricht ohne Eingabe (autonom) | `presenter.push(AssistantReply(...))` aus beliebigem Thread |
 | eigenes Ereignis ans Frontend | Backend: `events.publish("name", {...})`, Frontend: `onPythonEvent("name", handler)` |
 | Präferenzen speichern | `PreferenceStore` (`backend/preferences.py`) implementieren, Einstellungs-UI als Template + Funktionen in `api.py` |

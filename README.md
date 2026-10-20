@@ -6,18 +6,62 @@ das Kontextmenü mit „Beenden“.
 
 Das Projekt ist die **Grundlage** für einen persönlichen KI-Assistenten mit lokalem
 Sprachmodell (Ollama). Er hat drei **Fähigkeiten**: Morning-Briefing, Weg zum nächsten Termin
-(Travel) und Organisation von Nachrichten und Terminen (im Projektplan „Assistant²“). Das Gerüst
-steht. Fähigkeiten und Integrationen sind noch nicht umgesetzt. Bis dahin antwortet ein
-Platzhalter-Assistent auf die Befehle `hilfe`, `uhrzeit`, `system` und `start`.
+(Travel) und Organisation von Nachrichten und Terminen (im Projektplan „Assistant²“). Der
+Assistent läuft mit einem lokalen Modell aus Ollama und nutzt Werkzeuge von **MCP-Servern**
+(eingetragen in [mcp_servers.json](mcp_servers.json)). Die Fähigkeiten selbst sind noch nicht
+umgesetzt. Feste Befehle wie `hilfe`, `uhrzeit`, `system`, `start` und `neu` funktionieren
+weiterhin ohne Modell.
 
 ## Starten
 
-```
-pip install -r requirements.txt
-python main.py
+1. [Ollama](https://ollama.com) installieren und starten, ein Modell mit Tool-Calling laden:
+   ```
+   ollama pull qwen3:8b        # oder llama3.1:8b, qwen2.5:7b; klein: llama3.2:3b
+   ```
+2. Programm starten:
+   ```
+   pip install -r requirements.txt
+   python main.py
+   ```
+3. Im Popup links neben dem Eingabefeld das Modell wählen (alle in Ollama installierten Modelle).
+
+Windows, Python 3.12. Ohne Ollama: `set PDA_ASSISTANT_BACKEND=commands` startet nur mit den
+festen Befehlen.
+
+### MCP-Server einbinden
+
+In [mcp_servers.json](mcp_servers.json) eintragen – dasselbe Format wie bei Claude Desktop, sodass
+sich Einträge aus den Anleitungen fertiger Server meist direkt übernehmen lassen:
+
+```json
+{
+  "mcpServers": {
+    "pda":        { "command": "python", "args": ["mcp_servers/pda_server.py"] },
+    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:/Users/me/Documents"] }
+  }
+}
 ```
 
-Windows, Python 3.12.
+Der eigene Server ist [mcp_servers/pda_server.py](mcp_servers/pda_server.py), geschrieben mit dem
+offiziellen MCP-SDK. Er bietet `get_current_time`, `calculate`, `send_email`, `list_emails`, `read_email` und
+`read_attachment`. Ein neues Tool
+ist dort eine Funktion mit `@mcp.tool()`. Mit `mcp dev mcp_servers/pda_server.py` lässt er sich
+ohne Assistent im Browser ausprobieren.
+
+**E-Mail:** `mcp_servers/.env.example` nach `mcp_servers/.env` kopieren und SMTP-Zugang sowie
+die erlaubten Empfänger (`PDA_MAIL_RECIPIENTS`) eintragen. Bei Gmail braucht ihr ein App-Passwort.
+Der Assistent kann nur an diese Adressen schreiben.
+Zum **Lesen** (IMAP) reicht das meist schon: Der IMAP-Server wird aus dem SMTP-Server abgeleitet
+(`smtp.gmail.com` → `imap.gmail.com`), Login und App-Passwort werden übernommen. Abweichend lässt
+sich alles mit `PDA_IMAP_HOST`, `PDA_IMAP_PORT`, `PDA_IMAP_USER`, `PDA_IMAP_PASSWORD` setzen. Der
+Zugriff ist nur lesend: Mails bleiben ungelesen und werden weder gelöscht noch verschoben.
+**Anhänge** erscheinen im Chat unter der Antwort und lassen sich dort öffnen oder in den
+Download-Ordner speichern. Den Text von PDF-, Word-, Excel-, PowerPoint- und Textdateien kann der
+Assistent lesen und zusammenfassen (dafür `pypdf` und `openpyxl` aus `requirements.txt`).
+
+Unterstützt werden Server über **stdio** (Unterprozess). `"python"` startet dasselbe Python, mit
+dem das Programm läuft; `"disabled": true` schaltet einen Eintrag ab. Nach Änderungen das
+Programm neu starten.
 
 ## Testen
 
@@ -38,7 +82,10 @@ Für die eigentliche Projektarbeit braucht ihr nur diese Stellen:
 | Fähigkeit des Assistenten (morning, travel, organization) | [backend/assistant/skills/](backend/assistant/skills/__init__.py) – Anleitung in der `__init__.py` |
 | Darstellung im Anzeigebereich | [frontend/templates/](frontend/templates/) – Vorlage: `default.html.j2` |
 | Funktion, die das Frontend aufrufen kann | [backend/api.py](backend/api.py) |
-| Ollama, Präferenzen, Sprache | Schnittstellen in [llm.py](backend/assistant/llm.py), [preferences.py](backend/preferences.py), [speech.py](backend/speech.py) implementieren |
+| eigenes Werkzeug (MCP) | [mcp_servers/pda_server.py](mcp_servers/pda_server.py) – Funktion mit `@mcp.tool()` |
+| fremder MCP-Server | [mcp_servers.json](mcp_servers.json) |
+| Verhalten des KI-Assistenten (Anweisungen, Tool-Schleife) | [backend/assistant/ollama_assistant.py](backend/assistant/ollama_assistant.py) |
+| Sprache | Schnittstelle in [speech.py](backend/speech.py) implementieren |
 
 Alles andere ist **Infrastruktur** und muss für neue Funktionen nicht angefasst werden:
 `backend/bridge/`, `backend/desktop/`, `rendering.py`, `presenter.py`, `events.py`, `views.py`.
