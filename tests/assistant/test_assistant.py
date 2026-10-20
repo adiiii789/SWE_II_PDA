@@ -2,7 +2,8 @@ import re
 import unittest
 
 from backend import config
-from backend.assistant import Assistant, create_assistant
+from backend.assistant import Assistant, ModelSelection, create_assistant
+from backend.assistant.ollama_assistant import OllamaAssistant
 from backend.assistant import commands
 from backend.assistant.commands import CommandAssistant
 from backend.rendering import ViewRenderer
@@ -56,6 +57,13 @@ class CreateAssistantTest(unittest.TestCase):
 
     def test_commands_backend(self):
         self.assertIsInstance(create_assistant("commands"), CommandAssistant)
+
+    def test_ollama_backend_uses_configured_mcp_servers(self):
+        # Erzeugen startet weder Ollama noch MCP-Server - das passiert erst bei Bedarf.
+        assistant = create_assistant("ollama")
+        self.assertIsInstance(assistant, OllamaAssistant)
+        self.assertIsInstance(assistant, ModelSelection)
+        self.assertEqual([p.name for p in assistant.tools._providers], ["pda"])   # "demo" ist abgeschaltet
 
     def test_unknown_backend_raises(self):
         with self.assertRaisesRegex(ValueError, "does_not_exist"):
