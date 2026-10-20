@@ -20,7 +20,7 @@ class CreatePopupTest(unittest.TestCase):
         self.assertIsInstance(popup.content, WebView)
         script = popup.content.page().scripts().findScript("python-bridge").sourceCode()
         self.assertTrue(callable(api.chat))
-        self.assertIn('["chat", "render_view", "start_view"]', script)
+        self.assertIn('["chat", "list_models", "open_attachment", "render_view", "save_attachment", "select_model", "start_view"]', script)
         expected = QUrl.fromLocalFile(str(config.POPUP_PAGE))
         self.assertTrue(wait_until(lambda: popup.content.url() == expected))
 
