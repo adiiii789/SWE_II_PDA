@@ -28,6 +28,22 @@ weiterhin ohne Modell.
 Windows, Python 3.12. Ohne Ollama: `set PDA_ASSISTANT_BACKEND=commands` startet nur mit den
 festen Befehlen.
 
+### Sprache
+
+Rechts neben dem Eingabefeld startet 🎤 die Spracheingabe, ein zweiter Klick sendet die Nachricht,
+**Escape** bricht ab. Antworten auf gesprochene Nachrichten werden vorgelesen (Escape stoppt das
+Vorlesen). Alles läuft lokal:
+
+- Spracherkennung: [faster-whisper](https://github.com/SYSTRAN/faster-whisper), Modell `small`
+  (≈ 480 MB)
+- Sprachausgabe: [Piper](https://github.com/OHF-Voice/piper1-gpl), Stimme `de_DE-pavoque-low`
+  (≈ 60 MB); geht Piper nicht, die eingebaute Windows-Stimme
+
+Modell und Stimme werden beim ersten Gebrauch nach `%APPDATA%\PersonalDigitalAgent\speech`
+geladen, die erste Aufnahme dauert deshalb länger. Andere Größen und Stimmen über
+`PDA_WHISPER_MODEL` (`tiny`, `base`, `medium` …), `PDA_PIPER_VOICE` und `PDA_SPEECH_LANGUAGE`
+(siehe [config.py](backend/config.py)).
+
 ### MCP-Server einbinden
 
 In [mcp_servers.json](mcp_servers.json) eintragen – dasselbe Format wie bei Claude Desktop, sodass
@@ -85,7 +101,7 @@ Für die eigentliche Projektarbeit braucht ihr nur diese Stellen:
 | eigenes Werkzeug (MCP) | [mcp_servers/pda_server.py](mcp_servers/pda_server.py) – Funktion mit `@mcp.tool()` |
 | fremder MCP-Server | [mcp_servers.json](mcp_servers.json) |
 | Verhalten des KI-Assistenten (Anweisungen, Tool-Schleife) | [backend/assistant/ollama_assistant.py](backend/assistant/ollama_assistant.py) |
-| Sprache | Schnittstelle in [speech.py](backend/speech.py) implementieren |
+| Sprache (Erkennung, Vorlesen) | [backend/speech.py](backend/speech.py) |
 
 Alles andere ist **Infrastruktur** und muss für neue Funktionen nicht angefasst werden:
 `backend/bridge/`, `backend/desktop/`, `rendering.py`, `presenter.py`, `events.py`, `views.py`.

@@ -43,6 +43,44 @@ class ModelSelectionApiTest(unittest.TestCase):
         self.assertEqual(fake.selected, "a")
 
 
+class SpeechApiTest(unittest.TestCase):
+    def setUp(self):
+        self.speech_input, self.speech_output = mock.Mock(), mock.Mock()
+        self.speech_input.stop.return_value = "Hallo"
+        for name, value in (("_speech_input", self.speech_input), ("_speech_output", self.speech_output)):
+            patcher = mock.patch.object(api, name, return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_speech_support(self):
+        self.assertEqual(api.speech_support(), {"input": True, "output": True})
+
+    def test_recording_stops_speaking_first(self):
+        api.start_recording()
+        self.speech_output.stop.assert_called_once()
+        self.speech_input.start.assert_called_once()
+        self.assertEqual(api.stop_recording(), "Hallo")
+        api.cancel_recording()
+        self.speech_input.cancel.assert_called_once()
+
+    def test_speak_and_stop(self):
+        api.speak("Hallo")
+        self.speech_output.speak.assert_called_once_with("Hallo")
+        api.stop_speaking()
+        self.speech_output.stop.assert_called_once()
+
+    def test_without_speech_packages(self):
+        with mock.patch.object(api, "_speech_input", return_value=None), \
+                mock.patch.object(api, "_speech_output", return_value=None):
+            self.assertEqual(api.speech_support(), {"input": False, "output": False})
+            api.cancel_recording()   # nichts zu tun - kein Fehler
+            api.stop_speaking()
+            with self.assertRaisesRegex(RuntimeError, "Spracheingabe"):
+                api.start_recording()
+            with self.assertRaisesRegex(RuntimeError, "Sprachausgabe"):
+                api.speak("Hallo")
+
+
 class RenderViewTest(unittest.TestCase):
     def test_template_request(self):
         html = api.render_view({"template": "default", "data": {"title": "Hallo", "text": "Welt"}})

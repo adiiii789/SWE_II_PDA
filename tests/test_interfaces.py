@@ -21,8 +21,12 @@ class InMemoryPreferences:
 
 
 class FakeMicrophone:
-    def listen(self):
+    def start(self): ...
+
+    def stop(self):
         return "Wie wird das Wetter?"
+
+    def cancel(self): ...
 
 
 class FakeSpeaker:
@@ -31,6 +35,8 @@ class FakeSpeaker:
 
     def speak(self, text):
         self.spoken.append(text)
+
+    def stop(self): ...
 
 
 class PreferenceStoreTest(unittest.TestCase):
@@ -50,9 +56,10 @@ class SpeechTest(unittest.TestCase):
         self.assertIsInstance(FakeMicrophone(), SpeechInput)
         self.assertIsInstance(FakeSpeaker(), SpeechOutput)
 
-    def test_listen_and_speak(self):
-        speaker = FakeSpeaker()
-        speaker.speak(FakeMicrophone().listen())
+    def test_record_and_speak(self):
+        speaker, microphone = FakeSpeaker(), FakeMicrophone()
+        microphone.start()
+        speaker.speak(microphone.stop())
         self.assertEqual(speaker.spoken, ["Wie wird das Wetter?"])
 
     def test_unrelated_object_does_not_satisfy_protocols(self):

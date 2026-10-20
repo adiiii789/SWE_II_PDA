@@ -14,6 +14,7 @@ from typing import Any
 
 from backend.assistant import Assistant, ModelSelection, create_assistant
 from backend.presenter import attachment_store, present, renderer
+from backend.speech import SpeechInput, SpeechOutput, create_speech_input, create_speech_output
 from backend.views import START_VIEW, view_from_dict
 
 
@@ -68,3 +69,52 @@ def open_attachment(attachment_id: str) -> str:
 def save_attachment(attachment_id: str) -> str:
     """Datei aus dem Chat in den Download-Ordner kopieren. Gibt den Zielpfad zurück."""
     return attachment_store().save(attachment_id)
+
+
+@cache
+def _speech_input() -> SpeechInput | None:
+    return create_speech_input()
+
+
+@cache
+def _speech_output() -> SpeechOutput | None:
+    return create_speech_output()
+
+
+def speech_support() -> dict[str, bool]:
+    """Welche Sprachfunktionen da sind: {"input": bool, "output": bool} - fehlende blendet das Frontend aus."""
+    return {"input": _speech_input() is not None, "output": _speech_output() is not None}
+
+
+def start_recording() -> None:
+    """Spracheingabe starten (unterbricht das Vorlesen, damit das Mikrofon es nicht aufnimmt)."""
+    stop_speaking()
+    _require(_speech_input(), "Spracheingabe").start()
+
+
+def stop_recording() -> str:
+    """Spracheingabe beenden; gibt den erkannten Text zurück (leer, wenn nichts erkannt wurde)."""
+    return _require(_speech_input(), "Spracheingabe").stop()
+
+
+def cancel_recording() -> None:
+    """Spracheingabe verwerfen."""
+    if (speech_input := _speech_input()) is not None:
+        speech_input.cancel()
+
+
+def speak(text: str) -> None:
+    """Text vorlesen; kehrt sofort zurück."""
+    _require(_speech_output(), "Sprachausgabe").speak(text)
+
+
+def stop_speaking() -> None:
+    """Vorlesen abbrechen."""
+    if (speech_output := _speech_output()) is not None:
+        speech_output.stop()
+
+
+def _require(component: Any, name: str) -> Any:
+    if component is None:
+        raise RuntimeError(f"{name} nicht verfügbar - Pakete aus requirements.txt installiert?")
+    return component

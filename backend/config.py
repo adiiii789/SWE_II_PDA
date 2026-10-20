@@ -38,6 +38,12 @@ PREFERENCES_FILE = APP_DATA_DIR / "preferences.json"
 ATTACHMENT_DIR = Path(os.environ.get("PDA_ATTACHMENT_DIR") or APP_DATA_DIR / "attachments")
 DOWNLOAD_DIR = Path.home() / "Downloads"   # Ziel von "Speichern"
 
+# Sprache (backend/speech.py) - alles lokal; Modelle werden beim ersten Gebrauch hierhin geladen
+SPEECH_DIR = APP_DATA_DIR / "speech"
+SPEECH_LANGUAGE = os.environ.get("PDA_SPEECH_LANGUAGE", "de")         # leer = Whisper erkennt die Sprache
+WHISPER_MODEL = os.environ.get("PDA_WHISPER_MODEL", "small")          # tiny, base, small, medium …
+PIPER_VOICE = os.environ.get("PDA_PIPER_VOICE", "de_DE-pavoque-low")
+
 POPUP_PAGE = FRONTEND_DIR / "popup.html"
 POPUP_SIZE_RATIO = (0.3, 0.6)         # Anteil des Bildschirms (Breite, Höhe)
 POPUP_BACKGROUND = "#2E2E2E"          # identisch mit --background in frontend/theme.css

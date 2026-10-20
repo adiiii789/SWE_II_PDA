@@ -5,11 +5,15 @@ import ctypes
 import logging
 import sys
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication
+from backend.speech import load_before_qt
 
-from backend import config
-from backend.desktop.application import Application
+load_before_qt()   # muss vor PyQt5 passieren, siehe backend/speech.py
+
+from PyQt5.QtCore import Qt  # noqa: E402
+from PyQt5.QtWidgets import QApplication  # noqa: E402
+
+from backend import config  # noqa: E402
+from backend.desktop.application import Application  # noqa: E402
 
 
 def configure_qt() -> None:

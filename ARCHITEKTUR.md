@@ -59,7 +59,7 @@ Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen P
 | Lokales Sprachmodell (Ollama) | `OllamaModel` in `backend/assistant/ollama.py`, `OllamaAssistant` in `ollama_assistant.py` | fertig, Modellwahl im Popup |
 | Autonom (z. B. Briefing ohne Eingabe) | `backend/events.py`, `presenter.push(reply)` → Nachricht im Chat | Push-Kanal fertig |
 | Kontextwissen, Präferenzen per UI | `PreferenceStore` / `JsonPreferenceStore` in `backend/preferences.py` | Speicherung fertig, UI offen |
-| Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` | Schnittstelle |
+| Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` (faster-whisper, Piper bzw. Windows-Stimme) | fertig, Mikrofon-Knopf im Chat |
 | Kurze Antworten, Rückfragen | `Assistant.reply()`; der Assistent hält den Gesprächsverlauf | über das Protokoll möglich |
 | Langsame Aufrufe (Modell, APIs) | Bridge führt Aufrufe im Hintergrund-Thread aus | fertig |
 | PyTest | `pytest.ini`, `requirements-dev.txt` | eingerichtet |
@@ -98,7 +98,7 @@ backend/                      BACKEND: läuft in Python
   views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
   rendering.py                macht aus einer Anfrage HTML (Jinja2 bzw. eigenes HTML)
   preferences.py              Kontextwissen, persönliche Präferenzen (JsonPreferenceStore)
-  speech.py                   Schnittstelle: Spracheingabe und -ausgabe
+  speech.py                   Spracheingabe (faster-whisper) und -ausgabe (Piper/Windows-Stimme)
   assistant/                  Fachlogik: Assistent hinter dem Chat
     base.py                   Assistant-Protokoll, AssistantReply, ModelSelection
     commands.py               CommandAssistant (feste Befehle, auch im KI-Assistenten gültig)
@@ -158,6 +158,9 @@ Die beiden Seiten kennen sich nur über **drei Verträge**:
    | `start_view()` | – | HTML der Startansicht |
    | `list_models()` | – | `{"models": [{"name", "tools"}], "current": str \| null}` – leer ohne Sprachmodell |
    | `select_model(name)` | Modellname | Name; Wahl bleibt gespeichert |
+   | `speech_support()` | – | `{"input": bool, "output": bool}` – was an Sprache verfügbar ist |
+   | `start_recording()` / `stop_recording()` / `cancel_recording()` | – | `stop_recording` liefert den erkannten Text |
+   | `speak(text)` / `stop_speaking()` | Text | – (kehrt sofort zurück) |
 
 2. **Ansicht-Anfragen:** Eine Ansicht wird immer auf eine von zwei Arten angefordert – vom
    Assistenten im Backend ebenso wie vom Frontend über `render_view(request)`:
