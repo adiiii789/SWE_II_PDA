@@ -1,10 +1,15 @@
 """Ende-zu-Ende: echte Popup-Seite, echter Chat, gerenderte Ansicht im iframe wechselt."""
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from tests.qt_helpers import qt_app, run_js, wait_until
 
-from backend import presenter
+from backend import api, presenter
 from backend.assistant import AssistantReply
+from backend.assistant.tools import Attachment
+from backend.attachments import AttachmentStore
 from backend.desktop.application import create_popup
 from backend.views import TemplateView
 
@@ -13,7 +18,13 @@ SEND = """
   document.getElementById("input-form").requestSubmit();
 """
 MESSAGES = "Array.from(document.querySelectorAll('.message')).map(e => e.className + ':' + e.textContent)"
-IFRAME_HTML = "document.getElementById('view-frame').srcdoc"
+ATTACHMENTS = """Array.from(document.querySelectorAll('.attachment')).map(row =>
+  row.querySelector('.attachment-name').textContent + '|' + row.querySelector('.attachment-size').textContent
+  + '|' + Array.from(row.querySelectorAll('button')).map(b => b.textContent).join(',')
+  + (row.querySelector('.attachment-name b') ? '|HTML!' : ''))"""
+CLICK = """Array.from(document.querySelectorAll('.attachment')).pop()
+  .querySelectorAll('button').forEach(b => { if (b.textContent === %r) b.click(); });"""
+IFRAME_HTML ="document.getElementById('view-frame').srcdoc"
 IFRAME_SANDBOX = "document.getElementById('view-frame').getAttribute('sandbox')"
 
 
@@ -77,6 +88,29 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(wait_until(lambda: len(run_js(self.page, MESSAGES)) == count + 1))
         self.assertEqual(run_js(self.page, MESSAGES)[-1], "message assistant:Guten Morgen!")
         self.assertTrue(wait_until(lambda: "<h2>Briefing</h2>" in run_js(self.page, IFRAME_HTML)))
+
+    def test_attachments_can_be_opened_and_saved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base, downloads = Path(tmp) / "anhaenge", Path(tmp) / "Downloads"
+            base.mkdir()
+            (base / "plan.pdf").write_bytes(b"PDF")
+            store = AttachmentStore(base, downloads, opener=mock.Mock())
+            # Name wie aus einer fremden Mail: darf nicht als HTML im Chat landen
+            reply = AssistantReply("Hier ist der Anhang", attachments=(
+                Attachment("<b>plan</b>.pdf", (base / "plan.pdf").as_uri()),))
+            with mock.patch.object(presenter, "attachment_store", return_value=store), \
+                    mock.patch.object(api, "attachment_store", return_value=store):
+                presenter.push(reply)
+                self.assertTrue(wait_until(lambda: run_js(self.page, ATTACHMENTS)))
+                self.assertEqual(run_js(self.page, ATTACHMENTS)[-1], "📎 <b>plan</b>.pdf|3 B|Öffnen,Speichern")
+
+                run_js(self.page, CLICK % "Öffnen")
+                self.assertTrue(wait_until(lambda: store.opener.called))
+                store.opener.assert_called_once_with((base / "plan.pdf").resolve())
+
+                run_js(self.page, CLICK % "Speichern")
+                self.assertTrue(wait_until(lambda: "Gespeichert unter" in run_js(self.page, MESSAGES)[-1]))
+                self.assertEqual((downloads / "plan.pdf").read_bytes(), b"PDF")
 
     def test_iframe_is_sandboxed_without_same_origin(self):
         self.assertEqual(run_js(self.page, IFRAME_SANDBOX), "allow-scripts")
