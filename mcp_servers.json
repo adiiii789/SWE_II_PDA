@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "pda": {
+      "command": "python",
+      "args": ["mcp_servers/pda_server.py"]
+    },
+    "demo": {
+      "command": "python",
+      "args": ["mcp_servers/demo_server.py"],
+      "disabled": true
+    }
+  }
+}
