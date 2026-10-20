@@ -46,10 +46,31 @@ body {
 .message.assistant { align-self: flex-start; background: var(--surface); }
 .message.error     { align-self: flex-start; background: #6A3A3A; }
 
-#input-form { display: flex; gap: 6px; }
-#message-input { flex: 1; }
+/* Dateien unter einer Antwort (z. B. Mail-Anhänge) */
+.attachments { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; white-space: normal; }
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+}
+.attachment-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-size { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.attachment button { padding: 2px 8px; font-size: 12px; }
+button:disabled { opacity: 0.5; cursor: default; }
 
-input, button {
+/* "denkt nach …" während das Sprachmodell rechnet (bewusst keine .message) */
+.pending { align-self: flex-start; padding: 6px 10px; opacity: 0.6; font-style: italic; }
+
+#input-form { display: flex; gap: 6px; }
+#message-input { flex: 1; min-width: 0; }
+#model-select { max-width: 35%; }
+[hidden] { display: none !important; }
+
+input, button, select {
   font: inherit;
   color: inherit;
   background: var(--control);
