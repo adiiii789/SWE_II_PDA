@@ -25,8 +25,17 @@ Assistent läuft mit einem lokalen Modell aus Ollama und nutzt Werkzeuge von **M
    ```
 3. Im Popup links neben dem Eingabefeld das Modell wählen (alle in Ollama installierten Modelle).
 
-Windows, Python 3.12. Ohne Ollama: `set PDA_ASSISTANT_BACKEND=commands` startet nur mit den
-festen Befehlen.
+Windows, Python 3.12. Ohne Ollama: `PDA_ASSISTANT_BACKEND=commands` (in der `.env` oder als
+Umgebungsvariable) startet nur mit den festen Befehlen.
+
+### Keys und Zugangsdaten (`.env`)
+
+Alle API-Keys und Zugangsdaten stehen in **einer** Datei `.env` im Projektordner:
+[.env.example](.env.example) nach `.env` kopieren und ausfüllen. Die `.env` steht in
+`.gitignore` und wird nicht eingecheckt. Gelesen wird sie von [backend/config.py](backend/config.py)
+(App, Reise-Assistent) und von den Mail-Werkzeugen in `mcp_servers/`. Gesetzte
+Umgebungsvariablen haben Vorrang vor der Datei. Nach einer Änderung die App neu starten;
+Mail-Einstellungen wirken sofort.
 
 ### Reise-Assistent
 
@@ -42,10 +51,10 @@ Einrichtung – ohne Key fällt nur der betroffene Teil weg:
 
 | Was | Wofür | Einrichtung |
 |---|---|---|
-| openrouteservice (Pflicht) | Adressen, Routen und Fahrzeiten für Auto, Taxi, Fahrrad, zu Fuß | kostenloser Key: [openrouteservice.org](https://openrouteservice.org/dev/#/signup) → `setx PDA_ORS_KEY …` |
-| DB API Marketplace | Bahn (Fahrplan) | kostenlos: [developers.deutschebahn.com](https://developers.deutschebahn.com) → Anwendung anlegen, API „Timetables“ abonnieren → `setx PDA_DB_CLIENT_ID …` und `setx PDA_DB_API_KEY …` |
+| openrouteservice (Pflicht) | Adressen, Routen und Fahrzeiten für Auto, Taxi, Fahrrad, zu Fuß | kostenloser Key: [openrouteservice.org](https://openrouteservice.org/dev/#/signup) → `PDA_ORS_KEY` in der `.env` |
+| DB API Marketplace | Bahn (Fahrplan) | kostenlos: [developers.deutschebahn.com](https://developers.deutschebahn.com) → Anwendung anlegen, API „Timetables“ abonnieren → `PDA_DB_CLIENT_ID` und `PDA_DB_API_KEY` in der `.env` |
 | Google Calendar | Termine | „Google Calendar API“ aktivieren, OAuth-Client „Desktop-App“ anlegen, JSON als `%APPDATA%\PersonalDigitalAgent\google\credentials.json` speichern. Beim ersten Zugriff öffnet sich der Browser zur Anmeldung. |
-| Tankerkönig | aktuelle Spritpreise (sonst 1,80 €/l) | kostenloser Key: [creativecommons.tankerkoenig.de](https://creativecommons.tankerkoenig.de) → `setx PDA_TANKERKOENIG_KEY …` |
+| Tankerkönig | aktuelle Spritpreise (sonst 1,80 €/l) | kostenloser Key: [creativecommons.tankerkoenig.de](https://creativecommons.tankerkoenig.de) → `PDA_TANKERKOENIG_KEY` in der `.env` |
 Alle Dienste sind kostenlos. **Grenzen:** openrouteservice kennt keinen Echtzeit-Verkehr; die
 Autofahrzeit wird deshalb mit `travel_car_time_factor` (Standard 1,15) aufgeschlagen. Die
 DB-Timetables-API liefert nur Abfahrtstafeln, keine Verbindungssuche. Der Assistent findet daraus
@@ -80,7 +89,7 @@ offiziellen MCP-SDK. Er bietet `get_current_time`, `calculate`, `send_email`, `l
 ist dort eine Funktion mit `@mcp.tool()`. Mit `mcp dev mcp_servers/pda_server.py` lässt er sich
 ohne Assistent im Browser ausprobieren.
 
-**E-Mail:** `mcp_servers/.env.example` nach `mcp_servers/.env` kopieren und SMTP-Zugang sowie
+**E-Mail:** In der `.env` (siehe oben) SMTP-Zugang sowie
 die erlaubten Empfänger (`PDA_MAIL_RECIPIENTS`) eintragen. Bei Gmail braucht ihr ein App-Passwort.
 Der Assistent kann nur an diese Adressen schreiben.
 Zum **Lesen** (IMAP) reicht das meist schon: Der IMAP-Server wird aus dem SMTP-Server abgeleitet

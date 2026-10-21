@@ -73,13 +73,13 @@ Die Konventionen für Fähigkeiten und Integrationen stehen jeweils in der `__in
 ```
 main.py                       Einstiegspunkt – startet das Programm
 mcp_servers.json              MCP-Server, deren Werkzeuge der Assistent nutzt
+.env.example                  Vorlage für .env: API-Keys und Zugangsdaten (.env wird nicht eingecheckt)
 mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von backend/)
   pda_server.py               Server mit offiziellem SDK: Uhrzeit, Rechnen, E-Mail senden und lesen
   basic_tools.py              Uhrzeit und Rechnen (ohne Abhängigkeiten)
   mailer.py                   E-Mail per SMTP, nur an freigegebene Empfänger
   inbox.py                    E-Mail und Anhänge lesen per IMAP, nur lesend
   file_text.py                Text aus PDF, Word, Excel, PowerPoint, HTML, Textdateien
-  .env.example                Vorlage für die Mail-Einstellungen (.env wird nicht eingecheckt)
   demo_server.py              Server ohne SDK: zeigt das Protokoll, Gegenpart in den Tests
 
 frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
@@ -661,7 +661,7 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   `isError` beim Modell an. Andere Exceptions verbirgt das SDK. Weil es ein normaler MCP-Server ist, läuft er auch in anderen
   MCP-Clients (Claude Desktop, VS Code, MCP Inspector über `mcp dev`).
 - **E-Mail** (`send_email`, Logik in [mailer.py](mcp_servers/mailer.py)): Versand per SMTP,
-  Zugangsdaten aus Umgebungsvariablen oder `mcp_servers/.env`. Der Assistent darf nur an
+  Zugangsdaten aus Umgebungsvariablen oder der `.env` im Projektordner. Der Assistent darf nur an
   Adressen aus `PDA_MAIL_RECIPIENTS` schreiben. Das Modell entscheidet selbst über Tool-Aufrufe,
   und eingeschleuster Text (z. B. aus einem Tool-Ergebnis) könnte es sonst an fremde Adressen
   schreiben lassen. Die erlaubten Adressen stehen in der Werkzeugbeschreibung, damit das Modell
@@ -724,6 +724,11 @@ Beispiel-Implementierungen, dass die Schnittstellen erfüllbar sind und zusammen
 
 Alle Einstellungen stehen in [backend/config.py](backend/config.py): Pfade, Name, Icon, Popup-Größe,
 Farbe, Animationsdauer und das Assistant-Backend.
+
+- API-Keys und Zugangsdaten stehen nicht im Code, sondern in der `.env` im Projektordner
+  (Vorlage [.env.example](.env.example), nicht eingecheckt) oder in Umgebungsvariablen, die
+  Vorrang haben. `config.py` liest beides in `_ENV`, lässt `os.environ` aber unverändert: Die
+  MCP-Server lesen dieselbe Datei selbst (`mcp_servers/mailer.py`), bei jedem Aufruf neu.
 
 - `ROOT_DIR` wird aus dem Ort der Datei berechnet, nicht aus dem aktuellen Arbeitsordner. Das
   Programm funktioniert deshalb unabhängig davon, von wo es gestartet wird.

@@ -14,13 +14,34 @@ APP_NAME = "Personal Digital Agent"
 APP_USER_MODEL_ID = "swe2.personaldigitalagent.1.0"
 TRAY_ICON = ROOT_DIR / "TrayIcon.ico"
 
+
+def read_env_file(path: Path) -> dict[str, str]:
+    """KEY=VALUE pro Zeile; leere Zeilen und # Kommentare werden ignoriert.
+    Gegenstück für die MCP-Server: mcp_servers/mailer.py (eigene Prozesse, importieren backend nicht)."""
+    if not path.exists():
+        return {}
+    values = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+# Keys und Zugangsdaten: Umgebungsvariablen oder die .env im Projektordner (Vorlage: .env.example).
+# Umgebungsvariablen haben Vorrang. os.environ bleibt unverändert, damit die MCP-Server die .env
+# selbst lesen - Änderungen an den Mail-Einstellungen wirken dort ohne Neustart.
+ENV_FILE = ROOT_DIR / ".env"
+_ENV = {**read_env_file(ENV_FILE), **os.environ}
+
 # "ollama" (lokales Sprachmodell + MCP-Werkzeuge) oder "commands" (feste Befehle, ohne KI).
 # Siehe backend/assistant/__init__.py (_BACKENDS). Die Tests setzen "commands" (tests/conftest.py).
-ASSISTANT_BACKEND = os.environ.get("PDA_ASSISTANT_BACKEND", "ollama")
+ASSISTANT_BACKEND = _ENV.get("PDA_ASSISTANT_BACKEND", "ollama")
 
 # Ollama (backend/assistant/ollama.py)
-OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("PDA_OLLAMA_MODEL", "")   # leer = zuletzt gewähltes bzw. erstes installiertes
+OLLAMA_URL = _ENV.get("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_MODEL = _ENV.get("PDA_OLLAMA_MODEL", "")   # leer = zuletzt gewähltes bzw. erstes installiertes
 OLLAMA_TIMEOUT_S = 300                # Laden eines großen Modells kann dauern
 OLLAMA_OPTIONS: dict = {}             # z. B. {"temperature": 0.2, "num_ctx": 8192}
 ASSISTANT_MAX_TOOL_ROUNDS = 5         # Werkzeug-Runden pro Nachricht, gegen Endlosschleifen
@@ -35,16 +56,16 @@ PREFERENCES_FILE = APP_DATA_DIR / "preferences.json"
 
 # Dateien im Chat (backend/attachments.py). Nur Dateien in ATTACHMENT_DIR lassen sich öffnen;
 # derselbe Ordner, in den mcp_servers/inbox.py Mail-Anhänge ablegt.
-ATTACHMENT_DIR = Path(os.environ.get("PDA_ATTACHMENT_DIR") or APP_DATA_DIR / "attachments")
+ATTACHMENT_DIR = Path(_ENV.get("PDA_ATTACHMENT_DIR") or APP_DATA_DIR / "attachments")
 DOWNLOAD_DIR = Path.home() / "Downloads"   # Ziel von "Speichern"
 
 # Reise-Assistent (backend/assistant/skills/travel/). Ohne Key fällt der jeweilige Teil weg;
 # Einrichtung siehe README. Persönliche Werte (Zeitwert, Verbrauch …) stehen in den Präferenzen.
 GOOGLE_DIR = APP_DATA_DIR / "google"                    # credentials.json (OAuth-Client) und token.json
-ORS_KEY = os.environ.get("PDA_ORS_KEY", "")                      # openrouteservice: Adressen, Routen
-DB_CLIENT_ID = os.environ.get("PDA_DB_CLIENT_ID", "")            # DB API Marketplace (Timetables)
-DB_API_KEY = os.environ.get("PDA_DB_API_KEY", "")
-TANKERKOENIG_KEY = os.environ.get("PDA_TANKERKOENIG_KEY", "")    # Spritpreise
+ORS_KEY = _ENV.get("PDA_ORS_KEY", "")                      # openrouteservice: Adressen, Routen
+DB_CLIENT_ID = _ENV.get("PDA_DB_CLIENT_ID", "")            # DB API Marketplace (Timetables)
+DB_API_KEY = _ENV.get("PDA_DB_API_KEY", "")
+TANKERKOENIG_KEY = _ENV.get("PDA_TANKERKOENIG_KEY", "")    # Spritpreise
 HTTP_TIMEOUT_S = 20
 TRAVEL_REMINDER_MINUTES = 15          # Erinnerung so lange vor der empfohlenen Abfahrt
 TRAVEL_CHECK_INTERVAL_S = 300         # so oft schaut die Erinnerung in den Kalender
