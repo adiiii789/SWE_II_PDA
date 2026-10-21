@@ -33,29 +33,31 @@ festen Befehlen.
 „Wie komme ich zum nächsten Termin?“ – oder der feste Befehl `reise`. Der Assistent nimmt den
 nächsten Termin mit Ort aus Google Calendar. Start ist der Ort des vorigen Termins, beim ersten
 Termin des Tages die Heimatadresse (fragt der Assistent beim ersten Mal ab). Verglichen werden
-Auto, Bahn/ÖPNV, Flugzeug, Taxi, Fahrrad und zu Fuß; empfohlen wird das Verkehrsmittel mit den
+Auto, Bahn, Taxi, Fahrrad und zu Fuß; empfohlen wird das Verkehrsmittel mit den
 geringsten **Kosten = Preis + Reisezeit × Zeitwert** (Standard 25 €/h) – Zeit zählt also mit.
-Die Ansicht zeigt Empfehlung, Alternativen, Wegbeschreibung und eine Karte. 15 Minuten vor der
+Die Ansicht zeigt Empfehlung, Alternativen, Wegbeschreibung und eine Skizze der Route. 15 Minuten vor der
 empfohlenen Abfahrt kommt eine Erinnerung in den Chat.
 
 Einrichtung – ohne Key fällt nur der betroffene Teil weg:
 
 | Was | Wofür | Einrichtung |
 |---|---|---|
-| Google Maps (Pflicht) | Adressen, Routen, Fahrzeiten | Google Cloud Console: „Geocoding API“ und „Routes API“ aktivieren, API-Key anlegen → `setx PDA_GOOGLE_MAPS_KEY …` |
+| openrouteservice (Pflicht) | Adressen, Routen und Fahrzeiten für Auto, Taxi, Fahrrad, zu Fuß | kostenloser Key: [openrouteservice.org](https://openrouteservice.org/dev/#/signup) → `setx PDA_ORS_KEY …` |
+| DB API Marketplace | Bahn (Fahrplan) | kostenlos: [developers.deutschebahn.com](https://developers.deutschebahn.com) → Anwendung anlegen, API „Timetables“ abonnieren → `setx PDA_DB_CLIENT_ID …` und `setx PDA_DB_API_KEY …` |
 | Google Calendar | Termine | „Google Calendar API“ aktivieren, OAuth-Client „Desktop-App“ anlegen, JSON als `%APPDATA%\PersonalDigitalAgent\google\credentials.json` speichern. Beim ersten Zugriff öffnet sich der Browser zur Anmeldung. |
 | Tankerkönig | aktuelle Spritpreise (sonst 1,80 €/l) | kostenloser Key: [creativecommons.tankerkoenig.de](https://creativecommons.tankerkoenig.de) → `setx PDA_TANKERKOENIG_KEY …` |
-| FlightAPI | Flugangebote mit Preis | [flightapi.io](https://www.flightapi.io) → `setx PDA_FLIGHTAPI_KEY …` |
-| Flightradar24 | tatsächliche Flugzeiten | [fr24api.flightradar24.com](https://fr24api.flightradar24.com) → `setx PDA_FR24_TOKEN …` |
-
-Flüge werden erst ab 300 km Luftlinie geprüft. Ohne FlightAPI, aber mit Flightradar24 gibt es
-einen „typischen Flug“ mit geschätztem Preis. **Bahnpreise:** Die DB bietet keine offene
-Preis-Schnittstelle (die inoffiziellen von bahn.de blockieren Skripte); der Preis kommt von
-Google, wo bekannt, sonst aus einer Tarif-Schätzung (mit ≈ markiert).
+Alle Dienste sind kostenlos. **Grenzen:** openrouteservice kennt keinen Echtzeit-Verkehr; die
+Autofahrzeit wird deshalb mit `travel_car_time_factor` (Standard 1,15) aufgeschlagen. Die
+DB-Timetables-API liefert nur Abfahrtstafeln, keine Verbindungssuche. Der Assistent findet daraus
+**nur Direktverbindungen** zwischen den Bahnhöfen der beiden Orte (Hauptbahnhof bevorzugt), und
+das nur für die nächsten Stunden. Busse und Straßenbahnen kennt er nicht: Ist der Bahnhof mehr
+als 20 Minuten Fußweg entfernt, schätzt er die Zeit für Bus/Tram. **Bahnpreise** gibt die DB nicht
+heraus, sie sind eine Tarif-Schätzung (mit ≈ markiert). Mit `travel_deutschlandticket` kostet
+der Nahverkehr nichts.
 
 Persönliche Werte stehen in `%APPDATA%\PersonalDigitalAgent\preferences.json`, z. B.
 `"travel_value_of_time": 40`, `"travel_deutschlandticket": true`, `"travel_fuel": "diesel"`,
-`"travel_consumption": 6.5` – alle Schlüssel in `TravelSettings`
+`"travel_consumption": 6.5`, `"travel_home_address": "…"` – alle Schlüssel in `TravelSettings`
 ([planner.py](backend/assistant/skills/travel/planner.py)).
 
 ### MCP-Server einbinden

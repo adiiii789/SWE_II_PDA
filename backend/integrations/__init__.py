@@ -9,9 +9,9 @@ Integrationen und welche Fähigkeit (backend/assistant/skills/) sie nutzt:
   OpenWeather          morning
   Aktien-API           morning  (Recap des Vortages)
   Musik                morning  (Songvorschlag, Abspielen)
-  Google Maps          travel   (google_maps.py: Adressen, Routen Auto/ÖPNV/Rad/zu Fuß)
+  openrouteservice     travel   (openrouteservice.py: Adressen, Routen Auto/Rad/zu Fuß)
+  DB Timetables        travel   (db_timetables.py: Direktverbindungen aus dem Fahrplan)
   Tankerkönig          travel   (tankerkoenig.py: aktuelle Spritpreise)
-  FlightAPI, FR24      travel   (flights.py: Flugangebote, tatsächliche Flugzeiten)
   Gmail                organization  (E-Mails verfassen, senden und lesen - als MCP-Server umgesetzt)
   Google Keep          organization  (Notizen, To-do-Listen)
 
@@ -24,5 +24,5 @@ Konvention:
     (mcp_client.py, ebenfalls ein ToolProvider) ihre Werkzeuge bereit. Dafür
     genügt ein Eintrag in mcp_servers.json im Projektordner.
   - Eine Fähigkeit bündelt ihre Integrationen als CompositeToolProvider.
-  - HTTP über JsonHttp (http.py); Tests ohne echte Netzwerkaufrufe (FakeHttp statt JsonHttp).
+  - HTTP über JsonHttp (http.py); Tests ohne echte Netzwerkaufrufe (FakeHttp aus tests/integrations/fake_http.py statt JsonHttp).
 """

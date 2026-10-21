@@ -1,0 +1,78 @@
+{#- Reiseplan (backend/assistant/skills/travel/view.py, trip_view).
+    Daten:
+      title, route, arrive_by   str
+      best           dict | None   label, detail, depart, arrive, duration, price, late
+      columns, rows  Tabelle aller Verkehrsmittel, nach Kosten sortiert
+      value_of_time  str           Zeitwert für die Fußnote
+      steps          list[str]     Wegbeschreibung der Empfehlung
+      map            dict | None   width, height, points ("x,y x,y"), start, end, straight
+      notes          list[str]     Hinweise, z. B. fehlende Keys
+      attribution    str
+    Styles eingebettet wie in default.html.j2. -#}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <style>
+{% include "theme.css" %}
+{% include "view.css" %}
+    .route { margin-bottom: 12px; }
+    .best { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+    .best strong { font-size: 16px; }
+    .best .late { color: #e5534b; }
+    svg { display: block; width: 100%; max-width: 480px; margin: 12px 0; }
+    svg .line { fill: none; stroke: #4c9aff; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+    svg .straight { stroke-dasharray: 6 5; }
+    svg .start { fill: #57ab5a; }
+    svg .end { fill: #e5534b; }
+    h3 { margin: 16px 0 6px; font-size: 14px; }
+    ol, ul { margin: 0; padding-left: 20px; }
+    li { margin: 2px 0; }
+    small { display: block; margin-top: 8px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <h2>{{ title }}</h2>
+  <p class="route">{{ route }}<br>Ankunft bis {{ arrive_by }}</p>
+
+  {% if best %}
+  <div class="best">
+    <strong>{{ best.label }}</strong>{% if best.detail %} – {{ best.detail }}{% endif %}<br>
+    <span{% if best.late %} class="late"{% endif %}>Los um {{ best.depart }}</span>,
+    an um {{ best.arrive }} · {{ best.duration }} · {{ best.price }}
+  </div>
+  {% endif %}
+
+  {% if map %}
+  <svg viewBox="0 0 {{ map.width }} {{ map.height }}" role="img" aria-label="Skizze der Route">
+    <polyline class="line{% if map.straight %} straight{% endif %}" points="{{ map.points }}"/>
+    <circle class="start" cx="{{ map.start[0] }}" cy="{{ map.start[1] }}" r="5"/>
+    <circle class="end" cx="{{ map.end[0] }}" cy="{{ map.end[1] }}" r="5"/>
+  </svg>
+  {% endif %}
+
+  {% if rows %}
+  <table>
+    <thead><tr>{% for column in columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <small>¹ Kosten = Preis + Reisezeit × {{ value_of_time }}/h. ≈ = geschätzt.</small>
+  {% endif %}
+
+  {% if steps %}
+  <h3>Wegbeschreibung</h3>
+  <ol>{% for step in steps %}<li>{{ step }}</li>{% endfor %}</ol>
+  {% endif %}
+
+  {% if notes %}
+  <h3>Hinweise</h3>
+  <ul>{% for note in notes %}<li>{{ note }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  <small>{{ attribution }}</small>
+</body>
+</html>

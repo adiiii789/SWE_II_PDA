@@ -7,7 +7,7 @@ er für einen Aufgabenbereich braucht. Umgesetzt ist travel (skills/travel/). Ge
   Fähigkeit           Wofür                                  Integrationen (backend/integrations/)
   ------------------  -------------------------------------  -------------------------------------
   morning             kurzes Briefing über den Tag           Calendar, OpenWeather, Aktien-API, Musik
-  travel              wie komme ich zum nächsten Termin?     Calendar, Google Maps, Tankerkönig, Flüge
+  travel              wie komme ich zum nächsten Termin?     Calendar, openrouteservice, DB, Tankerkönig
   organization        Nachrichten verfassen, Tag planen      Calendar, Gmail, Google Keep
                       (im Projektplan: "Assistant²")
 

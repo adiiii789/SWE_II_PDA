@@ -40,7 +40,7 @@ deckt drei Aufgabenbereiche ab, im Code **Fähigkeiten** (Skills) genannt:
 | Fähigkeit | Wofür | Integrationen |
 |---|---|---|
 | `morning` | kurzes Briefing über den Tag | Google Calendar, OpenWeather, Aktien-API, Musik |
-| `travel` | wie komme ich zum nächsten Termin? | Google Calendar, Google Routes, Tankerkönig |
+| `travel` | wie komme ich zum nächsten Termin? | Google Calendar, openrouteservice, DB Timetables, Tankerkönig |
 | `organization` („Assistant²“) | Nachrichten verfassen, Tag organisieren | Google Calendar, Gmail, Google Keep |
 
 **Warum ein Assistent statt drei?** Präferenzen, Gesprächsverlauf und Rückfragen gehören zu einer
@@ -54,7 +54,7 @@ Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen P
 | Anforderung | Wo im Code | Stand |
 |---|---|---|
 | Fähigkeiten (morning, travel, organization) | `backend/assistant/skills/` – je ein `Skill` mit Integrationen, Anweisungen und optionalem Auslöser | travel fertig (`skills/travel/`), morning und organization offen |
-| Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – Clients für externe Dienste, als Werkzeuge über die Fähigkeiten | Google Calendar, Google Maps, Tankerkönig, FlightAPI, Flightradar24 |
+| Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – Clients für externe Dienste, als Werkzeuge über die Fähigkeiten | Google Calendar, openrouteservice, DB Timetables, Tankerkönig |
 | MCP-Server als Werkzeuge | `MCPToolProvider` in `backend/integrations/mcp_client.py`, Liste in `mcp_servers.json` | fertig (stdio), eigener Server `mcp_servers/pda_server.py` |
 | Lokales Sprachmodell (Ollama) | `OllamaModel` in `backend/assistant/ollama.py`, `OllamaAssistant` in `ollama_assistant.py` | fertig, Modellwahl im Popup |
 | Autonom (z. B. Briefing ohne Eingabe) | `backend/events.py`, `presenter.push(reply)` → Nachricht im Chat | Push-Kanal fertig |
@@ -113,9 +113,10 @@ backend/                      BACKEND: läuft in Python
     mcp_client.py             MCPToolProvider: Werkzeuge eines MCP-Servers (stdio)
     http.py                   JsonHttp: gemeinsamer HTTP-Client (urllib), IntegrationError
     google_calendar.py        Termine lesen (OAuth, Desktop-App)
-    google_maps.py            Geocoding + Routes API (Auto, ÖPNV, Fahrrad, zu Fuß)
+    geo.py                    Place, Luftlinie
+    openrouteservice.py       Adressen + Routen (Auto, Fahrrad, zu Fuß)
+    db_timetables.py          DB-Fahrplan: Bahnhöfe, Direktverbindungen
     tankerkoenig.py           Spritpreise
-    flights.py                Flughäfen, FlightAPI (Angebote), Flightradar24 (Flugzeiten)
   bridge/                     Verbindung Frontend ↔ Backend (muss nicht angepasst werden)
     function_registry.py      findet die Funktionen aus api.py
     web_bridge.py             Python-Seite der Brücke (QWebChannel)
@@ -705,7 +706,7 @@ OllamaAssistant (erfüllt Assistant + ModelSelection)
   ├─ tools: CompositeToolProvider
   │    ├─ MCPToolProvider "pda"  ──stdio──► mcp_servers/pda_server.py (SDK) ──SMTP/IMAP──► Mail
   │    ├─ MCPToolProvider …      ──stdio──► weitere Server aus mcp_servers.json
-  │    └─ Werkzeuge der Fähigkeiten (skills/): TravelTools ──HTTP──► Google, Tankerkönig, Flüge
+  │    └─ Werkzeuge der Fähigkeiten (skills/): TravelTools ──HTTP──► Google Calendar, ORS, DB, Tankerkönig
   └─ preferences: app_preferences() (eine JsonPreferenceStore für die ganze App)
 autonom: Auslöser einer Fähigkeit (Skill.start, beim App-Start) → presenter.push(reply),
          z. B. TravelReminder: 15 Min. vor der empfohlenen Abfahrt
@@ -769,6 +770,9 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_attachments` | `AttachmentStore`: nur Dateien aus dem Anhang-Ordner, keine ausführbaren öffnen, Speichern ohne Überschreiben |
 | `test_demo_mcp_server`, `test_preferences` | Demo-Server direkt, `JsonPreferenceStore` |
 | `test_tools` | `CompositeToolProvider`: Bündeln, Weiterleiten, doppelte/unbekannte Werkzeuge |
+| `assistant/travel/` | Reise-Assistent: Kostenrechnung, Planung mit Attrappen der Dienste, Werkzeuge, Ansicht, Erinnerung |
+| `integrations/` | ORS, DB Timetables, Tankerkönig, Google Calendar mit `FakeHttp`; `JsonHttp` gegen einen lokalen Testserver |
+| `test_skills` | `start_triggers`: Auslöser starten und beenden, defekte stoppen die anderen nicht |
 | `test_events` | `EventBus`: An- und Abmelden, defekte Handler, Aufruf aus anderem Thread |
 | `test_presenter` | Antwort → `{"text", "html", "attachments"}`, `push()` |
 | `test_interfaces` | Verträge für Präferenzen und Sprache sind erfüllbar |

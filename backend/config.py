@@ -41,10 +41,10 @@ DOWNLOAD_DIR = Path.home() / "Downloads"   # Ziel von "Speichern"
 # Reise-Assistent (backend/assistant/skills/travel/). Ohne Key fällt der jeweilige Teil weg;
 # Einrichtung siehe README. Persönliche Werte (Zeitwert, Verbrauch …) stehen in den Präferenzen.
 GOOGLE_DIR = APP_DATA_DIR / "google"                    # credentials.json (OAuth-Client) und token.json
-GOOGLE_MAPS_KEY = os.environ.get("PDA_GOOGLE_MAPS_KEY", "")      # Geocoding + Routes API
+ORS_KEY = os.environ.get("PDA_ORS_KEY", "")                      # openrouteservice: Adressen, Routen
+DB_CLIENT_ID = os.environ.get("PDA_DB_CLIENT_ID", "")            # DB API Marketplace (Timetables)
+DB_API_KEY = os.environ.get("PDA_DB_API_KEY", "")
 TANKERKOENIG_KEY = os.environ.get("PDA_TANKERKOENIG_KEY", "")    # Spritpreise
-FLIGHTAPI_KEY = os.environ.get("PDA_FLIGHTAPI_KEY", "")          # Flugpreise (flightapi.io)
-FR24_TOKEN = os.environ.get("PDA_FR24_TOKEN", "")                # tatsächliche Flugzeiten (Flightradar24)
 HTTP_TIMEOUT_S = 20
 TRAVEL_REMINDER_MINUTES = 15          # Erinnerung so lange vor der empfohlenen Abfahrt
 TRAVEL_CHECK_INTERVAL_S = 300         # so oft schaut die Erinnerung in den Kalender
