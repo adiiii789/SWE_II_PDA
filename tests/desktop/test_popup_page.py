@@ -26,9 +26,6 @@ CLICK = """Array.from(document.querySelectorAll('.attachment')).pop()
   .querySelectorAll('button').forEach(b => { if (b.textContent === %r) b.click(); });"""
 IFRAME_HTML ="document.getElementById('view-frame').srcdoc"
 IFRAME_SANDBOX = "document.getElementById('view-frame').getAttribute('sandbox')"
-RECORD = "document.getElementById('record-button').click()"
-RECORD_LABEL = "document.getElementById('record-button').textContent"
-ESCAPE = "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))"
 
 
 class PopupPageTest(unittest.TestCase):
@@ -114,43 +111,6 @@ class PopupPageTest(unittest.TestCase):
                 run_js(self.page, CLICK % "Speichern")
                 self.assertTrue(wait_until(lambda: "Gespeichert unter" in run_js(self.page, MESSAGES)[-1]))
                 self.assertEqual((downloads / "plan.pdf").read_bytes(), b"PDF")
-
-    def _patch_speech(self):
-        """Attrappen statt Mikrofon und Lautsprecher; das Frontend hält beides für verfügbar."""
-        speech_input, speech_output = mock.Mock(), mock.Mock()
-        for name, value in (("_speech_input", speech_input), ("_speech_output", speech_output)):
-            patcher = mock.patch.object(api, name, return_value=value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
-        run_js(self.page, "speech = {input: true, output: true}")
-        return speech_input, speech_output
-
-    def test_voice_message_is_sent_and_reply_spoken(self):
-        speech_input, speech_output = self._patch_speech()
-        speech_input.stop.return_value = "system"
-        count = len(run_js(self.page, MESSAGES))
-        run_js(self.page, RECORD)
-        self.assertTrue(wait_until(lambda: speech_input.start.called))
-        self.assertEqual(run_js(self.page, RECORD_LABEL), "⏹")
-
-        run_js(self.page, RECORD)   # zweiter Klick: beenden, erkennen, senden
-        self.assertTrue(wait_until(lambda: len(run_js(self.page, MESSAGES)) >= count + 2))
-        self.assertEqual(run_js(self.page, MESSAGES)[-2:],
-                         ["message user:system", "message assistant:Hier sind die Systeminfos."])
-        self.assertTrue(wait_until(lambda: speech_output.speak.called))
-        speech_output.speak.assert_called_once_with("Hier sind die Systeminfos.")
-        self.assertTrue(wait_until(lambda: run_js(self.page, RECORD_LABEL) == "🎤"))
-
-    def test_escape_cancels_recording(self):
-        speech_input, _speech_output = self._patch_speech()
-        count = len(run_js(self.page, MESSAGES))
-        run_js(self.page, RECORD)
-        self.assertTrue(wait_until(lambda: speech_input.start.called))
-        run_js(self.page, ESCAPE)
-        self.assertTrue(wait_until(lambda: speech_input.cancel.called))
-        self.assertEqual(run_js(self.page, RECORD_LABEL), "🎤")
-        speech_input.stop.assert_not_called()
-        self.assertEqual(len(run_js(self.page, MESSAGES)), count)
 
     def test_iframe_is_sandboxed_without_same_origin(self):
         self.assertEqual(run_js(self.page, IFRAME_SANDBOX), "allow-scripts")

@@ -6,12 +6,6 @@ const chatHistory = document.getElementById("chat-history");
 const inputForm = document.getElementById("input-form");
 const messageInput = document.getElementById("message-input");
 const modelSelect = document.getElementById("model-select");
-const recordButton = document.getElementById("record-button");
-
-// Sprache (backend/speech.py): was verfügbar ist, kommt von speech_support().
-let speech = {input: false, output: false};
-let recordState = "idle";   // "idle" | "recording" | "transcribing"
-let replyPending = false;   // Bridge-Aufrufe laufen nacheinander - während chat() keine Aufnahme starten
 
 // Zeigt fertig gerendertes HTML (aus frontend/templates/, vom Backend gerendert) im iframe an.
 function showView(html) {
@@ -85,26 +79,20 @@ function showReply(reply) {
   if (reply.html) showView(reply.html);
 }
 
-// spoken: Nachricht kam per Spracheingabe - dann wird die Antwort vorgelesen.
-async function submitText(text, spoken = false) {
+async function submitText(text) {
   addMessage(text, "user");
   const pending = document.createElement("div");
   pending.className = "pending";
   pending.textContent = "denkt nach …";
   chatHistory.appendChild(pending);
   chatHistory.scrollTop = chatHistory.scrollHeight;
-  replyPending = true;
-  updateRecordButton();
   try {
     const reply = await chat(text);
     showReply(reply);
-    if (spoken && speech.output && reply.text) await speak(reply.text);
   } catch (error) {
     addMessage(error.message, "error");
   } finally {
     pending.remove();
-    replyPending = false;
-    updateRecordButton();
   }
 }
 
@@ -114,69 +102,6 @@ async function sendMessage(event) {
   if (!text) return;
   messageInput.value = "";
   await submitText(text);
-}
-
-function updateRecordButton() {
-  recordButton.classList.toggle("recording", recordState === "recording");
-  recordButton.disabled = recordState === "transcribing" || (replyPending && recordState === "idle");
-  recordButton.textContent = {idle: "🎤", recording: "⏹", transcribing: "…"}[recordState];
-  recordButton.title = {
-    idle: "Spracheingabe starten",
-    recording: "Klicken zum Senden, Escape zum Abbrechen",
-    transcribing: "wird erkannt …",
-  }[recordState];
-}
-
-function setRecordState(state) {
-  recordState = state;
-  updateRecordButton();
-}
-
-// Erster Klick: Aufnahme starten. Zweiter Klick: Aufnahme beenden, erkennen und senden.
-async function toggleRecording() {
-  if (recordState === "idle") {
-    setRecordState("recording");
-    try {
-      await start_recording();
-    } catch (error) {
-      setRecordState("idle");
-      addMessage(error.message, "error");
-    }
-  } else if (recordState === "recording") {
-    setRecordState("transcribing");
-    let text = "";
-    try {
-      text = (await stop_recording()).trim();
-    } catch (error) {
-      addMessage(error.message, "error");
-    }
-    setRecordState("idle");
-    if (text) await submitText(text, true);
-    else addMessage("Ich habe nichts verstanden.", "error");
-  }
-}
-
-// Escape: Aufnahme verwerfen und Vorlesen abbrechen.
-async function onKeyDown(event) {
-  if (event.key !== "Escape") return;
-  if (recordState === "recording") {
-    setRecordState("idle");
-    try {
-      await cancel_recording();
-    } catch (error) {
-      addMessage(error.message, "error");
-    }
-  }
-  if (speech.output) stop_speaking().catch(() => {});
-}
-
-async function loadSpeechSupport() {
-  try {
-    speech = await speech_support();
-  } catch (error) {
-    speech = {input: false, output: false};
-  }
-  recordButton.hidden = !speech.input;
 }
 
 // Installierte Ollama-Modelle in die Auswahl laden (leer = Assistent ohne Sprachmodell).
@@ -207,11 +132,8 @@ async function changeModel() {
 
 inputForm.addEventListener("submit", sendMessage);
 modelSelect.addEventListener("change", changeModel);
-recordButton.addEventListener("click", toggleRecording);
-document.addEventListener("keydown", onKeyDown);
 onPythonEvent("assistant_message", showReply);   // Nachrichten, die das Backend von sich aus schickt
 start_view().then(showView);
 loadModels();
-loadSpeechSupport();
 addMessage('Hallo! Frag mich etwas oder schreib "hilfe" für die festen Befehle.', "assistant");
 messageInput.focus();
