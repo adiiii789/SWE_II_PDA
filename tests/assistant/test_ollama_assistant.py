@@ -13,11 +13,12 @@ from backend.views import START_VIEW
 class FakeModel:
     """Spielt vorbereitete Antworten ab und merkt sich, was es bekommen hat."""
 
-    def __init__(self, *responses, installed=("llama3.2",), name=""):
+    def __init__(self, *responses, installed=("llama3.2",), name="", cloud=()):
         self.responses = list(responses)
         self.calls = []
         self.name = name
         self._installed = list(installed)
+        self._cloud = list(cloud)
 
     def chat(self, messages, tools=()):
         self.calls.append((list(messages), list(tools)))
@@ -29,8 +30,14 @@ class FakeModel:
     def installed(self):
         return self._installed
 
+    def cloud_models(self):
+        return [ModelInfo(name, True, True) for name in self._cloud]
+
     def available_models(self):
-        return [ModelInfo(name, name != "gemma") for name in self._installed]
+        return [ModelInfo(name, name != "gemma") for name in self._installed] + self.cloud_models()
+
+    def selectable(self):
+        return [info.name for info in self.available_models()]
 
 
 class EchoTools:
@@ -221,12 +228,35 @@ class ModelSelectionTest(unittest.TestCase):
         self.assertEqual(prefs.get(MODEL_PREFERENCE), "b")
 
     def test_select_unknown_model(self):
-        with self.assertRaisesRegex(ValueError, "nicht installiert"):
+        with self.assertRaisesRegex(ValueError, "weder installiert noch in der Ollama-Cloud"):
             make(FakeModel(installed=["a"])).select_model("b")
 
     def test_available_models(self):
-        models = make(FakeModel(installed=["gemma", "qwen3"])).available_models()
-        self.assertEqual(models, [{"name": "gemma", "tools": False}, {"name": "qwen3", "tools": True}])
+        models = make(FakeModel(installed=["gemma", "qwen3"], cloud=["gpt-oss:120b-cloud"])).available_models()
+        self.assertEqual(models, [{"name": "gemma", "tools": False, "cloud": False},
+                                  {"name": "qwen3", "tools": True, "cloud": False},
+                                  {"name": "gpt-oss:120b-cloud", "tools": True, "cloud": True}])
+
+    def test_saved_cloud_model_without_pull(self):
+        model = FakeModel(installed=["a"], cloud=["gemma4:31b-cloud"])
+        prefs = MemoryPreferences(**{MODEL_PREFERENCE: "gemma4:31b-cloud"})
+        self.assertEqual(make(model, preferences=prefs).current_model(), "gemma4:31b-cloud")
+
+    def test_models_command_lists_local_and_cloud(self):
+        reply = make(FakeModel(installed=["a"], cloud=["b-cloud"])).reply("modelle")
+        self.assertEqual(reply.view.data["rows"], [["▶ a", "Lokal", "ja"], ["b-cloud", "Cloud", "ja"]])
+
+    def test_model_command_accepts_cloud_name_without_suffix(self):
+        model = FakeModel(installed=["a"], cloud=["gemma4:31b-cloud"])
+        self.assertIn("gemma4:31b-cloud", make(model).reply("modell gemma4:31b").text)
+        self.assertEqual(model.name, "gemma4:31b-cloud")
+
+    def test_model_command_unknown_model(self):
+        self.assertIn('"modelle"', make(FakeModel(installed=["a"])).reply("modell gibtsnicht").text)
+
+    def test_help_lists_model_commands(self):
+        rows = make(FakeModel()).reply("hilfe").view.data["rows"]
+        self.assertIn("modelle", [row[0] for row in rows])
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ class CreatePopupTest(unittest.TestCase):
         self.assertIsInstance(popup.content, WebView)
         script = popup.content.page().scripts().findScript("python-bridge").sourceCode()
         self.assertTrue(callable(api.chat))
-        self.assertIn('["cancel_recording", "chat", "list_models", "open_attachment", "render_view", "save_attachment", "select_model", "speak", "speech_support", "start_recording", "start_view", "stop_recording", "stop_speaking"]', script)
+        self.assertIn('["cancel_recording", "chat", "enlarge_popup", "list_models", "open_attachment", "open_link", "render_view", "save_attachment", "select_model", "speak", "speech_support", "start_recording", "start_view", "stop_recording", "stop_speaking"]', script)
         expected = QUrl.fromLocalFile(str(config.POPUP_PAGE))
         self.assertTrue(wait_until(lambda: popup.content.url() == expected))
 
@@ -40,6 +40,17 @@ class ApplicationTest(unittest.TestCase):
     def test_left_click_opens_popup(self):
         self.application.tray.left_clicked.emit()
         self.assertTrue(self.application.popup.isVisible())
+        self.application.popup.hide()
+
+    def test_enlarge_event_resizes_popup(self):
+        self.application.popup.show_at_cursor()
+        normal = self.application.popup.size()
+        api.enlarge_popup(True)
+        self.assertTrue(wait_until(lambda: self.application.popup.enlarged))
+        self.assertGreater(self.application.popup.width(), normal.width())
+        api.enlarge_popup(False)
+        self.assertTrue(wait_until(lambda: not self.application.popup.enlarged))
+        self.assertEqual(self.application.popup.size(), normal)
         self.application.popup.hide()
 
     def test_shutdown_hides_tray(self):

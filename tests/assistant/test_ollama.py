@@ -6,7 +6,7 @@ import urllib.error
 from unittest import mock
 
 from backend.assistant.llm import ChatMessage, LanguageModel, ToolCall
-from backend.assistant.ollama import OllamaClient, OllamaError, OllamaModel
+from backend.assistant.ollama import OllamaClient, OllamaError, OllamaModel, cloud_name
 from backend.assistant.tools import ToolSpec
 
 
@@ -115,6 +115,44 @@ class OllamaModelTest(unittest.TestCase):
         self.assertTrue(all(i.supports_tools for i in OllamaModel(client, "").available_models()))
 
 
+class CatalogClient:
+    """ollama.com/api/tags: Cloud-Modelle mit capabilities."""
+
+    def __init__(self, models=(), error=None):
+        self.models = models
+        self.error = error
+
+    def get(self, path):
+        assert path == "/api/tags"
+        if self.error:
+            raise self.error
+        return {"models": [{"name": name, "capabilities": caps} for name, caps in self.models]}
+
+
+class CloudModelsTest(unittest.TestCase):
+    def test_cloud_name(self):
+        self.assertEqual(cloud_name("gpt-oss:120b"), "gpt-oss:120b-cloud")
+        self.assertEqual(cloud_name("gemma4"), "gemma4:cloud")
+
+    def test_cloud_models_after_local_ones(self):
+        catalog = CatalogClient([("gpt-oss:120b", ["completion", "tools"]), ("clef:27b", ["completion"])])
+        infos = OllamaModel(FakeClient(tags=["qwen3"]), "", cloud_catalog=catalog).available_models()
+        self.assertEqual([(i.name, i.supports_tools, i.cloud) for i in infos], [
+            ("qwen3", True, False), ("clef:27b-cloud", False, True), ("gpt-oss:120b-cloud", True, True)])
+
+    def test_pulled_cloud_model_listed_once(self):
+        catalog = CatalogClient([("gemma4", ["tools"])])
+        infos = OllamaModel(FakeClient(tags=["gemma4:cloud"]), "", cloud_catalog=catalog).available_models()
+        self.assertEqual([(i.name, i.cloud) for i in infos], [("gemma4:cloud", True)])
+
+    def test_without_catalog_or_internet_only_local_models(self):
+        offline = CatalogClient(error=OllamaError("nicht erreichbar"))
+        for catalog in (None, offline):
+            with self.subTest(catalog=catalog):
+                model = OllamaModel(FakeClient(tags=["qwen3"]), "", cloud_catalog=catalog)
+                self.assertEqual(model.selectable(), ["qwen3"])
+
+
 class OllamaClientTest(unittest.TestCase):
     def _urlopen_returning(self, payload):
         response = mock.MagicMock()
@@ -139,6 +177,14 @@ class OllamaClientTest(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", side_effect=error):
             with self.assertRaisesRegex(OllamaError, "^model not found$"):
                 OllamaClient("http://h", 1).get("/api/tags")
+
+    def test_cloud_errors_get_a_hint(self):
+        for code, hint in ((401, "ollama signin"), (402, "Free-Plan"), (429, "Nutzungskontingent")):
+            with self.subTest(code=code):
+                error = urllib.error.HTTPError("u", code, "x", {}, io.BytesIO(b'{"error": "abgelehnt"}'))
+                with mock.patch("urllib.request.urlopen", side_effect=error):
+                    with self.assertRaisesRegex(OllamaError, f"^abgelehnt .*{hint}"):
+                        OllamaClient("http://h", 1).post("/api/chat", {})
 
     def test_http_error_without_json(self):
         error = urllib.error.HTTPError("u", 500, "Server Error", {}, io.BytesIO(b"oops"))

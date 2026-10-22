@@ -155,6 +155,57 @@ class PopupPageTest(unittest.TestCase):
     def test_iframe_is_sandboxed_without_same_origin(self):
         self.assertEqual(run_js(self.page, IFRAME_SANDBOX), "allow-scripts")
 
+    def test_reply_markdown_and_formulas_are_rendered(self):
+        html = run_js(self.page, "renderMarkdown(%r)" % "## Titel\n\n**fett**, `code` und $\\frac{1}{2}$\n\n- a\n- b")
+        self.assertIn("<h2>Titel</h2>", html)
+        self.assertIn("<strong>fett</strong>", html)
+        self.assertIn("<code>code</code>", html)
+        self.assertIn('class="katex"', html)
+        self.assertIn("<li>a</li>", html)
+
+    def test_dollar_amounts_and_code_stay_text(self):
+        html = run_js(self.page, "renderMarkdown(%r)" % "5 $ und 10 $, `echo $HOME`")
+        self.assertNotIn("katex", html)
+        self.assertIn("<code>echo $HOME</code>", html)
+
+    def test_reply_html_is_sanitized(self):
+        html = run_js(self.page, "renderMarkdown(%r)" % (
+            '<img src=x onerror="alert(1)"> <script>alert(2)</script> [x](javascript:alert(3)) '
+            '![bild](https://example.com/p.png) $\\href{javascript:alert(4)}{a}$'))
+        for forbidden in ("<img", "<script", "onerror", "javascript:"):
+            self.assertNotIn(forbidden, html)
+
+    def test_many_long_messages_are_not_squeezed_and_scroll(self):
+        run_js(self.page, "scrollToBottom(); onChatScroll()")
+        run_js(self.page, "for (let i = 0; i < 40; i++) addMessage('Zeile\n'.repeat(8) + '`x`', 'assistant')")
+        heights = run_js(self.page, "Array.from(document.querySelectorAll('.message.assistant')).slice(-40)"
+                                    ".map(e => e.offsetHeight)")
+        self.assertTrue(all(h >= 8 * 14 for h in heights), heights)
+        self.assertTrue(run_js(self.page, "isNearBottom()"))
+        self.assertTrue(run_js(self.page, "document.getElementById('scroll-down-button').hidden"))
+
+    def test_scrolled_up_reader_is_not_pulled_down(self):
+        run_js(self.page, "for (let i = 0; i < 30; i++) addMessage('Nachricht ' + i, 'assistant')")
+        run_js(self.page, "chatHistory.scrollTop = 0; onChatScroll()")
+        run_js(self.page, "addMessage('neu', 'assistant')")
+        self.assertEqual(run_js(self.page, "chatHistory.scrollTop"), 0)
+        self.assertFalse(run_js(self.page, "document.getElementById('scroll-down-button').hidden"))
+        run_js(self.page, "document.getElementById('scroll-down-button').click()")
+        self.assertTrue(run_js(self.page, "isNearBottom()"))
+
+    def test_long_reply_is_shown_from_its_start(self):
+        run_js(self.page, "scrollToBottom(); showReply({text: 'Anfang\n\n' + 'Absatz\n\n'.repeat(200)})")
+        visible = run_js(self.page, """(() => { const m = Array.from(document.querySelectorAll('.message')).pop();
+          return m.offsetTop >= chatHistory.scrollTop && m.offsetTop < chatHistory.scrollTop + 10; })()""")
+        self.assertTrue(visible)
+
+    def test_chat_maximize_hides_view(self):
+        frame_display = "getComputedStyle(document.getElementById('view-frame')).display"
+        run_js(self.page, "document.getElementById('chat-max-button').click()")
+        self.assertEqual(run_js(self.page, frame_display), "none")
+        run_js(self.page, "document.getElementById('chat-max-button').click()")
+        self.assertNotEqual(run_js(self.page, frame_display), "none")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,24 +7,73 @@ const inputForm = document.getElementById("input-form");
 const messageInput = document.getElementById("message-input");
 const modelSelect = document.getElementById("model-select");
 const recordButton = document.getElementById("record-button");
+const chatPanel = document.getElementById("chat-panel");
+const splitter = document.getElementById("splitter");
+const chatMaxButton = document.getElementById("chat-max-button");
+const enlargeButton = document.getElementById("enlarge-button");
+const scrollDownButton = document.getElementById("scroll-down-button");
 
 // Sprache (backend/speech.py): was verfügbar ist, kommt von speech_support().
 let speech = {input: false, output: false};
 let recordState = "idle";   // "idle" | "recording" | "transcribing"
 let replyPending = false;   // Bridge-Aufrufe laufen nacheinander - während chat() keine Aufnahme starten
 
+// Layout: Chat über die ganze Höhe (ohne Ansicht) und vergrößertes Fenster (backend/desktop/popup_window.py)
+let chatMaximized = false;
+let popupEnlarged = false;
+let stickToBottom = true;   // war der Verlauf zuletzt ganz unten? Dann bleibt er es auch bei Größenänderungen
+
+const NEAR_BOTTOM_PX = 40;
+const VIEW_MIN_PX = 60;     // Mindesthöhen beim Ziehen am #splitter
+const CHAT_MIN_PX = 120;
+
 // Zeigt fertig gerendertes HTML (aus frontend/templates/, vom Backend gerendert) im iframe an.
 function showView(html) {
   viewFrame.srcdoc = html;
 }
 
-// role: "user", "assistant" oder "error" (CSS-Klasse der Chat-Blase)
-function addMessage(text, role) {
+function isNearBottom() {
+  return chatHistory.scrollHeight - chatHistory.scrollTop - chatHistory.clientHeight < NEAR_BOTTOM_PX;
+}
+
+function scrollToBottom() {
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+function onChatScroll() {
+  stickToBottom = isNearBottom();
+  scrollDownButton.hidden = stickToBottom;
+}
+
+// Element an den Verlauf hängen. Mitscrollen nur, wenn man unten war oder selbst geschrieben hat -
+// wer gerade weiter oben liest, wird nicht weggerissen (dann erscheint der ↓-Knopf).
+// Lange Antworten werden ab ihrem Anfang gezeigt statt ab ihrem Ende.
+function appendToChat(element, own = false) {
+  const follow = own || isNearBottom();
+  chatHistory.appendChild(element);
+  if (follow) {
+    if (element.offsetHeight > chatHistory.clientHeight) chatHistory.scrollTop = element.offsetTop - 4;
+    else scrollToBottom();
+  }
+  onChatScroll();
+}
+
+// role: "user", "assistant" oder "error" (CSS-Klasse der Chat-Blase).
+// Antworten des Assistenten als Markdown mit Formeln (markdown.js), alles andere als reiner Text.
+function createMessage(text, role) {
   const element = document.createElement("div");
   element.className = `message ${role}`;
-  element.textContent = text;
-  chatHistory.appendChild(element);
-  chatHistory.scrollTop = chatHistory.scrollHeight;
+  if (role === "assistant") {
+    element.innerHTML = renderMarkdown(text);   // bereinigt durch DOMPurify
+  } else {
+    element.textContent = text;
+  }
+  return element;
+}
+
+function addMessage(text, role) {
+  const element = createMessage(text, role);
+  appendToChat(element, role === "user");
   return element;
 }
 
@@ -75,13 +124,13 @@ function addAttachments(message, attachments) {
     list.appendChild(row);
   }
   message.appendChild(list);
-  chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
 // Antwort des Assistenten anzeigen: {"text", "html", "attachments"} - aus chat() oder als Push vom Backend.
 function showReply(reply) {
-  const message = addMessage(reply.text, "assistant");
+  const message = createMessage(reply.text, "assistant");
   if (reply.attachments && reply.attachments.length) addAttachments(message, reply.attachments);
+  appendToChat(message);   // erst komplett aufbauen, dann einblenden - so stimmt die Scrollposition
   if (reply.html) showView(reply.html);
 }
 
@@ -91,8 +140,7 @@ async function submitText(text, spoken = false) {
   const pending = document.createElement("div");
   pending.className = "pending";
   pending.textContent = "denkt nach …";
-  chatHistory.appendChild(pending);
-  chatHistory.scrollTop = chatHistory.scrollHeight;
+  appendToChat(pending, true);
   replyPending = true;
   updateRecordButton();
   try {
@@ -209,6 +257,67 @@ async function loadModels() {
   }
 }
 
+// Links in Antworten im Standardbrowser öffnen - sonst würde das Popup selbst wegnavigieren.
+async function onChatClick(event) {
+  const link = event.target.closest("a[href]");
+  if (!link) return;
+  event.preventDefault();
+  try {
+    await open_link(link.href);
+  } catch (error) {
+    addMessage(error.message, "error");
+  }
+}
+
+// Aufteilung Ansicht/Chat: Anteil der Ansicht (0..1) als flex-grow, passt so auch nach Größenänderungen.
+function setSplit(viewShare) {
+  viewFrame.style.flexGrow = viewShare === null ? "" : viewShare;
+  chatPanel.style.flexGrow = viewShare === null ? "" : 1 - viewShare;
+}
+
+function onSplitterDown(event) {
+  splitter.setPointerCapture(event.pointerId);
+  splitter.classList.add("dragging");
+  document.body.classList.add("dragging");
+}
+
+function onSplitterMove(event) {
+  if (!splitter.hasPointerCapture(event.pointerId)) return;
+  const top = viewFrame.getBoundingClientRect().top;
+  const total = chatPanel.getBoundingClientRect().bottom - top;
+  const viewHeight = Math.max(VIEW_MIN_PX, Math.min(event.clientY - top, total - CHAT_MIN_PX));
+  setSplit(viewHeight / total);
+}
+
+function onSplitterUp() {
+  splitter.classList.remove("dragging");
+  document.body.classList.remove("dragging");
+}
+
+function updateLayoutButtons() {
+  document.body.classList.toggle("chat-maximized", chatMaximized);
+  chatMaxButton.classList.toggle("active", chatMaximized);
+  chatMaxButton.textContent = chatMaximized ? "⇕ Ansicht zeigen" : "⇕ Chat groß";
+  chatMaxButton.title = chatMaximized ? "Ansicht wieder einblenden" : "Ansicht ausblenden, Chat über die ganze Höhe";
+  enlargeButton.classList.toggle("active", popupEnlarged);
+  enlargeButton.textContent = popupEnlarged ? "⤡ Fenster klein" : "⤢ Fenster groß";
+  enlargeButton.title = popupEnlarged ? "Fenster auf Normalgröße" : "Fenster vergrößern";
+}
+
+function toggleChatMaximized() {
+  chatMaximized = !chatMaximized;
+  updateLayoutButtons();
+}
+
+async function toggleEnlarged() {
+  try {
+    popupEnlarged = await enlarge_popup(!popupEnlarged);
+  } catch (error) {
+    addMessage(error.message, "error");
+  }
+  updateLayoutButtons();
+}
+
 async function changeModel() {
   try {
     addMessage(`Modell: ${await select_model(modelSelect.value)}`, "assistant");
@@ -219,11 +328,24 @@ async function changeModel() {
 
 inputForm.addEventListener("submit", sendMessage);
 modelSelect.addEventListener("change", changeModel);
+chatHistory.addEventListener("click", onChatClick);
 recordButton.addEventListener("click", toggleRecording);
+chatHistory.addEventListener("scroll", onChatScroll);
+scrollDownButton.addEventListener("click", scrollToBottom);
+// Splitter, "Chat groß" oder größeres Fenster ändern die Höhe - wer unten war, bleibt unten.
+new ResizeObserver(() => { if (stickToBottom) scrollToBottom(); }).observe(chatHistory);
+splitter.addEventListener("pointerdown", onSplitterDown);
+splitter.addEventListener("pointermove", onSplitterMove);
+splitter.addEventListener("pointerup", onSplitterUp);
+splitter.addEventListener("lostpointercapture", onSplitterUp);
+splitter.addEventListener("dblclick", () => setSplit(null));
+chatMaxButton.addEventListener("click", toggleChatMaximized);
+enlargeButton.addEventListener("click", toggleEnlarged);
 document.addEventListener("keydown", onKeyDown);
 onPythonEvent("assistant_message", showReply);   // Nachrichten, die das Backend von sich aus schickt
 start_view().then(showView);
 loadModels();
 loadSpeechSupport();
+updateLayoutButtons();
 addMessage('Hallo! Frag mich etwas oder schreib "hilfe" für die festen Befehle.', "assistant");
 messageInput.focus();

@@ -23,6 +23,8 @@ EventHandler = Callable[[str, Any], None]
 
 # Nachricht des Assistenten im Chat, Payload wie die Antwort von api.chat: {"text", "html"}
 ASSISTANT_MESSAGE = "assistant_message"
+# Popup vergrößern (True) oder auf Normalgröße zurück (False); backend/desktop/application.py reagiert darauf
+POPUP_ENLARGED = "popup_enlarged"
 
 
 class EventBus:

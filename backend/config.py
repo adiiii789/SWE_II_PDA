@@ -51,6 +51,7 @@ PIPER_VOICE = os.environ.get("PDA_PIPER_VOICE", "de_DE-pavoque-low")
 
 POPUP_PAGE = FRONTEND_DIR / "popup.html"
 POPUP_SIZE_RATIO = (0.3, 0.6)         # Anteil des Bildschirms (Breite, Höhe)
+POPUP_ENLARGED_SIZE_RATIO = (0.55, 0.9)   # vergrößertes Popup (Knopf im Chat)
 POPUP_BACKGROUND = "#2E2E2E"          # identisch mit --background in frontend/theme.css
 POPUP_MARGIN_PX = 8
 POPUP_SLIDE_IN_OFFSET_PX = 50         # Start der Animation unterhalb der Endposition

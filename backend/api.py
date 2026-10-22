@@ -9,10 +9,12 @@ das Popup nicht ein.
 """
 from __future__ import annotations
 
+import webbrowser
 from functools import cache
 from typing import Any
 
 from backend.assistant import Assistant, ModelSelection, create_assistant
+from backend.events import POPUP_ENLARGED, events
 from backend.presenter import attachment_store, present, renderer
 from backend.speech import SpeechInput, SpeechOutput, create_speech_input, create_speech_output
 from backend.views import START_VIEW, view_from_dict
@@ -112,6 +114,20 @@ def stop_speaking() -> None:
     """Vorlesen abbrechen."""
     if (speech_output := _speech_output()) is not None:
         speech_output.stop()
+
+
+def open_link(url: str) -> None:
+    """Link aus einer Antwort im Standardbrowser öffnen (nur http, https und mailto)."""
+    if not url.lower().startswith(("http://", "https://", "mailto:")):
+        raise ValueError(f"Diesen Link öffne ich nicht: {url}")
+    webbrowser.open(url)
+
+
+def enlarge_popup(enlarged: bool) -> bool:
+    """Popup-Fenster vergrößern oder auf Normalgröße zurücksetzen. Gibt den neuen Zustand zurück."""
+    enlarged = bool(enlarged)
+    events.publish(POPUP_ENLARGED, enlarged)
+    return enlarged
 
 
 def _require(component: Any, name: str) -> Any:
