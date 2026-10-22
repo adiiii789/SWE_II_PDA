@@ -655,7 +655,9 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   MCP-Clients (Claude Desktop, VS Code, MCP Inspector über `mcp dev`).
 - **E-Mail** (`send_email`, Logik in [mailer.py](mcp_servers/mailer.py)): Versand per SMTP,
   Zugangsdaten aus Umgebungsvariablen oder `mcp_servers/.env`. Der Assistent darf nur an
-  Adressen aus `PDA_MAIL_RECIPIENTS` schreiben. Das Modell entscheidet selbst über Tool-Aufrufe,
+  Adressen aus `PDA_MAIL_RECIPIENTS` schreiben. Die Liste ist zugleich das Adressbuch: Einträge
+  wie `Mama <mama@example.com>` erlauben den Versand über den Namen (`find_contact`), aufgelöst
+  wird aber nur innerhalb der Liste. Das Modell entscheidet selbst über Tool-Aufrufe,
   und eingeschleuster Text (z. B. aus einem Tool-Ergebnis) könnte es sonst an fremde Adressen
   schreiben lassen. Die erlaubten Adressen stehen in der Werkzeugbeschreibung, damit das Modell
   sie kennt.

@@ -66,7 +66,9 @@ ohne Assistent im Browser ausprobieren.
 
 **E-Mail:** `mcp_servers/.env.example` nach `mcp_servers/.env` kopieren und SMTP-Zugang sowie
 die erlaubten Empfänger (`PDA_MAIL_RECIPIENTS`) eintragen. Bei Gmail braucht ihr ein App-Passwort.
-Der Assistent kann nur an diese Adressen schreiben.
+Der Assistent kann nur an diese Adressen schreiben. Steht ein Name davor
+(`Mama <mama@example.com>, Anna Müller <anna@example.com>`), reicht beim Senden der Name („schick
+Anna eine Mail …“).
 Zum **Lesen** (IMAP) reicht das meist schon: Der IMAP-Server wird aus dem SMTP-Server abgeleitet
 (`smtp.gmail.com` → `imap.gmail.com`), Login und App-Passwort werden übernommen. Abweichend lässt
 sich alles mit `PDA_IMAP_HOST`, `PDA_IMAP_PORT`, `PDA_IMAP_USER`, `PDA_IMAP_PASSWORD` setzen. Der

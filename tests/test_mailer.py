@@ -36,6 +36,46 @@ class SettingsTest(unittest.TestCase):
             mailer.MailSettings.load({"PDA_SMTP_HOST": "h", "PDA_SMTP_USER": "u"}, NO_FILE)
 
 
+class ContactTest(unittest.TestCase):
+    def setUp(self):
+        self.settings = mailer.MailSettings.load({**ENV, "PDA_MAIL_RECIPIENTS":
+            'Ich <ich@example.com>, Anna Müller <anna@example.com>, "Schmidt, Anna" <as@example.com>, '
+            'Mama <mama@example.com>, max@example.com'}, NO_FILE)
+
+    def find(self, to):
+        return mailer.find_contact(self.settings, to).address
+
+    def test_parse(self):
+        self.assertEqual(self.settings.contacts[1], mailer.Contact("Anna Müller", "anna@example.com"))
+        self.assertEqual(self.settings.contacts[2].name, "Schmidt, Anna")
+        self.assertEqual(self.settings.recipients[-1], "max@example.com")
+
+    def test_by_name(self):
+        self.assertEqual(self.find("mama"), "mama@example.com")
+        self.assertEqual(self.find("Anna Müller"), "anna@example.com")
+        self.assertEqual(self.find("müller anna"), "anna@example.com")
+        self.assertEqual(self.find("Müller"), "anna@example.com")
+        self.assertEqual(self.find("Anna Schmidt"), "as@example.com")
+
+    def test_by_address_or_default(self):
+        self.assertEqual(self.find("MAX@example.com"), "max@example.com")
+        self.assertEqual(self.find("Wer auch immer <mama@example.com>"), "mama@example.com")
+        self.assertEqual(self.find(""), "ich@example.com")
+
+    def test_ambiguous_name(self):
+        with self.assertRaisesRegex(mailer.MailError, "nicht eindeutig.*Anna Müller.*Schmidt, Anna"):
+            self.find("Anna")
+
+    def test_unknown_name_or_address(self):
+        for to in ("Papa", "Mama <fremd@evil.example>"):
+            with self.assertRaisesRegex(mailer.MailError, "kein freigegebener Empfänger.*Mama <mama@example.com>"):
+                self.find(to)
+
+    def test_no_valid_address(self):
+        with self.assertRaisesRegex(mailer.MailError, "keine gültige Adresse"):
+            mailer.MailSettings.load({**ENV, "PDA_MAIL_RECIPIENTS": "Mama"}, NO_FILE)
+
+
 class SendTest(unittest.TestCase):
     def setUp(self):
         self.settings = mailer.MailSettings.load(ENV, NO_FILE)
@@ -64,7 +104,8 @@ class SendTest(unittest.TestCase):
 
     def test_allowed_recipient_case_insensitive(self):
         result, smtp, _ = self._send(to="anna@example.com")
-        self.assertIn("anna@example.com", result)
+        self.assertEqual(smtp.send_message.call_args.args[0]["To"], "Anna@Example.com")
+        self.assertIn("Anna@Example.com", result)  # so, wie sie in der Liste steht
 
     def test_ssl_port(self):
         _, smtp, smtp_ssl = self._send(port=465)
@@ -82,6 +123,15 @@ class SendTest(unittest.TestCase):
             mailer.send_email(self.settings, "", " ", "Text")
         with self.assertRaisesRegex(mailer.MailError, "zu lang"):
             mailer.send_email(self.settings, "", "Hi", "x" * (mailer.MAX_BODY_CHARS + 1))
+
+    def test_send_by_name(self):
+        settings = mailer.MailSettings.load({**ENV, "PDA_MAIL_RECIPIENTS":
+                                             'Mama <mama@example.com>, "Müller, Anna" <anna@example.com>'}, NO_FILE)
+        with mock.patch("smtplib.SMTP") as smtp:
+            result = mailer.send_email(settings, "mama", "Hi", "Text")
+        message = smtp.return_value.__enter__.return_value.send_message.call_args.args[0]
+        self.assertEqual(message["To"], "Mama <mama@example.com>")
+        self.assertEqual(result, "E-Mail an Mama <mama@example.com> gesendet (Betreff: Hi)")
 
     def test_smtp_error(self):
         with mock.patch("smtplib.SMTP", side_effect=OSError("Verbindung abgelehnt")):

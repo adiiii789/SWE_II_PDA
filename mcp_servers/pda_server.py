@@ -63,15 +63,16 @@ def _mail_description() -> str:
         settings = mailer.MailSettings.load()
     except mailer.MailError:
         return description + " (Mail sending is not configured yet.)"
-    return (description + f" Allowed recipients: {', '.join(settings.recipients)}. "
-            f"Leave 'to' empty to send to {settings.recipients[0]}.")
+    return (description + f" Allowed recipients (contacts): {', '.join(map(str, settings.contacts))}. "
+            "Pass the contact's name or address as 'to'. "
+            f"Leave 'to' empty to send to {settings.contacts[0]}.")
 
 
 @mcp.tool(description=_mail_description())
 def send_email(
     subject: Annotated[str, Field(description="Subject line")],
     body: Annotated[str, Field(description="Plain-text body of the mail")],
-    to: Annotated[str, Field(description="Recipient address; empty = default recipient")] = "",
+    to: Annotated[str, Field(description="Recipient name or address; empty = default recipient")] = "",
 ) -> str:
     # Einstellungen bei jedem Aufruf neu lesen: Änderungen an der .env wirken ohne Neustart.
     try:
