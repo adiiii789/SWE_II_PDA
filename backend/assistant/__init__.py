@@ -4,7 +4,7 @@ Aufbau:
   base.py              Assistant-Protokoll + AssistantReply (Ansichten: backend/views.py)
   commands.py          CommandAssistant - feste Befehle, ohne Sprachmodell
   llm.py               LanguageModel-Protokoll
-  ollama.py            OllamaModel - LanguageModel über ein lokales Ollama
+  ollama.py            OllamaModel - LanguageModel über ein lokales Ollama (auch Cloud-Modelle)
   ollama_assistant.py  OllamaAssistant - Sprachmodell + Werkzeuge (Tool-Calling)
   tools.py             ToolProvider-Protokoll (Integrationen, MCP) + CompositeToolProvider
   skills/              Fähigkeiten des Assistenten (morning, travel, organization)
@@ -30,8 +30,11 @@ def _ollama_assistant() -> Assistant:
     from backend.integrations.mcp_client import load_mcp_servers
     from backend.preferences import JsonPreferenceStore
 
+    catalog = (OllamaClient(config.OLLAMA_CLOUD_URL, config.OLLAMA_CLOUD_CATALOG_TIMEOUT_S,
+                            "Ohne Internet gibt es nur lokale Modelle.")
+               if config.OLLAMA_CLOUD else None)
     model = OllamaModel(OllamaClient(config.OLLAMA_URL, config.OLLAMA_TIMEOUT_S),
-                        config.OLLAMA_MODEL, config.OLLAMA_OPTIONS)
+                        config.OLLAMA_MODEL, config.OLLAMA_OPTIONS, catalog)
     mcp_servers = load_mcp_servers(config.MCP_SERVERS_FILE, config.ROOT_DIR)
     tools = CompositeToolProvider([*mcp_servers, *(skill.tools for skill in SKILLS)])
     instructions = "\n\n".join(skill.instructions for skill in SKILLS)

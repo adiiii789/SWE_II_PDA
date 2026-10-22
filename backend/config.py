@@ -23,6 +23,11 @@ OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("PDA_OLLAMA_MODEL", "")   # leer = zuletzt gewähltes bzw. erstes installiertes
 OLLAMA_TIMEOUT_S = 300                # Laden eines großen Modells kann dauern
 OLLAMA_OPTIONS: dict = {}             # z. B. {"temperature": 0.2, "num_ctx": 8192}
+# Cloud-Modelle (z. B. "gemma4:31b-cloud") laufen über das lokale Ollama auf ollama.com,
+# einmalig "ollama signin" nötig. Die Liste kommt von OLLAMA_CLOUD_URL; "0" blendet sie aus.
+OLLAMA_CLOUD = os.environ.get("PDA_OLLAMA_CLOUD", "1") != "0"
+OLLAMA_CLOUD_URL = "https://ollama.com"
+OLLAMA_CLOUD_CATALOG_TIMEOUT_S = 5
 ASSISTANT_MAX_TOOL_ROUNDS = 5         # Werkzeug-Runden pro Nachricht, gegen Endlosschleifen
 ASSISTANT_MAX_HISTORY = 30            # Nachrichten im Verlauf, die das Modell sieht
 

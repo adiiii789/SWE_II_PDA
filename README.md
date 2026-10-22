@@ -79,6 +79,20 @@ Unterstützt werden Server über **stdio** (Unterprozess). `"python"` startet da
 dem das Programm läuft; `"disabled": true` schaltet einen Eintrag ab. Nach Änderungen das
 Programm neu starten.
 
+### Sprachmodell: lokal oder Ollama-Cloud
+
+Der Assistent braucht ein laufendes [Ollama](https://ollama.com). Entweder ein Modell lokal
+herunterladen (`ollama pull qwen3.5:9b`) oder ein **Cloud-Modell** nutzen. Das läuft auf
+ollama.com, es wird nichts heruntergeladen:
+
+1. Kostenloses Konto auf ollama.com anlegen und einmal im Terminal `ollama signin` ausführen.
+2. Im Chat `modelle` eingeben. Die Liste zeigt lokale und Cloud-Modelle.
+3. Mit `modell gemma4:31b-cloud` wechseln. Die Wahl bleibt gespeichert.
+
+Im Free-Plan sind nur einige Cloud-Modelle enthalten, und es gibt ein Nutzungskontingent. Bei
+einem kostenpflichtigen Modell nennt die Fehlermeldung ein kostenloses Modell als Alternative.
+`PDA_OLLAMA_CLOUD=0` blendet die Cloud-Modelle aus.
+
 ## Testen
 
 ```

@@ -179,17 +179,29 @@ async function loadSpeechSupport() {
   recordButton.hidden = !speech.input;
 }
 
-// Installierte Ollama-Modelle in die Auswahl laden (leer = Assistent ohne Sprachmodell).
+// Ollama-Modelle in die Auswahl laden, getrennt nach lokal und Cloud (leer = Assistent ohne Sprachmodell).
+const MODEL_GROUPS = [
+  {label: "Lokal (auf diesem PC)", cloud: false},
+  {label: "Cloud (ollama.com)", cloud: true},
+];
+
 async function loadModels() {
   try {
     const {models, current} = await list_models();
     while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
-    for (const model of models) {
-      const option = document.createElement("option");
-      option.value = model.name;
-      option.textContent = model.tools ? model.name : `${model.name} (ohne Werkzeuge)`;
-      option.selected = model.name === current;
-      modelSelect.appendChild(option);
+    for (const {label, cloud} of MODEL_GROUPS) {
+      const members = models.filter(model => Boolean(model.cloud) === cloud);
+      if (members.length === 0) continue;
+      const group = document.createElement("optgroup");
+      group.label = label;
+      for (const model of members) {
+        const option = document.createElement("option");
+        option.value = model.name;
+        option.textContent = model.tools ? model.name : `${model.name} (ohne Werkzeuge)`;
+        option.selected = model.name === current;
+        group.appendChild(option);
+      }
+      modelSelect.appendChild(group);
     }
     modelSelect.hidden = models.length === 0;
   } catch (error) {

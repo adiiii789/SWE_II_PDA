@@ -1,7 +1,9 @@
 """OllamaAssistant: Assistent mit lokalem Sprachmodell und Werkzeugen (Tool-Calling).
 
 Ablauf von reply(message):
-  1. Feste Befehle (commands.COMMANDS, z. B. "hilfe") direkt beantworten.
+  1. Feste Befehle (commands.COMMANDS, z. B. "hilfe") direkt beantworten, ebenso
+     MODEL_COMMANDS ("modelle", "modell <name>") zum Wechseln des Sprachmodells -
+     lokal installiert oder in der Ollama-Cloud.
   2. Nachricht an den Gesprächsverlauf anhängen.
   3. model.chat(Systemanweisung + Verlauf, alle Werkzeuge)
   4. Will das Modell Werkzeuge nutzen, ruft der Assistent sie über den ToolProvider
@@ -21,7 +23,7 @@ from collections.abc import Callable
 from backend.assistant.base import AssistantReply
 from backend.assistant.commands import COMMANDS
 from backend.assistant.llm import ChatMessage, ToolCall
-from backend.assistant.ollama import OllamaError, OllamaModel
+from backend.assistant.ollama import OllamaError, OllamaModel, cloud_name
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult
 from backend.preferences import PreferenceStore
 from backend.views import TemplateView
@@ -39,6 +41,14 @@ BASE_INSTRUCTIONS = (
 )
 
 _WEEKDAYS = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
+
+MODEL_COMMANDS = {
+    "modelle": "Zeigt lokale und Cloud-Sprachmodelle",
+    "modell <name>": "Wechselt das Sprachmodell, z. B. modell gemma4:31b-cloud",
+}
+CLOUD_HINT = ("Cloud-Modelle laufen auf ollama.com statt auf deinem PC. Dafür einmal im Terminal "
+              "'ollama signin' ausführen. Im Free-Plan sind nur einige Modelle enthalten, mit einem "
+              "Nutzungskontingent.")
 
 
 class OllamaAssistant:
@@ -61,13 +71,20 @@ class OllamaAssistant:
         command = message.strip().lower()
         if command == "neu":
             self.history.clear()
+        if command == "hilfe":
+            return _with_model_commands(COMMANDS[command][1]())
         if command in COMMANDS:
             return COMMANDS[command][1]()
+        if command == "modelle":
+            return self._models_reply()
+        if command.startswith("modell "):
+            return self._select_reply(message.strip()[len("modell "):].strip())
 
         try:
             if not self._ensure_model():
-                return AssistantReply("In Ollama ist noch kein Modell installiert. "
-                                      "Lade eins herunter, z. B. mit: ollama pull llama3.2")
+                return AssistantReply("In Ollama ist noch kein Modell installiert. Lade eins herunter, "
+                                      "z. B. mit: ollama pull llama3.2 - oder nutze ein Cloud-Modell "
+                                      "(Liste mit 'modelle'). " + CLOUD_HINT)
         except OllamaError as error:
             return AssistantReply(str(error))
 
@@ -106,6 +123,31 @@ class OllamaAssistant:
             log.warning("Werkzeug %s fehlgeschlagen: %s", call.name, error)
             return ToolResult(str(error), is_error=True)
 
+    def _models_reply(self) -> AssistantReply:
+        try:
+            self._ensure_model()
+            models = self.model.available_models()
+        except OllamaError as error:
+            return AssistantReply(str(error))
+        rows = [[("▶ " if info.name == self.model.name else "") + info.name,
+                 "Cloud" if info.cloud else "Lokal",
+                 "ja" if info.supports_tools else "nein"] for info in models]
+        current = f"Aktuell: {self.model.name}. " if self.model.name else ""
+        return AssistantReply(
+            f'{current}Wechseln mit "modell <name>".',
+            TemplateView("default", {"title": "Sprachmodelle", "text": CLOUD_HINT,
+                                     "columns": ["Modell", "Ort", "Werkzeuge"], "rows": rows}))
+
+    def _select_reply(self, name: str) -> AssistantReply:
+        try:
+            selectable = self.model.selectable()
+            if name not in selectable and cloud_name(name) in selectable:
+                name = cloud_name(name)   # "gemma4:31b" meint das Cloud-Modell "gemma4:31b-cloud"
+            self.select_model(name)
+        except (ValueError, OllamaError) as error:
+            return AssistantReply(f'{error}. Alle Modelle zeigt "modelle".')
+        return AssistantReply(f"Ich nutze jetzt {name}.")
+
     def _system_message(self) -> ChatMessage:
         now = self.clock()
         parts = [BASE_INSTRUCTIONS,
@@ -127,26 +169,37 @@ class OllamaAssistant:
 
     # --- ModelSelection ---------------------------------------------------------------
     def available_models(self) -> list[dict]:
-        return [{"name": info.name, "tools": info.supports_tools} for info in self.model.available_models()]
+        return [{"name": info.name, "tools": info.supports_tools, "cloud": info.cloud}
+                for info in self.model.available_models()]
 
     def current_model(self) -> str:
         self._ensure_model()
         return self.model.name
 
     def select_model(self, name: str) -> None:
-        if name not in self.model.installed():
-            raise ValueError(f"Modell {name!r} ist in Ollama nicht installiert")
+        if name not in self.model.selectable():
+            raise ValueError(f"Modell {name!r} ist weder installiert noch in der Ollama-Cloud verfügbar")
         self.model.name = name
         self.preferences.set(MODEL_PREFERENCE, name)
 
     def _ensure_model(self) -> bool:
-        """Modell festlegen, falls noch keins gewählt ist: zuletzt gewähltes, sonst erstes installiertes."""
+        """Modell festlegen, falls noch keins gewählt ist: zuletzt gewähltes (auch Cloud),
+        sonst erstes installiertes."""
         if self.model.name:
             return True
         installed = self.model.installed()
         saved = self.preferences.get(MODEL_PREFERENCE)
-        self.model.name = saved if saved in installed else (installed[0] if installed else "")
+        if saved and (saved in installed or saved in {info.name for info in self.model.cloud_models()}):
+            self.model.name = saved
+        else:
+            self.model.name = installed[0] if installed else ""
         return bool(self.model.name)
+
+
+def _with_model_commands(reply: AssistantReply) -> AssistantReply:
+    data = reply.view.data
+    rows = [*data["rows"], *([name, description] for name, description in MODEL_COMMANDS.items())]
+    return AssistantReply(reply.text, TemplateView(reply.view.template, {**data, "rows": rows}))
 
 
 def _tool_view(tool_log: list[tuple[ToolCall, ToolResult]]) -> TemplateView:

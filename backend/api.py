@@ -44,7 +44,7 @@ def start_view() -> str:
 
 
 def list_models() -> dict[str, Any]:
-    """Wählbare Sprachmodelle: {"models": [{"name", "tools"}], "current": str | None}.
+    """Wählbare Sprachmodelle: {"models": [{"name", "tools", "cloud"}], "current": str | None}.
     Ohne Sprachmodell (CommandAssistant) ist die Liste leer."""
     assistant = _assistant()
     if not isinstance(assistant, ModelSelection):

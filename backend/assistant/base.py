@@ -31,7 +31,7 @@ class ModelSelection(Protocol):
     """Optional: Assistenten mit Sprachmodell, deren Modell man im Popup wählen kann."""
 
     def available_models(self) -> list[dict]:
-        """Installierte Modelle: [{"name": str, "tools": bool}, ...]"""
+        """Wählbare Modelle: [{"name": str, "tools": bool, "cloud": bool}, ...]"""
         ...
 
     def current_model(self) -> str:
