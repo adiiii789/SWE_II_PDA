@@ -93,6 +93,22 @@ Im Free-Plan sind nur einige Cloud-Modelle enthalten, und es gibt ein Nutzungsko
 einem kostenpflichtigen Modell nennt die Fehlermeldung ein kostenloses Modell als Alternative.
 `PDA_OLLAMA_CLOUD=0` blendet die Cloud-Modelle aus.
 
+### Einstellungen (Präferenzen)
+
+**⚙ Einstellungen** oben links im Chat öffnet ein Formular über dem ganzen Popup. Gespeichert wird
+in `%APPDATA%\PersonalDigitalAgent\preferences.json`, gültig ab der nächsten Nachricht.
+
+- **Antworten:** Länge, Tiefe, Darstellung (Fließtext, Stichpunkte, strukturiert …), Ton, Anrede
+  (du/Sie), Sprache, Emojis, Rückfragen statt Raten und ein Freitext für weitere Wünsche.
+- **Werkzeuge:** Für jede Werkzeuggruppe einstellbar, ob der Assistent sie überhaupt nutzt, wie
+  ausführlich er Ergebnisse im Chat wiedergibt, ob oben eine Tabelle der Aufrufe erscheint
+  (aus, gekürzt, vollständig) und ein Freitext zur Darstellung. **E-Mail** zusätzlich: welche
+  Angaben je Mail (Absender, Betreff, Datum, Vorschau, Anhänge …), wie viel Inhalt (nur Angaben,
+  Zusammenfassung, Wichtiges, Volltext), Liste oder Tabelle, Höchstzahl, Rückfrage vor dem Senden.
+- **Neue Werkzeuge** (z. B. aus einem weiteren MCP-Server) erscheinen automatisch mit den
+  Grundeinstellungen. Eigene Zusatzfelder: `ToolGroup` in
+  [backend/assistant/settings.py](backend/assistant/settings.py) eintragen.
+
 ### Proaktive Meldungen
 
 Der PDA kann sich **von sich aus** melden, ohne dass man etwas gefragt hat. Zum Vorführen gibt es

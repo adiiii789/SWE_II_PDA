@@ -24,6 +24,7 @@ from backend.assistant.base import AssistantReply
 from backend.assistant.commands import COMMANDS
 from backend.assistant.llm import ChatMessage, ToolCall
 from backend.assistant.ollama import OllamaError, OllamaModel, cloud_name
+from backend.assistant.settings import SETTINGS_KEYS, AssistantSettings
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult
 from backend.preferences import PreferenceStore
 from backend.views import TemplateView
@@ -33,11 +34,10 @@ log = logging.getLogger(__name__)
 MODEL_PREFERENCE = "ollama_model"
 MAX_TOOL_RESULT_CHARS = 8000   # schützt das Kontextfenster kleiner Modelle
 
+# Länge, Sprache, Ton, Emojis usw. legt der Nutzer im Popup fest (backend/assistant/settings.py).
 BASE_INSTRUCTIONS = (
     "Du bist der Personal Digital Agent, ein persönlicher Assistent auf dem Windows-PC des Nutzers. "
-    "Antworte immer auf Deutsch, kurz und freundlich. Verwende niemals Emojis"
-    "Nutze Werkzeuge nur, wenn du sie für die Antwort brauchst, und erfinde keine Ergebnisse. "
-    "Fehlt dir eine Angabe, frag kurz nach."
+    "Nutze Werkzeuge nur, wenn du sie für die Antwort brauchst, und erfinde keine Ergebnisse."
 )
 
 # Vor dem Auftrag einer proaktiven Meldung - das Modell soll ihn nicht für eine Frage des Nutzers halten.
@@ -64,6 +64,7 @@ class OllamaAssistant:
         self.model = model
         self.tools = tools
         self.preferences = preferences
+        self.settings = AssistantSettings(preferences)   # Einstellungen aus dem Popup
         self.instructions = instructions
         self.max_tool_rounds = max_tool_rounds
         self.max_history = max_history
@@ -101,7 +102,7 @@ class OllamaAssistant:
             del self.history[start:]   # misslungene Runde nicht im Verlauf behalten
             return AssistantReply(f"Fehler von Ollama ({self.model.name}): {error}")
         self._trim_history()
-        return AssistantReply(text, _tool_view(tool_log) if tool_log else None, _attachments(tool_log))
+        return AssistantReply(text, _tool_view(tool_log, self.settings), _attachments(tool_log))
 
     # --- ProactiveAssistant ------------------------------------------------------------
     def announce(self, instruction: str) -> str | None:
@@ -126,11 +127,13 @@ class OllamaAssistant:
         return text
 
     def _run(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> str:
-        tools = self.tools.list_tools()
+        # Im Popup abgeschaltete Werkzeuge bekommt das Modell gar nicht erst zu sehen.
+        tools = [tool for tool in self.tools.list_tools() if self.settings.tool_enabled(tool.name)]
+        system = self._system_message([tool.name for tool in tools])
         for round_ in range(self.max_tool_rounds + 1):
             # In der letzten Runde keine Werkzeuge mehr anbieten: Das Modell muss antworten.
             offered = tools if round_ < self.max_tool_rounds else []
-            response = self.model.chat([self._system_message(), *self.history], offered)
+            response = self.model.chat([system, *self.history], offered)
             self.history.append(response.message)
             if not response.wants_tools:
                 return response.message.content.strip() or "(Das Modell hat keine Antwort geliefert.)"
@@ -143,6 +146,9 @@ class OllamaAssistant:
 
     def _call_tool(self, call: ToolCall) -> ToolResult:
         log.info("Werkzeug %s(%s)", call.name, call.arguments)
+        if not self.settings.tool_enabled(call.name):
+            return ToolResult(f"Das Werkzeug {call.name} hat der Nutzer in den Einstellungen abgeschaltet.",
+                              is_error=True)
         try:
             return self.tools.call_tool(call.name, call.arguments)
         except Exception as error:   # z. B. erfundener Werkzeugname - das Modell soll es korrigieren
@@ -174,11 +180,13 @@ class OllamaAssistant:
             return AssistantReply(f'{error}. Alle Modelle zeigt "modelle".')
         return AssistantReply(f"Ich nutze jetzt {name}.")
 
-    def _system_message(self) -> ChatMessage:
+    def _system_message(self, tools: list[str] = ()) -> ChatMessage:
         now = self.clock()
         parts = [BASE_INSTRUCTIONS,
-                 f"Jetzt ist {_WEEKDAYS[now.weekday()]}, der {now:%d.%m.%Y}, {now:%H:%M} Uhr."]
-        context = {k: v for k, v in self.preferences.all().items() if k != MODEL_PREFERENCE}
+                 f"Jetzt ist {_WEEKDAYS[now.weekday()]}, der {now:%d.%m.%Y}, {now:%H:%M} Uhr.",
+                 self.settings.instructions(tools)]
+        context = {k: v for k, v in self.preferences.all().items()
+                   if k != MODEL_PREFERENCE and k not in SETTINGS_KEYS}
         if context:
             parts.append("Bekanntes über den Nutzer: " + json.dumps(context, ensure_ascii=False))
         if self.instructions:
@@ -228,10 +236,13 @@ def _with_model_commands(reply: AssistantReply) -> AssistantReply:
     return AssistantReply(reply.text, TemplateView(reply.view.template, {**data, "rows": rows}))
 
 
-def _tool_view(tool_log: list[tuple[ToolCall, ToolResult]]) -> TemplateView:
+def _tool_view(tool_log: list[tuple[ToolCall, ToolResult]], settings: AssistantSettings) -> TemplateView | None:
+    """Tabelle der Aufrufe - nur Werkzeuge, deren Einstellung "Tabelle oben" nicht aus ist."""
     rows = [[call.name, json.dumps(call.arguments, ensure_ascii=False),
-             ("Fehler: " if result.is_error else "") + _shorten(result.content)]
-            for call, result in tool_log]
+             ("Fehler: " if result.is_error else "") + _shorten(result.content, limit)]
+            for call, result in tool_log if (limit := settings.view_limit(call.name)) is not None]
+    if not rows:
+        return None
     return TemplateView("default", {"title": "Verwendete Werkzeuge",
                                     "columns": ["Werkzeug", "Argumente", "Ergebnis"], "rows": rows})
 

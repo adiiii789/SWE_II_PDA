@@ -193,6 +193,59 @@ class ReplyTest(unittest.TestCase):
         self.assertTrue(system.endswith("Briefing kurz halten."))
 
 
+class SettingsTest(unittest.TestCase):
+    """Einstellungen aus dem Popup (backend/assistant/settings.py) wirken auf Modell und Ansicht."""
+
+    def make_with(self, model, tools=None, answer=None, tool_settings=None):
+        assistant = make(model, tools)
+        assistant.settings.save(answer, tool_settings)
+        return assistant
+
+    def test_answer_wishes_in_system_message_not_as_raw_json(self):
+        model = FakeModel(text("ok"))
+        self.make_with(model, answer={"length": "ausfuehrlich", "address": "sie"}).reply("x")
+        system = model.calls[0][0][0].content
+        self.assertIn("Antworte ausführlich und vollständig.", system)
+        self.assertIn("Sieze den Nutzer.", system)
+        self.assertNotIn("Bekanntes über den Nutzer", system)   # Einstellungen sind kein Kontextwissen
+        self.assertNotIn("answer_settings", system)
+
+    def test_tool_wishes_for_offered_tools(self):
+        model = FakeModel(text("ok"))
+        self.make_with(model, tool_settings={"tool:echo": {"notes": "immer in Großbuchstaben"}}).reply("x")
+        self.assertIn('Darstellung von "echo": immer in Großbuchstaben', model.calls[0][0][0].content)
+
+    def test_disabled_tool_is_not_offered_and_refused(self):
+        tools = EchoTools()
+        model = FakeModel(calls(ToolCall("echo", {"text": "a"})), text("Geht nicht"))
+        reply = self.make_with(model, tools, tool_settings={"tool:echo": {"enabled": False}}).reply("x")
+        self.assertEqual(model.calls[0][1], [])
+        self.assertEqual(tools.calls, [])   # auch ein erfundener Aufruf läuft nicht
+        self.assertIn("abgeschaltet", model.calls[1][0][-1].content)
+        self.assertEqual(reply.text, "Geht nicht")
+
+    def test_view_off_hides_table(self):
+        model = FakeModel(calls(ToolCall("echo", {"text": "a"})), text("Fertig"))
+        reply = self.make_with(model, tool_settings={"tool:echo": {"view": "aus"}}).reply("x")
+        self.assertIsNone(reply.view)
+
+    def test_full_view_does_not_shorten(self):
+        class LongTools(EchoTools):
+            def call_tool(self, name, arguments):
+                return ToolResult("x" * 1000)
+
+        model = FakeModel(calls(ToolCall("echo")), text("Fertig"))
+        short = make(FakeModel(calls(ToolCall("echo")), text("Fertig")), LongTools()).reply("x")
+        full = self.make_with(model, LongTools(), tool_settings={"tool:echo": {"view": "voll"}}).reply("x")
+        self.assertEqual(len(short.view.data["rows"][0][2]), 300 + len(" …"))
+        self.assertEqual(full.view.data["rows"][0][2], "x" * 1000)
+
+    def test_announce_uses_answer_wishes(self):
+        model = FakeModel(text("Hallo"))
+        self.make_with(model, answer={"language": "englisch"}).announce("Sag Hallo")
+        self.assertIn("Antworte immer auf Englisch.", model.calls[0][0][0].content)
+
+
 class ModelSelectionTest(unittest.TestCase):
     def test_picks_first_installed_model(self):
         model = FakeModel(text("ok"), installed=["a", "b"])

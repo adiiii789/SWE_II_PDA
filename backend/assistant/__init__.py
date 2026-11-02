@@ -28,7 +28,7 @@ def _ollama_assistant() -> Assistant:
     from backend.assistant.skills import SKILLS
     from backend.assistant.tools import CompositeToolProvider
     from backend.integrations.mcp_client import load_mcp_servers
-    from backend.preferences import JsonPreferenceStore
+    from backend.preferences import default_store
 
     catalog = (OllamaClient(config.OLLAMA_CLOUD_URL, config.OLLAMA_CLOUD_CATALOG_TIMEOUT_S,
                             "Ohne Internet gibt es nur lokale Modelle.")
@@ -38,7 +38,7 @@ def _ollama_assistant() -> Assistant:
     mcp_servers = load_mcp_servers(config.MCP_SERVERS_FILE, config.ROOT_DIR)
     tools = CompositeToolProvider([*mcp_servers, *(skill.tools for skill in SKILLS)])
     instructions = "\n\n".join(skill.instructions for skill in SKILLS)
-    return OllamaAssistant(model, tools, JsonPreferenceStore(config.PREFERENCES_FILE), instructions,
+    return OllamaAssistant(model, tools, default_store(), instructions,
                            config.ASSISTANT_MAX_TOOL_ROUNDS, config.ASSISTANT_MAX_HISTORY)
 
 
