@@ -39,3 +39,13 @@ class ModelSelection(Protocol):
 
     def select_model(self, name: str) -> None:
         ...
+
+
+@runtime_checkable
+class ProactiveAssistant(Protocol):
+    """Optional: Assistenten, die eine Meldung von sich aus formulieren können (backend/proactive.py)."""
+
+    def announce(self, instruction: str) -> str | None:
+        """Meldung an den Nutzer zum Auftrag `instruction` (kommt vom Programm, nicht vom Nutzer).
+        Die Meldung gehört danach zum Gesprächsverlauf. None = gerade nicht möglich (z. B. kein Modell)."""
+        ...

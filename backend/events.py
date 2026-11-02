@@ -21,8 +21,12 @@ log = logging.getLogger(__name__)
 
 EventHandler = Callable[[str, Any], None]
 
-# Nachricht des Assistenten im Chat, Payload wie die Antwort von api.chat: {"text", "html"}
+# Nachricht des Assistenten im Chat, Payload wie die Antwort von api.chat: {"text", "html"};
+# proaktive Meldungen (backend/proactive.py) zusätzlich mit "proactive": True und "title"
 ASSISTANT_MESSAGE = "assistant_message"
+# Der PDA meldet sich von sich aus: {"title", "text"} - backend/desktop/application.py zeigt eine
+# Windows-Benachrichtigung am Tray-Icon
+PROACTIVE_NOTICE = "proactive_notice"
 # Popup vergrößern (True) oder auf Normalgröße zurück (False); backend/desktop/application.py reagiert darauf
 POPUP_ENLARGED = "popup_enlarged"
 

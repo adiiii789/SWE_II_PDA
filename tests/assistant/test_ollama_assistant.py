@@ -2,10 +2,10 @@
 import datetime
 import unittest
 
-from backend.assistant import Assistant, ModelSelection
+from backend.assistant import Assistant, ModelSelection, ProactiveAssistant
 from backend.assistant.llm import ChatMessage, ModelResponse, ToolCall
 from backend.assistant.ollama import ModelInfo, OllamaError
-from backend.assistant.ollama_assistant import MODEL_PREFERENCE, OllamaAssistant
+from backend.assistant.ollama_assistant import MODEL_PREFERENCE, PROACTIVE_TRIGGER, OllamaAssistant
 from backend.assistant.tools import Attachment, CompositeToolProvider, ToolResult, ToolSpec
 from backend.views import START_VIEW
 
@@ -257,6 +257,40 @@ class ModelSelectionTest(unittest.TestCase):
     def test_help_lists_model_commands(self):
         rows = make(FakeModel()).reply("hilfe").view.data["rows"]
         self.assertIn("modelle", [row[0] for row in rows])
+
+
+class AnnounceTest(unittest.TestCase):
+    def test_implements_protocol(self):
+        self.assertIsInstance(make(FakeModel()), ProactiveAssistant)
+
+    def test_message_joins_history_but_trigger_does_not(self):
+        model = FakeModel(text(" Hallo von selbst! "), text("Gern."))
+        assistant = make(model)
+        self.assertEqual(assistant.announce("Sag Hallo"), "Hallo von selbst!")
+        messages, tools = model.calls[0]
+        self.assertEqual(messages[0].role, "system")
+        self.assertEqual(messages[-1], ChatMessage("user", PROACTIVE_TRIGGER + "Sag Hallo"))
+        self.assertEqual(tools, [])
+        self.assertEqual(assistant.history, [ChatMessage("assistant", "Hallo von selbst!")])
+        assistant.reply("Danke")   # der Nutzer kann direkt antworten - das Modell sieht die Meldung
+        self.assertEqual(model.calls[1][0][1:], [ChatMessage("assistant", "Hallo von selbst!"),
+                                                 ChatMessage("user", "Danke")])
+
+    def test_no_model_installed(self):
+        assistant = make(FakeModel(installed=()))
+        self.assertIsNone(assistant.announce("Sag Hallo"))
+        self.assertEqual(assistant.history, [])
+
+    def test_ollama_error(self):
+        assistant = make(FakeModel(OllamaError("Ollama läuft nicht")))
+        with self.assertLogs("backend.assistant.ollama_assistant", "WARNING"):
+            self.assertIsNone(assistant.announce("Sag Hallo"))
+        self.assertEqual(assistant.history, [])
+
+    def test_empty_answer(self):
+        assistant = make(FakeModel(text("  ")))
+        self.assertIsNone(assistant.announce("Sag Hallo"))
+        self.assertEqual(assistant.history, [])
 
 
 if __name__ == "__main__":

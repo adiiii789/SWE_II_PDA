@@ -127,11 +127,23 @@ function addAttachments(message, attachments) {
 }
 
 // Antwort des Assistenten anzeigen: {"text", "html", "attachments"} - aus chat() oder als Push vom Backend.
+// Proaktive Meldungen (backend/proactive.py) haben zusätzlich "proactive": true und "title".
 function showReply(reply) {
   const message = createMessage(reply.text, "assistant");
+  if (reply.proactive) markProactive(message, reply.title);
   if (reply.attachments && reply.attachments.length) addAttachments(message, reply.attachments);
   appendToChat(message);   // erst komplett aufbauen, dann einblenden - so stimmt die Scrollposition
   if (reply.html) showView(reply.html);
+}
+
+// Kennzeichnung "meldet sich von selbst" über der Nachricht - Titel nur als Text, nie als HTML.
+function markProactive(message, title) {
+  message.classList.add("proactive");
+  const label = document.createElement("div");
+  label.className = "proactive-label";
+  const time = new Date().toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
+  label.textContent = `🔔 ${title || "Meldung"} · ${time}`;
+  message.prepend(label);
 }
 
 // spoken: Nachricht kam per Spracheingabe - dann wird die Antwort vorgelesen.

@@ -1,12 +1,14 @@
 import unittest
+from unittest import mock
 
 from PyQt5.QtCore import QPoint
 from PyQt5.QtGui import QCloseEvent, QCursor, QGuiApplication
 from PyQt5.QtWidgets import QLabel
 
-from tests.qt_helpers import qt_app
+from tests.qt_helpers import qt_app, wait_until
 
 from backend import config
+from backend.desktop import popup_window
 from backend.desktop.popup_window import PopupWindow
 
 
@@ -36,6 +38,32 @@ class PopupWindowTest(unittest.TestCase):
         self.assertEqual((self.popup.width(), self.popup.height()), (width, height))
         end = self.popup._animation.endValue()
         self.assertEqual(end.bottomRight() + QPoint(1, 1), cursor)
+
+    def test_show_requested_opens_at_anchor_and_takes_focus(self):
+        # Proaktive Meldung: wie ein Klick aufs Tray-Icon, nur am Ankerpunkt statt am Mauszeiger.
+        self.popup.anchor = lambda: QPoint(900, 700)
+        with mock.patch.object(popup_window, "bring_to_front", return_value=True) as front:
+            self.popup.show_requested.emit()
+        self.assertTrue(self.popup.isVisible())
+        self.assertEqual(self.popup._animation.endValue().bottomRight() + QPoint(1, 1), QPoint(900, 700))
+        front.assert_called_once_with(int(self.popup.winId()))
+
+    def test_show_requested_leaves_open_popup_alone(self):
+        self.popup.show_at_cursor()
+        end = self.popup._animation.endValue()
+        self.popup.anchor = lambda: QPoint(300, 300)
+        with mock.patch.object(popup_window, "bring_to_front") as front:
+            self.popup.show_requested.emit()
+        front.assert_not_called()
+        self.assertEqual(self.popup._animation.endValue(), end)
+
+    def test_default_anchor_is_bottom_right_of_screen(self):
+        self.assertTrue(QGuiApplication.primaryScreen().availableGeometry().contains(self.popup.anchor()))
+
+    def test_show_at_cursor_does_not_force_focus(self):
+        with mock.patch.object(popup_window, "bring_to_front") as front:
+            self.popup.show_at_cursor()
+        front.assert_not_called()
 
     def test_enlarged_size_is_used_on_next_show(self):
         self.popup.set_enlarged(True)

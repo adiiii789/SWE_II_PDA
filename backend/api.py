@@ -9,16 +9,24 @@ das Popup nicht ein.
 """
 from __future__ import annotations
 
+import logging
+import threading
 import webbrowser
 from functools import cache
 from typing import Any
 
+from backend import config, proactive
 from backend.assistant import Assistant, ModelSelection, create_assistant
 from backend.events import POPUP_ENLARGED, events
 from backend.presenter import attachment_store, present, renderer
 from backend.speech import SpeechInput, SpeechOutput, create_speech_input, create_speech_output
 from backend.views import START_VIEW, view_from_dict
 
+log = logging.getLogger(__name__)
+
+# Der Assistent ist nicht thread-sicher. Bridge-Aufrufe laufen nacheinander, proaktive
+# Meldungen kommen aber aus einem anderen Thread (backend/desktop/application.py).
+_assistant_lock = threading.Lock()
 
 @cache
 def _assistant() -> Assistant:
@@ -28,7 +36,9 @@ def _assistant() -> Assistant:
 
 def chat(message: str) -> dict[str, Any]:
     """Antwort des Assistenten: {"text", "html", "attachments"} (siehe backend/presenter.py)."""
-    return present(_assistant().reply(message))
+    with _assistant_lock:
+        reply = _assistant().reply(message)
+    return present(reply)
 
 
 def render_view(request: dict[str, Any]) -> str:
@@ -128,6 +138,25 @@ def enlarge_popup(enlarged: bool) -> bool:
     enlarged = bool(enlarged)
     events.publish(POPUP_ENLARGED, enlarged)
     return enlarged
+
+
+def proactive_message(occasion: str = proactive.DEMO) -> dict[str, Any]:
+    """Der PDA meldet sich von sich aus (Anlass aus backend/proactive.py, z. B. "demo").
+
+    Die Meldung erscheint als Push im Chat und als Windows-Benachrichtigung und wird
+    vorgelesen (config.PROACTIVE_SPEAK). Gibt die Chat-Nachricht zurück. Darf aus jedem
+    Thread aufgerufen werden; dauert so lange, wie das Sprachmodell braucht.
+    """
+    chosen = proactive.occasion(occasion)
+    with _assistant_lock:
+        reply = proactive.compose(_assistant(), chosen)
+    message = proactive.announce(present(reply), chosen, events)
+    if config.PROACTIVE_SPEAK and (speech_output := _speech_output()) is not None:
+        try:
+            speech_output.speak(reply.text)
+        except Exception:  # noqa: BLE001  # Meldung ist schon da - Vorlesen ist Zugabe
+            log.exception("Proaktive Meldung konnte nicht vorgelesen werden")
+    return message
 
 
 def _require(component: Any, name: str) -> Any:

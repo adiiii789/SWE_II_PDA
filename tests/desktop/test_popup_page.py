@@ -6,7 +6,7 @@ from unittest import mock
 
 from tests.qt_helpers import qt_app, run_js, wait_until
 
-from backend import api, presenter
+from backend import api, presenter, proactive
 from backend.assistant import AssistantReply
 from backend.assistant.tools import Attachment
 from backend.attachments import AttachmentStore
@@ -39,7 +39,8 @@ class PopupPageTest(unittest.TestCase):
         cls.page = cls.popup.content.page()
         loaded = []
         cls.popup.content.loadFinished.connect(loaded.append)
-        if not wait_until(lambda: loaded):
+        # Großzügig: Laufen vorher Tests mit eigenem Chromium (test_application), dauert das Laden länger.
+        if not wait_until(lambda: loaded, 40):
             raise TimeoutError("Popup-Seite nicht geladen")
         # Anfangszustand festhalten, bevor ein Test chattet (Seite wird geteilt).
         # Die Startansicht kommt asynchron vom Backend.
@@ -91,6 +92,18 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(wait_until(lambda: len(run_js(self.page, MESSAGES)) == count + 1))
         self.assertEqual(run_js(self.page, MESSAGES)[-1], "message assistant:Guten Morgen!")
         self.assertTrue(wait_until(lambda: "<h2>Briefing</h2>" in run_js(self.page, IFRAME_HTML)))
+
+    def test_proactive_message_is_marked_in_chat(self):
+        # Der PDA meldet sich von selbst (Test-Makro) - ohne Sprachmodell mit dem Ersatztext.
+        demo = proactive.OCCASIONS[proactive.DEMO]
+        count = len(run_js(self.page, MESSAGES))
+        with mock.patch.object(api.config, "PROACTIVE_SPEAK", False):
+            api.proactive_message("demo")
+        self.assertTrue(wait_until(lambda: len(run_js(self.page, MESSAGES)) == count + 1))
+        last = run_js(self.page, MESSAGES)[-1]
+        self.assertTrue(last.startswith(f"message assistant proactive:🔔 {demo.title} · "), last)
+        self.assertTrue(last.endswith(demo.fallback), last)
+        self.assertTrue(wait_until(lambda: f"<h2>{demo.title}</h2>" in run_js(self.page, IFRAME_HTML)))
 
     def test_attachments_can_be_opened_and_saved(self):
         with tempfile.TemporaryDirectory() as tmp:

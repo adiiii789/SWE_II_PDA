@@ -93,6 +93,24 @@ Im Free-Plan sind nur einige Cloud-Modelle enthalten, und es gibt ein Nutzungsko
 einem kostenpflichtigen Modell nennt die Fehlermeldung ein kostenloses Modell als Alternative.
 `PDA_OLLAMA_CLOUD=0` blendet die Cloud-Modelle aus.
 
+### Proaktive Meldungen
+
+Der PDA kann sich **von sich aus** melden, ohne dass man etwas gefragt hat. Zum Vorführen gibt es
+ein Test-Makro: **Strg+Alt+P** (funktioniert überall in Windows, auch bei geschlossenem Popup) oder
+Rechtsklick aufs Tray-Icon → „Proaktive Meldung testen“. Dann
+
+1. formuliert das Sprachmodell eine kurze Meldung (ohne Modell: fester Text),
+2. **öffnet sich das Popup von selbst** – genau wie bei einem Klick aufs Tray-Icon (Ecke an der
+   Mitte des Icons, gleiche Einfahr-Animation, schließt sich beim Klick daneben),
+3. steht die Meldung im Chat, markiert mit 🔔, und oben eine Ansicht mit Zeitpunkt und Auslöser,
+4. wird sie vorgelesen, wenn die Sprachausgabe verfügbar ist.
+
+Man kann direkt im Chat antworten – das Modell kennt seine Meldung. Einstellungen:
+`PDA_PROACTIVE_HOTKEY` (z. B. `Ctrl+Shift+F9`, leer = aus), `PDA_PROACTIVE_SPEAK=0` (nicht vorlesen),
+`PDA_PROACTIVE_OPEN_POPUP=0` (statt des Popups nur eine Windows-Benachrichtigung; Klick öffnet es).
+Später lösen echte Anlässe (Briefing um 7 Uhr, Termin, neue Mail) dasselbe aus, siehe
+[backend/proactive.py](backend/proactive.py).
+
 ## Testen
 
 ```

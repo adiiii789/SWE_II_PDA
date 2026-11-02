@@ -85,6 +85,15 @@ body.chat-maximized #view-frame, body.chat-maximized #splitter { display: none; 
 .message.assistant { align-self: flex-start; background: var(--surface); }
 .message.error     { align-self: flex-start; background: #6A3A3A; }
 
+/* Proaktive Meldung (backend/proactive.py): der PDA hat sich von sich aus gemeldet */
+.message.assistant.proactive { border-left: 3px solid #E0B050; }
+.proactive-label {
+  font-size: 0.8em;
+  font-weight: 600;
+  color: #E0B050;
+  margin-bottom: 0.3em;
+}
+
 /* Antworten als Markdown (frontend/markdown.js): Abstände kommen von den Elementen, nicht von pre-wrap */
 .message.assistant { white-space: normal; overflow-x: auto; }
 .assistant > :first-child { margin-top: 0; }

@@ -40,6 +40,10 @@ BASE_INSTRUCTIONS = (
     "Fehlt dir eine Angabe, frag kurz nach."
 )
 
+# Vor dem Auftrag einer proaktiven Meldung - das Modell soll ihn nicht für eine Frage des Nutzers halten.
+PROACTIVE_TRIGGER = ("[Automatischer Auslöser, nicht vom Nutzer geschrieben] Der Nutzer hat nichts gefragt. "
+                     "Schreib ihm von dir aus eine Nachricht. Auftrag: ")
+
 _WEEKDAYS = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
 
 MODEL_COMMANDS = {
@@ -52,7 +56,7 @@ CLOUD_HINT = ("Cloud-Modelle laufen auf ollama.com statt auf deinem PC. Dafür e
 
 
 class OllamaAssistant:
-    """Erfüllt Assistant und ModelSelection (base.py)."""
+    """Erfüllt Assistant, ModelSelection und ProactiveAssistant (base.py)."""
 
     def __init__(self, model: OllamaModel, tools: ToolProvider, preferences: PreferenceStore,
                  instructions: str = "", max_tool_rounds: int = 5, max_history: int = 30,
@@ -98,6 +102,28 @@ class OllamaAssistant:
             return AssistantReply(f"Fehler von Ollama ({self.model.name}): {error}")
         self._trim_history()
         return AssistantReply(text, _tool_view(tool_log) if tool_log else None, _attachments(tool_log))
+
+    # --- ProactiveAssistant ------------------------------------------------------------
+    def announce(self, instruction: str) -> str | None:
+        """Meldung, die der Assistent von sich aus schickt (backend/proactive.py).
+
+        Der Auftrag landet nicht im Verlauf, die Meldung schon - so kann der Nutzer
+        direkt darauf antworten ("ja, mach das"). Ohne Werkzeuge, damit die Meldung schnell kommt.
+        """
+        try:
+            if not self._ensure_model():
+                return None
+            trigger = ChatMessage("user", PROACTIVE_TRIGGER + instruction)
+            response = self.model.chat([self._system_message(), *self.history, trigger], [])
+        except OllamaError as error:
+            log.warning("Proaktive Meldung ohne Modell: %s", error)
+            return None
+        text = response.message.content.strip()
+        if not text:
+            return None
+        self.history.append(ChatMessage("assistant", text))
+        self._trim_history()
+        return text
 
     def _run(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> str:
         tools = self.tools.list_tools()

@@ -49,6 +49,14 @@ SPEECH_LANGUAGE = os.environ.get("PDA_SPEECH_LANGUAGE", "de")         # leer = W
 WHISPER_MODEL = os.environ.get("PDA_WHISPER_MODEL", "small")          # tiny, base, small, medium …
 PIPER_VOICE = os.environ.get("PDA_PIPER_VOICE", "de_DE-pavoque-low")
 
+# Proaktive Meldungen (backend/proactive.py): der PDA meldet sich von sich aus.
+# Test-Makro: globales Tastenkürzel (überall in Windows), leer = aus. Auch über das Tray-Menü auslösbar.
+PROACTIVE_HOTKEY = os.environ.get("PDA_PROACTIVE_HOTKEY", "Ctrl+Alt+P")
+PROACTIVE_SPEAK = os.environ.get("PDA_PROACTIVE_SPEAK", "1") != "0"           # Meldung vorlesen
+# Popup von selbst öffnen (wie ein Klick aufs Tray-Icon); "0" = stattdessen Windows-Benachrichtigung
+PROACTIVE_OPEN_POPUP = os.environ.get("PDA_PROACTIVE_OPEN_POPUP", "1") != "0"
+PROACTIVE_NOTICE_MS = 8000            # Anzeigedauer der Benachrichtigung (Klick darauf öffnet das Popup)
+
 POPUP_PAGE = FRONTEND_DIR / "popup.html"
 POPUP_SIZE_RATIO = (0.3, 0.6)         # Anteil des Bildschirms (Breite, Höhe)
 POPUP_ENLARGED_SIZE_RATIO = (0.55, 0.9)   # vergrößertes Popup (Knopf im Chat)

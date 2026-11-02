@@ -57,7 +57,7 @@ Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen P
 | Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – je ein `ToolProvider`, gebündelt per `CompositeToolProvider` | Ort, Konvention und Sammel-Provider |
 | MCP-Server als Werkzeuge | `MCPToolProvider` in `backend/integrations/mcp_client.py`, Liste in `mcp_servers.json` | fertig (stdio), eigener Server `mcp_servers/pda_server.py` |
 | Lokales Sprachmodell (Ollama) | `OllamaModel` in `backend/assistant/ollama.py`, `OllamaAssistant` in `ollama_assistant.py` | fertig, Modellwahl im Popup |
-| Autonom (z. B. Briefing ohne Eingabe) | `backend/events.py`, `presenter.push(reply)` → Nachricht im Chat | Push-Kanal fertig |
+| Autonom (z. B. Briefing ohne Eingabe) | `backend/proactive.py`: Anlass → Modell formuliert Meldung → Chat, Windows-Benachrichtigung, Vorlesen; `api.proactive_message(name)` | proaktive Meldung fertig (Popup öffnet sich von selbst), Test-Makro Strg+Alt+P / Tray-Menü; echte Auslöser offen |
 | Kontextwissen, Präferenzen per UI | `PreferenceStore` / `JsonPreferenceStore` in `backend/preferences.py` | Speicherung fertig, UI offen |
 | Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` (faster-whisper, Piper bzw. Windows-Stimme) | fertig, Mikrofon-Knopf im Chat |
 | Kurze Antworten, Rückfragen | `Assistant.reply()`; der Assistent hält den Gesprächsverlauf | über das Protokoll möglich |
@@ -93,6 +93,7 @@ backend/                      BACKEND: läuft in Python
   api.py                      ← Schnittstelle zum Frontend (nur diese Funktionen sieht das JS)
   events.py                   ← Ereignisse vom Backend ans Frontend (Push)
   presenter.py                Antwort des Assistenten → {"text", "html", "attachments"}; push() für autonome Nachrichten
+  proactive.py                proaktive Meldungen: Anlässe, Meldung formulieren, an Chat + Benachrichtigung
   attachments.py              Dateien im Chat (z. B. Mail-Anhänge): öffnen, speichern
   config.py                   alle Einstellungen
   views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
@@ -115,7 +116,9 @@ backend/                      BACKEND: läuft in Python
     bridge_client.js          JS-Seite der Brücke, wird automatisch in jede Seite eingefügt
   desktop/                    Qt-Hülle, in der das Frontend angezeigt wird
     application.py            setzt die Bausteine zusammen
-    tray_icon.py              Tray-Icon + Kontextmenü
+    tray_icon.py              Tray-Icon + Kontextmenü + Windows-Benachrichtigung, anchor() = Mitte des Icons
+    foreground.py             Fenster ohne Klick des Nutzers in den Vordergrund holen (Fokussperre)
+    hotkey.py                 globales Tastenkürzel (Test-Makro für proaktive Meldungen)
     popup_window.py           Popup-Fenster + Einfahr-Animation
     web_view.py               Browser-Ansicht mit angehängter Brücke
 
@@ -161,6 +164,7 @@ Die beiden Seiten kennen sich nur über **drei Verträge**:
    | `speech_support()` | – | `{"input": bool, "output": bool}` – was an Sprache verfügbar ist |
    | `start_recording()` / `stop_recording()` / `cancel_recording()` | – | `stop_recording` liefert den erkannten Text |
    | `speak(text)` / `stop_speaking()` | Text | – (kehrt sofort zurück) |
+   | `proactive_message(occasion)` | Anlass, z. B. `"demo"` | Meldung wie bei `chat` plus `"proactive"`, `"title"`; kommt zusätzlich als Push |
 
 2. **Ansicht-Anfragen:** Eine Ansicht wird immer auf eine von zwei Arten angefordert – vom
    Assistenten im Backend ebenso wie vom Frontend über `render_view(request)`:
@@ -182,7 +186,8 @@ Die beiden Seiten kennen sich nur über **drei Verträge**:
 
    | Ereignis | Payload | Wirkung im Popup |
    |---|---|---|
-   | `assistant_message` | `{"text": str, "html": str \| null}` (wie bei `chat`) | Nachricht im Chat, ggf. neue Ansicht |
+   | `assistant_message` | `{"text": str, "html": str \| null}` (wie bei `chat`), proaktiv zusätzlich `"proactive": true, "title"` | Nachricht im Chat, ggf. neue Ansicht; proaktive mit 🔔 markiert |
+   | `proactive_notice` | `{"title", "text"}` | nur Backend: Popup öffnet sich von selbst (`application.py`), sonst Windows-Benachrichtigung |
 
    Im Backend: `events.publish(name, payload)` aus [backend/events.py](backend/events.py), für
    Assistenten-Nachrichten einfach `presenter.push(reply)`.
@@ -429,6 +434,36 @@ Beim Öffnen holt `popup.js` die Startansicht einmal mit `await start_view()`.
 **Nachricht ohne Eingabe (Push):** `presenter.push(reply)` → `events.publish("assistant_message",
 {...})` → Signal `event` der Bridge → `onPythonEvent("assistant_message", showReply)` in
 `popup.js`. Die Anzeige ist dieselbe wie bei einer Chat-Antwort.
+
+**Proaktive Meldung (der PDA meldet sich von sich aus):**
+
+```
+Strg+Alt+P (hotkey.py: RegisterHotKey → WM_HOTKEY)  oder  Tray-Menü „Proaktive Meldung testen“
+  → ProactiveTrigger.fire()           application.py, eigener Thread – Tray und Tastatur blockieren nicht;
+                                      während eine Meldung entsteht, zählt kein weiterer Druck
+  → api.proactive_message("demo")
+      proactive.compose()             OllamaAssistant.announce(auftrag): Modell formuliert die Meldung
+                                      (ohne Werkzeuge). Der Auftrag kommt nicht in den Verlauf, die
+                                      Meldung schon – der Nutzer kann direkt antworten.
+                                      Ohne Modell: fester Ersatztext des Anlasses.
+      proactive.announce()            ASSISTANT_MESSAGE (Chat, 🔔) + PROACTIVE_NOTICE
+      speak(text)                     wenn config.PROACTIVE_SPEAK und Sprachausgabe da
+  → application.py: PROACTIVE_NOTICE → popup.show_requested (Signal, aus jedem Thread)
+      → popup.show_at(tray.anchor(), take_focus=True)
+        wie ein Klick aufs Tray-Icon: untere rechte Ecke an der Mitte des Icons, gleiche Animation
+        (ist das Popup schon offen, bleibt es, wie es ist – die Meldung steht ja im Chat)
+    mit PDA_PROACTIVE_OPEN_POPUP=0 stattdessen: tray.notify_requested → Windows-Benachrichtigung,
+                                                Klick darauf → popup.show_requested
+```
+
+**Fokus:** Windows gibt einem Programm ohne vorherige Aktion des Nutzers keinen Fokus
+(Foreground-Lock), und ein `Qt.Popup` ohne Fokus schließt sich sofort. `foreground.py` hängt den
+eigenen Thread deshalb kurz an den Eingabe-Thread des Vordergrundfensters (`AttachThreadInput`)
+und holt das Popup dann nach vorn. Liegt das Tray-Icon im ausgeblendeten Überlaufbereich, kennt
+Windows seine Position nicht – dann öffnet sich das Popup unten rechts am Bildschirm.
+
+Chat und proaktive Meldung teilen sich den Assistenten; `api.py` schützt ihn mit einem Lock, weil
+der Auslöser nicht im Bridge-Thread läuft.
 
 **Sicherheit:**
 
@@ -701,7 +736,7 @@ OllamaAssistant (erfüllt Assistant + ModelSelection)
   │    ├─ MCPToolProvider …      ──stdio──► weitere Server aus mcp_servers.json
   │    └─ Werkzeuge der Fähigkeiten (skills/, noch keine)
   └─ preferences: JsonPreferenceStore
-autonom (geplant): Auslöser einer Fähigkeit (z. B. 7 Uhr Briefing) → presenter.push(reply)
+proaktiv: Auslöser (heute Makro, später z. B. 7 Uhr Briefing) → api.proactive_message → announce()
 ```
 
 Sind es für ein kleines Modell zu viele Werkzeuge, kann der Assistent später je Anfrage nur die
@@ -746,8 +781,10 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_web_view` | **Integration:** echte Seite ruft Python im Hintergrund-Thread auf und empfängt Ereignisse |
 | `test_popup_page` | **Ende-zu-Ende:** echter Chat wechselt das iframe, Push-Nachricht erscheint |
 | `test_popup_window` | Größe, Position, Schließen versteckt nur |
-| `test_tray_icon` | Links- und Rechtsklick, Menü |
-| `test_application` | Zusammenbau, Klick öffnet Popup |
+| `test_tray_icon` | Links- und Rechtsklick, Menü, Benachrichtigung |
+| `test_application` | Zusammenbau, Klick öffnet Popup, proaktive Meldung öffnet es am Tray-Icon und es bleibt offen, `ProactiveTrigger` |
+| `test_hotkey` | Tastenkürzel lesen, Registrieren, echte `WM_HOTKEY`-Nachricht löst aus |
+| `test_foreground` | Fenster in den Vordergrund holen, Ablehnung wird protokolliert |
 | `test_assistant` | Befehle, Factory; jeder Befehl rendert mit dem echten Template |
 | `test_views` | Ansicht-Anfragen aus JSON, ungültige Anfragen |
 | `test_rendering` | Template-Auswahl, Standard-Template, eigenes HTML, Autoescaping, ungültige Namen |
@@ -764,6 +801,7 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_tools` | `CompositeToolProvider`: Bündeln, Weiterleiten, doppelte/unbekannte Werkzeuge |
 | `test_events` | `EventBus`: An- und Abmelden, defekte Handler, Aufruf aus anderem Thread |
 | `test_presenter` | Antwort → `{"text", "html", "attachments"}`, `push()` |
+| `test_proactive` | Meldung formulieren (Modell/Ersatztext), Chat + Benachrichtigung, `api.proactive_message` |
 | `test_interfaces` | Verträge für Präferenzen und Sprache sind erfüllbar |
 | `test_main`, `test_config`, `test_api` | Startlogik (mit Mocks), Dateien vorhanden, API |
 
@@ -814,6 +852,7 @@ Die Qt-Tests öffnen kurz echte Fenster, und während eines Laufs taucht kurz ei
 | neue Integration in Python (ohne MCP) | Modul in `backend/integrations/` mit einer Klasse, die `ToolProvider` erfüllt (Konvention in der `__init__.py`) |
 | Fähigkeit umsetzen | Modul in `backend/assistant/skills/` mit einem `Skill` (Integrationen, Anweisungen fürs Modell), in `SKILLS` eintragen; optional ein autonomer Auslöser |
 | Nachricht ohne Eingabe (autonom) | `presenter.push(AssistantReply(...))` aus beliebigem Thread |
+| neuer Anlass für proaktive Meldungen | `Occasion` in `OCCASIONS` (`backend/proactive.py`) eintragen, Auslöser ruft `api.proactive_message("<name>")` – aus beliebigem Thread |
 | eigenes Ereignis ans Frontend | Backend: `events.publish("name", {...})`, Frontend: `onPythonEvent("name", handler)` |
 | Präferenzen speichern | `PreferenceStore` (`backend/preferences.py`) implementieren, Einstellungs-UI als Template + Funktionen in `api.py` |
 | Sprache | `SpeechInput` / `SpeechOutput` (`backend/speech.py`) implementieren, über Funktionen in `api.py` anbinden |
