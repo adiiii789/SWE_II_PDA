@@ -21,8 +21,9 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Tests ausführen
+        timeout-minutes: 15
         run: python -m pytest -v
         env:
-          QT_QPA_PLATFORM: offscreen
+          QT_OPENGL: software
           QTWEBENGINE_DISABLE_SANDBOX: "1"
           QTWEBENGINE_CHROMIUM_FLAGS: "--disable-gpu"
