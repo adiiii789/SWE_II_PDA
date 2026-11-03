@@ -24,3 +24,5 @@ jobs:
         run: python -m pytest -v
         env:
           QT_QPA_PLATFORM: offscreen
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+          QTWEBENGINE_CHROMIUM_FLAGS: "--disable-gpu"
