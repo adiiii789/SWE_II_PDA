@@ -1,3 +1,5 @@
+![Tests](https://github.com/adiiii789/SWE_II_PDA/actions/workflows/tests.yml/badge.svg)
+
 # Personal Digital Agent (PDA)
 
 Tray-Anwendung für Windows: Ein Klick auf das Tray-Icon öffnet ein Popup mit einem
