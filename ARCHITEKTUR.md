@@ -2,8 +2,8 @@
 
 Ausführliche Beschreibung, wie das Projekt aufgebaut ist und warum. Für den Einstieg (Starten, Testen, wo arbeite ich?) reicht die [README](README.md).
 
-Tray-Anwendung für Windows: Das Programm läuft im Hintergrund und zeigt ein Icon im
-Infobereich der Taskleiste.
+Desktop-Anwendung für macOS und Windows: Das Programm läuft im Hintergrund und zeigt ein
+Symbol in der macOS-Menüleiste bzw. im Infobereich der Windows-Taskleiste.
 
 - **Linksklick** auf das Icon öffnet ein Popup: oben ein Anzeigebereich (iframe) für Daten,
   unten ein Chat mit einem Assistenten.
@@ -34,7 +34,7 @@ von sich aus Nachrichten an das Frontend schicken.
 
 ## Projektziel und Erweiterungspunkte
 
-Ziel ist **ein** durchgehender persönlicher KI-Assistent mit lokalem Sprachmodell (Ollama). Er
+Ziel ist **ein** durchgehender persönlicher Assistent mit lokalem Sprachmodell (Ollama). Er
 deckt drei Aufgabenbereiche ab, im Code **Fähigkeiten** (Skills) genannt:
 
 | Fähigkeit | Wofür | Integrationen |
@@ -48,7 +48,7 @@ Person. Google Calendar brauchen alle drei Bereiche, und Anfragen mischen sie of
 los, und schreib Max, dass ich später komme“). Das Sprachmodell wählt per Tool-Calling selbst
 die passenden Werkzeuge, ein Umschalter oder Router zwischen Assistenten ist nicht nötig.
 
-Der KI-Assistent mit Ollama und MCP-Werkzeugen läuft; die Fähigkeiten selbst und eigene
+Der Assistent mit Ollama und MCP-Werkzeugen läuft; die Fähigkeiten selbst und eigene
 Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen Platz:
 
 | Anforderung | Wo im Code | Stand |
@@ -57,9 +57,9 @@ Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen P
 | Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – je ein `ToolProvider`, gebündelt per `CompositeToolProvider` | Ort, Konvention und Sammel-Provider |
 | MCP-Server als Werkzeuge | `MCPToolProvider` in `backend/integrations/mcp_client.py`, Liste in `mcp_servers.json` | fertig (stdio), eigener Server `mcp_servers/pda_server.py` |
 | Lokales Sprachmodell (Ollama) | `OllamaModel` in `backend/assistant/ollama.py`, `OllamaAssistant` in `ollama_assistant.py` | fertig, Modellwahl im Popup |
-| Autonom (z. B. Briefing ohne Eingabe) | `backend/proactive.py`: Anlass → Modell formuliert Meldung → Chat, Windows-Benachrichtigung, Vorlesen; `api.proactive_message(name)` | proaktive Meldung fertig (Popup öffnet sich von selbst), Test-Makro Strg+Alt+P / Tray-Menü; echte Auslöser offen |
+| Autonom (z. B. Briefing ohne Eingabe) | `backend/proactive.py`: Anlass → Modell formuliert Meldung → Chat, Systembenachrichtigung, Vorlesen; `api.proactive_message(name)` | proaktive Meldung fertig (Popup öffnet sich von selbst), Test-Makro Strg+Alt+P / Tray-Menü; echte Auslöser offen |
 | Kontextwissen, Präferenzen per UI | Speicher: `backend/preferences.py`; Einstellungen (Antworten, Werkzeuge): `backend/assistant/settings.py`, Formular `frontend/settings.js` | Antwort- und Werkzeug-Einstellungen fertig; Kontextwissen (Wohnort …) noch ohne UI |
-| Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` (faster-whisper, Piper bzw. Windows-Stimme) | fertig, Mikrofon-Knopf im Chat |
+| Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` (faster-whisper, Piper bzw. macOS-/Windows-Stimme) | fertig, Mikrofon-Knopf im Chat |
 | Kurze Antworten, Rückfragen | `Assistant.reply()`; der Assistent hält den Gesprächsverlauf | über das Protokoll möglich |
 | Langsame Aufrufe (Modell, APIs) | Bridge führt Aufrufe im Hintergrund-Thread aus | fertig |
 | PyTest | `pytest.ini`, `requirements-dev.txt` | eingerichtet |
@@ -97,13 +97,14 @@ backend/                      BACKEND: läuft in Python
   proactive.py                proaktive Meldungen: Anlässe, Meldung formulieren, an Chat + Benachrichtigung
   attachments.py              Dateien im Chat (z. B. Mail-Anhänge): öffnen, speichern
   config.py                   alle Einstellungen
+  platform_paths.py           gemeinsamer Datenordner für App und Werkzeuge
   views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
   rendering.py                macht aus einer Anfrage HTML (Jinja2 bzw. eigenes HTML)
   preferences.py              Kontextwissen, persönliche Präferenzen (JsonPreferenceStore)
-  speech.py                   Spracheingabe (faster-whisper) und -ausgabe (Piper/Windows-Stimme)
+  speech.py                   Spracheingabe (faster-whisper) und -ausgabe (Piper/macOS-/Windows-Stimme)
   assistant/                  Fachlogik: Assistent hinter dem Chat
     base.py                   Assistant-Protokoll, AssistantReply, ModelSelection
-    commands.py               CommandAssistant (feste Befehle, auch im KI-Assistenten gültig)
+    commands.py               CommandAssistant (feste Befehle, auch im Assistenten gültig)
     llm.py                    LanguageModel-Protokoll
     ollama.py                 OllamaModel: LanguageModel über die HTTP-API von Ollama
     ollama_assistant.py       OllamaAssistant: Verlauf + Tool-Calling-Schleife
@@ -118,9 +119,11 @@ backend/                      BACKEND: läuft in Python
     bridge_client.js          JS-Seite der Brücke, wird automatisch in jede Seite eingefügt
   desktop/                    Qt-Hülle, in der das Frontend angezeigt wird
     application.py            setzt die Bausteine zusammen
-    tray_icon.py              Tray-Icon + Kontextmenü + Windows-Benachrichtigung, anchor() = Mitte des Icons
-    foreground.py             Fenster ohne Klick des Nutzers in den Vordergrund holen (Fokussperre)
-    hotkey.py                 globales Tastenkürzel (Test-Makro für proaktive Meldungen)
+    tray_icon.py              Tray-Icon + Kontextmenü + Systembenachrichtigung, anchor() = Mitte des Icons
+    foreground.py             Plattformabhängige Aktivierung des Fensters
+    macos.py                  Menüleistenbetrieb und Mikrofonfreigabe
+    macos_hotkey.py            Registriertes macOS-Tastenkürzel ohne Eingabeüberwachung
+    hotkey.py                 globales Tastenkürzel (Windows RegisterHotKey / macOS Carbon)
     popup_window.py           Popup-Fenster + Einfahr-Animation
     web_view.py               Browser-Ansicht mit angehängter Brücke
 
@@ -192,7 +195,7 @@ Die beiden Seiten kennen sich nur über **drei Verträge**:
    | Ereignis | Payload | Wirkung im Popup |
    |---|---|---|
    | `assistant_message` | `{"text": str, "html": str \| null}` (wie bei `chat`), proaktiv zusätzlich `"proactive": true, "title"` | Nachricht im Chat, ggf. neue Ansicht; proaktive mit 🔔 markiert |
-   | `proactive_notice` | `{"title", "text"}` | nur Backend: Popup öffnet sich von selbst (`application.py`), sonst Windows-Benachrichtigung |
+   | `proactive_notice` | `{"title", "text"}` | nur Backend: Popup öffnet sich von selbst (`application.py`), sonst Systembenachrichtigung |
 
    Im Backend: `events.publish(name, payload)` aus [backend/events.py](backend/events.py), für
    Assistenten-Nachrichten einfach `presenter.push(reply)`.
@@ -249,19 +252,21 @@ erzeugen, weil die Tests schon eine eigene `QApplication` haben.
 
 **[backend/desktop/tray_icon.py](backend/desktop/tray_icon.py)**
 
-- Im Konstruktor wird ein `QMenu` mit „Beenden“ als `contextMenu` gesetzt. Bei einem
-  Rechtsklick zeigt Windows dieses Menü automatisch an.
+- Im Konstruktor wird ein `QMenu` mit Testmeldung und „Beenden“ erstellt. Unter Windows
+  ist es als `contextMenu` zugeordnet, auf dem Mac wird es beim Rechtsklick explizit angezeigt.
 - Bei einem Klick ruft Qt `_on_activated(reason)` auf. Nur bei `reason == Trigger` (Linksklick)
   wird das Signal `left_clicked` gesendet.
 - „Beenden“ sendet `quit_requested`. Was daraufhin passiert, entscheidet `application.py`.
 
 **[backend/desktop/popup_window.py](backend/desktop/popup_window.py)**
 
-- `Qt.Popup | Qt.FramelessWindowHint` ergibt ein Fenster ohne Rahmen, das sich bei einem Klick
-  daneben automatisch schließt.
-- `show_at_cursor()` berechnet die Größe als Anteil des Bildschirms (`POPUP_SIZE_RATIO`). Die
-  Endposition liegt so, dass die **untere rechte Ecke am Mauszeiger** sitzt, also dort, wo das
-  Tray-Icon ist. Eine `QPropertyAnimation` lässt das Fenster von rechts unten hineingleiten.
+- Unter Windows wird `Qt.Popup | Qt.FramelessWindowHint` verwendet. Auf dem Mac wird ein
+  rahmenloses `Qt.Tool` mit einem Mausklick-Monitor verwendet, damit auch proaktiv geöffnete
+  Fenster den Fokus behalten. Klicks außerhalb verstecken das Fenster auf beiden Systemen.
+- `toggle_at_anchor()` öffnet oder schließt an der tatsächlichen Symbolposition. Die Größe
+  wird aus `POPUP_SIZE_RATIO` berechnet. `popup_geometry()` begrenzt Position und Größe auf
+  den verfügbaren Bildschirm. Auf dem Mac gleitet das Popup unter der Menüleiste hinein,
+  unter Windows wie bisher von rechts unten.
 - `closeEvent` versteckt das Fenster nur, statt es zu zerstören. Der Chat-Verlauf bleibt dadurch
   erhalten, wenn man das Popup wieder öffnet.
 
@@ -443,7 +448,7 @@ Beim Öffnen holt `popup.js` die Startansicht einmal mit `await start_view()`.
 **Proaktive Meldung (der PDA meldet sich von sich aus):**
 
 ```
-Strg+Alt+P (hotkey.py: RegisterHotKey → WM_HOTKEY)  oder  Tray-Menü „Proaktive Meldung testen“
+⌘+⌥+P (macOS Carbon) / Strg+Alt+P (Windows RegisterHotKey) oder Symbolmenü „Proaktive Meldung testen“
   → ProactiveTrigger.fire()           application.py, eigener Thread – Tray und Tastatur blockieren nicht;
                                       während eine Meldung entsteht, zählt kein weiterer Druck
   → api.proactive_message("demo")
@@ -455,9 +460,9 @@ Strg+Alt+P (hotkey.py: RegisterHotKey → WM_HOTKEY)  oder  Tray-Menü „Proakt
       speak(text)                     wenn config.PROACTIVE_SPEAK und Sprachausgabe da
   → application.py: PROACTIVE_NOTICE → popup.show_requested (Signal, aus jedem Thread)
       → popup.show_at(tray.anchor(), take_focus=True)
-        wie ein Klick aufs Tray-Icon: untere rechte Ecke an der Mitte des Icons, gleiche Animation
+        wie ein Klick aufs Symbol: plattformabhängige Position am Symbol, gleiche Animation
         (ist das Popup schon offen, bleibt es, wie es ist – die Meldung steht ja im Chat)
-    mit PDA_PROACTIVE_OPEN_POPUP=0 stattdessen: tray.notify_requested → Windows-Benachrichtigung,
+    mit PDA_PROACTIVE_OPEN_POPUP=0 stattdessen: tray.notify_requested → Systembenachrichtigung,
                                                 Klick darauf → popup.show_requested
 ```
 
@@ -580,7 +585,7 @@ Umsetzung in `ollama.py` (nur Standardbibliothek, `urllib`):
 - `installed()` (`GET /api/tags`) und `available_models()` (zusätzlich `POST /api/show` →
   `capabilities` enthält `"tools"`?) liefern die Modelle für die Auswahl im Popup.
 
-### Der KI-Assistent – [ollama_assistant.py](backend/assistant/ollama_assistant.py)
+### Der Assistent – [ollama_assistant.py](backend/assistant/ollama_assistant.py)
 
 ```
 reply(message):
@@ -620,7 +625,7 @@ reply(message):
   Nutzernachricht, damit keine `tool`-Nachricht ohne ihren Aufruf übrig bleibt.
 - **Modellwahl** (`ModelSelection` aus `base.py`): `available_models`, `current_model`,
   `select_model`. Die Wahl landet als `ollama_model` im `JsonPreferenceStore`
-  (`%APPDATA%\PersonalDigitalAgent\preferences.json`).
+  (`preferences.json` im gemeinsamen Datenordner).
 
 ### Werkzeuge und Integrationen – [tools.py](backend/assistant/tools.py)
 
@@ -725,7 +730,7 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   die Werkzeugbeschreibung verbietet, Anweisungen daraus zu folgen. Verlassen darf man sich darauf
   nicht – die eigentliche Sicherung bleibt die Freigabeliste von `send_email`.
 - **Anhänge** (`read_attachment`, Text aus [file_text.py](mcp_servers/file_text.py)): `read_email`
-  legt alle Anhänge (bis 25 MB) in `%APPDATA%/PersonalDigitalAgent/attachments/<Ordner>-<UID>/`
+  legt alle Anhänge (bis 25 MB) im gemeinsamen Datenordner unter `attachments/<Ordner>-<UID>/`
   ab und gibt sie zusätzlich als MCP-`resource_link` (file://-URI) zurück; Ablagen älter als 7 Tage
   werden aufgeräumt. `read_attachment(uid, index, part)` liest den Text eines Anhangs – PDF (pypdf,
   höchstens 100 Seiten), Word/PowerPoint (ZIP + XML, Standardbibliothek), Excel (openpyxl), HTML,
@@ -762,10 +767,70 @@ proaktiv: Auslöser (heute Makro, später z. B. 7 Uhr Briefing) → api.proactiv
 ```
 
 Sind es für ein kleines Modell zu viele Werkzeuge, kann der Assistent später je Anfrage nur die
-der passenden Fähigkeit mitgeben. Frontend, Brücke und Popup mussten für den KI-Assistenten nicht
+der passenden Fähigkeit mitgeben. Frontend, Brücke und Popup mussten für den Assistenten nicht
 geändert werden, nur die Modellauswahl kam im Popup dazu (Open/Closed-Prinzip).
 [tests/assistant/test_assistant_interfaces.py](tests/assistant/test_assistant_interfaces.py) zeigt mit
 Beispiel-Implementierungen, dass die Schnittstellen erfüllbar sind und zusammenspielen.
+
+---
+
+## Cloud-Betrieb und Dienststart
+
+`PDA_OLLAMA_CLOUD_ONLY` ist standardmäßig aktiv. In diesem Modus werden lokale Modelle
+herausgefiltert und Chat-Aufrufe mit lokalen Modellnamen abgelehnt. Der erste Start wählt
+gegebenenfalls ein Cloud-Modell aus dem öffentlichen Katalog; eine gespeicherte Wahl hat Vorrang.
+Mit `PDA_OLLAMA_CLOUD_ONLY=0` ist auch der bisherige lokale Betrieb wieder möglich.
+
+`desktop/ollama_service.py` prüft einen lokalen Ollama-Endpunkt und startet bei Bedarf ein
+installiertes `ollama serve`. Remote-Endpunkte werden nicht gestartet. Es werden keine
+Modellgewichte heruntergeladen und keine systemweiten Autostarteinträge angelegt. Beim
+Beenden wird nur ein selbst gestarteter Prozess beendet, kein vorher laufender Dienst.
+
+Die Cloud-Anmeldung erfolgt einmal mit `ollama signin`. HTTP 402 wird als fehlendes
+Cloud-Guthaben bzw. unpassender Tarif erläutert, HTTP 429 als Nutzungslimit. Es wird keine
+kostenlose Verfügbarkeit bestimmter Modelle vorausgesetzt. Cloud-Anfragen übertragen den
+Gesprächskontext und verwendete Werkzeugergebnisse an den Anbieter; Audioverarbeitung bleibt lokal.
+
+---
+
+## Plattformabhängige Desktop-Anbindung
+
+`main.py` bleibt der gemeinsame Einstiegspunkt. Auf macOS wird die Anwendung als
+Accessory betrieben: Menüleistensymbol, kein zusätzliches Dock-Symbol. `TrayIcon` benutzt
+unter macOS ein als Maske markiertes SVG, das sich der Menüleistenfarbe anpasst.
+Das Kontextmenü wird dort nur beim Rechtsklick explizit geöffnet; ein fest zugeordnetes
+natives Menü würde bereits den Linksklick belegen. Unter Windows bleibt das native Tray-Menü.
+
+`PopupWindow` verwendet die tatsächliche Symbolposition und deren Bildschirm. `popup_geometry`
+platziert das Fenster auf dem Mac unter dem Symbol, unter Windows darüber und begrenzt es
+auf `availableGeometry()` in logischen Koordinaten. Auch vergrößerte Fenster bleiben sichtbar.
+Ein erneuter Klick schließt das Popup. Unter Windows behandelt Qt Klicks außerhalb; auf
+dem Mac schließen ein lokaler Qt-Eventfilter und ein globaler Cocoa-Mausmonitor das Fenster.
+Der Monitor wird beim Verstecken entfernt und erfasst keine Tastatureingaben.
+Proaktive Meldungen verwenden denselben Anker und die plattformspezifische Fokusübernahme.
+
+`GlobalHotkey` wählt unter Windows `RegisterHotKey`, auf dem Mac `RegisterEventHotKey` mit
+einem gehaltenen Carbon-Callback. Es werden ausschließlich registrierte Kürzel empfangen;
+Tastatureingaben werden nicht überwacht. Handler und Kürzel werden beim Beenden freigegeben.
+
+`platform_paths.app_data_dir()` liefert auf dem Mac
+`~/Library/Application Support/PersonalDigitalAgent`, unter Windows
+`%APPDATA%/PersonalDigitalAgent`. `PDA_APP_DATA_DIR` überschreibt den Datenordner auf beiden
+Systemen. App und Mail-Werkzeuge verwenden dieselbe Funktion, damit gespeicherte Anhänge
+weiterhin geöffnet werden können. Ein bisher manuell genutzter Ordner kann über diese Variable
+weiterverwendet werden. Eine bestehende `preferences.json` kann in den neuen Ordner kopiert werden.
+
+Sprache: Piper bleibt die erste Wahl. Auf dem Mac dient `/usr/bin/say` als Ersatz, unter
+Windows SAPI. Die macOS-Stimme wird passend zu `PDA_SPEECH_LANGUAGE` gewählt, optional explizit
+mit `PDA_MAC_VOICE`. Audiodaten werden als temporäre WAV-Datei gelesen und anschließend
+wie bisher über den unterbrechbaren Audioplayer ausgegeben. Erst beim Beginn einer Aufnahme
+wird die macOS-Mikrofonfreigabe geprüft bzw. angefordert; fehlende Freigabe erzeugt eine lesbare
+Fehlermeldung. In den Tests werden Mikrofon und Berechtigungsdialog ersetzt.
+
+Für den Start aus PyCharm wird der lokale `.venv`-Interpreter und die gemeinsame Konfiguration
+unter `.run/` verwendet. `Start.command` und `Start.bat` rufen ebenfalls `main.py` auf.
+Dies sind Quellcode-Starts mit lokaler Python-Umgebung. Ein eigenständiges Distributionspaket
+muss separat auf dem jeweiligen Betriebssystem gebaut und getestet werden.
 
 ---
 

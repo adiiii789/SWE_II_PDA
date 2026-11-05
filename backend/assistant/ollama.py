@@ -9,7 +9,7 @@ man vorher herunter, z. B. "ollama pull llama3.2". Genutzt werden:
 Cloud-Modelle: Das lokale Ollama leitet Modelle mit der Endung "cloud"
 (z. B. "gpt-oss:120b-cloud", "gemma4:cloud") an ollama.com weiter - nichts wird
 heruntergeladen. Voraussetzung ist einmalig "ollama signin" (Konto auf ollama.com,
-der Free-Plan reicht für einige Modelle). Welche Cloud-Modelle es gibt, liefert
+ein passendes Cloud-Kontingent ist erforderlich). Welche Cloud-Modelle es gibt, liefert
 GET https://ollama.com/api/tags (öffentlich, ohne Anmeldung).
 
 Nur Standardbibliothek (urllib), damit keine weitere Abhängigkeit nötig ist.
@@ -72,9 +72,10 @@ class OllamaClient:
 # Hinweise zu Fehlern, die bei Cloud-Modellen auftreten (Ollamas eigener Text bleibt davor stehen).
 _HTTP_HINTS = {
     401: "Für Cloud-Modelle bei ollama.com anmelden: im Terminal 'ollama signin' ausführen.",
-    402: "Dieses Cloud-Modell ist nicht im Free-Plan enthalten - wähle ein anderes ('modelle').",
-    429: "Das Nutzungskontingent ist aufgebraucht (Free-Plan) - später erneut versuchen "
-         "oder ein lokales Modell wählen ('modelle').",
+    402: "Ollama verlangt Cloud-Guthaben oder einen passenden Tarif. Bitte das Konto unter "
+         "https://ollama.com/plans prüfen.",
+    429: "Das Nutzungskontingent ist aufgebraucht. Bitte später erneut versuchen oder "
+         "das Kontingent bei ollama.com prüfen.",
 }
 
 
@@ -91,13 +92,16 @@ class OllamaModel:
     """Erfüllt LanguageModel. Das Modell lässt sich zur Laufzeit wechseln (Attribut name)."""
 
     def __init__(self, client: OllamaClient, name: str, options: dict[str, Any] | None = None,
-                 cloud_catalog: OllamaClient | None = None):
+                 cloud_catalog: OllamaClient | None = None, cloud_only: bool = False):
         self.client = client
         self.name = name
         self.options = options or {}
         self.cloud_catalog = cloud_catalog   # ollama.com; None = Cloud-Modelle nicht anbieten
+        self.cloud_only = cloud_only
 
     def chat(self, messages: Sequence[ChatMessage], tools: Sequence[ToolSpec] = ()) -> ModelResponse:
+        if self.cloud_only and not self.name.endswith(("-cloud", ":cloud")):
+            raise OllamaError("Es sind nur Cloud-Modelle aktiviert. Bitte ein Cloud-Modell auswählen.")
         body: dict[str, Any] = {
             "model": self.name,
             "messages": [_message_to_ollama(m) for m in messages],
@@ -120,7 +124,8 @@ class OllamaModel:
 
     def installed(self) -> list[str]:
         """Namen aller in Ollama installierten Modelle, alphabetisch."""
-        return sorted(model["name"] for model in self.client.get("/api/tags").get("models", []))
+        return sorted(model["name"] for model in self.client.get("/api/tags").get("models", [])
+                      if not self.cloud_only or _is_cloud(model))
 
     def cloud_models(self) -> list[ModelInfo]:
         """Cloud-Modelle von ollama.com unter ihrem lokalen Namen, alphabetisch.
@@ -139,6 +144,8 @@ class OllamaModel:
         """Installierte Modelle, danach die übrigen Cloud-Modelle - jeweils mit der Angabe,
         ob sie Tool-Calling können."""
         local = self.client.get("/api/tags").get("models", [])
+        if self.cloud_only:
+            local = [model for model in local if _is_cloud(model)]
         result = [ModelInfo(m["name"], self._supports_tools(m["name"]), _is_cloud(m))
                   for m in sorted(local, key=lambda m: m["name"])]
         names = {info.name for info in result}

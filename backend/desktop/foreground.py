@@ -31,6 +31,9 @@ def _user32():
 def bring_to_front(window_id: int) -> bool:
     """Fenster (HWND, z. B. int(widget.winId())) zum Vordergrundfenster machen. False außerhalb
     von Windows oder wenn Windows es trotzdem ablehnt."""
+    if sys.platform == "darwin":
+        from backend.desktop.macos import activate_application
+        return activate_application()
     if sys.platform != "win32":
         return False
     user32 = _user32()

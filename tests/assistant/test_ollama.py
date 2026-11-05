@@ -42,6 +42,14 @@ def answer(content="", tool_calls=None):
 
 
 class OllamaModelTest(unittest.TestCase):
+    def test_cloud_only_filters_local_models_and_rejects_local_chat(self):
+        client = FakeClient(tags=["local:latest", "gemma4:31b-cloud"])
+        model = OllamaModel(client, "local:latest", cloud_only=True)
+        self.assertEqual(model.installed(), ["gemma4:31b-cloud"])
+        self.assertEqual([info.name for info in model.available_models()], ["gemma4:31b-cloud"])
+        with self.assertRaisesRegex(OllamaError, "nur Cloud-Modelle"):
+            model.chat([ChatMessage("user", "Hallo")])
+
     def test_implements_language_model(self):
         self.assertIsInstance(OllamaModel(FakeClient(), "m"), LanguageModel)
 
@@ -179,7 +187,7 @@ class OllamaClientTest(unittest.TestCase):
                 OllamaClient("http://h", 1).get("/api/tags")
 
     def test_cloud_errors_get_a_hint(self):
-        for code, hint in ((401, "ollama signin"), (402, "Free-Plan"), (429, "Nutzungskontingent")):
+        for code, hint in ((401, "ollama signin"), (402, "Cloud-Guthaben"), (429, "Nutzungskontingent")):
             with self.subTest(code=code):
                 error = urllib.error.HTTPError("u", code, "x", {}, io.BytesIO(b'{"error": "abgelehnt"}'))
                 with mock.patch("urllib.request.urlopen", side_effect=error):

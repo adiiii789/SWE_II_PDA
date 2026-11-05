@@ -36,7 +36,7 @@ MAX_TOOL_RESULT_CHARS = 8000   # schützt das Kontextfenster kleiner Modelle
 
 # Länge, Sprache, Ton, Emojis usw. legt der Nutzer im Popup fest (backend/assistant/settings.py).
 BASE_INSTRUCTIONS = (
-    "Du bist der Personal Digital Agent, ein persönlicher Assistent auf dem Windows-PC des Nutzers. "
+    "Du bist der Personal Digital Agent, ein persönlicher Assistent auf dem Computer des Nutzers. "
     "Nutze Werkzeuge nur, wenn du sie für die Antwort brauchst, und erfinde keine Ergebnisse."
 )
 
@@ -227,6 +227,11 @@ class OllamaAssistant:
             self.model.name = saved
         else:
             self.model.name = installed[0] if installed else ""
+            if not self.model.name:
+                cloud = self.model.cloud_models()
+                preferred = next((info for info in cloud if info.name == "gemma4:31b-cloud"), None)
+                fallback = next((info for info in cloud if info.supports_tools), None)
+                self.model.name = (preferred or fallback).name if preferred or fallback else ""
         return bool(self.model.name)
 
 

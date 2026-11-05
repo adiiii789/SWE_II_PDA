@@ -1,4 +1,5 @@
 import unittest
+import sys
 from unittest import mock
 
 from PyQt5.QtCore import QPoint
@@ -9,7 +10,7 @@ from tests.qt_helpers import qt_app, wait_until
 
 from backend import config
 from backend.desktop import popup_window
-from backend.desktop.popup_window import PopupWindow
+from backend.desktop.popup_window import PopupWindow, popup_geometry
 
 
 class PopupWindowTest(unittest.TestCase):
@@ -37,7 +38,7 @@ class PopupWindowTest(unittest.TestCase):
         self.assertTrue(self.popup.isVisible())
         self.assertEqual((self.popup.width(), self.popup.height()), (width, height))
         end = self.popup._animation.endValue()
-        self.assertEqual(end.bottomRight() + QPoint(1, 1), cursor)
+        self.assertEqual(end, popup_geometry(cursor, self.popup._screen().availableGeometry(), width, height, sys.platform == "darwin"))
 
     def test_show_requested_opens_at_anchor_and_takes_focus(self):
         # Proaktive Meldung: wie ein Klick aufs Tray-Icon, nur am Ankerpunkt statt am Mauszeiger.
@@ -45,7 +46,7 @@ class PopupWindowTest(unittest.TestCase):
         with mock.patch.object(popup_window, "bring_to_front", return_value=True) as front:
             self.popup.show_requested.emit()
         self.assertTrue(self.popup.isVisible())
-        self.assertEqual(self.popup._animation.endValue().bottomRight() + QPoint(1, 1), QPoint(900, 700))
+        self.assertEqual(self.popup._animation.endValue(), popup_geometry(QPoint(900, 700), self.popup._screen().availableGeometry(), self.popup.width(), self.popup.height(), sys.platform == "darwin"))
         front.assert_called_once_with(int(self.popup.winId()))
 
     def test_show_requested_leaves_open_popup_alone(self):

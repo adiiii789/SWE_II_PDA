@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import QApplication
 from backend import api, config
 from backend.bridge.function_registry import FunctionRegistry
 from backend.desktop.hotkey import GlobalHotkey
+from backend.desktop.ollama_service import OllamaService
 from backend.desktop.popup_window import PopupWindow
 from backend.desktop.tray_icon import TrayIcon
 from backend.desktop.web_view import WebView
@@ -41,7 +42,7 @@ def forward_popup_events(popup: PopupWindow, event_bus: EventBus) -> Callable[[]
 def forward_proactive_notices(tray: TrayIcon, popup: PopupWindow, event_bus: EventBus,
                               open_popup: bool = config.PROACTIVE_OPEN_POPUP) -> Callable[[], None]:
     """Proaktive Meldungen (backend/proactive.py) sichtbar machen: das Popup öffnet sich von selbst
-    wie bei einem Klick aufs Tray-Icon - oder (open_popup=False) eine Windows-Benachrichtigung,
+    wie bei einem Klick aufs Tray-Icon - oder (open_popup=False) eine Systembenachrichtigung,
     deren Klick das Popup öffnet. Gibt die Abmeldung zurück."""
     def forward(name: str, payload: Any) -> None:
         if name != PROACTIVE_NOTICE:
@@ -84,10 +85,13 @@ class Application:
 
     def __init__(self, qt_app: QApplication):
         qt_app.setQuitOnLastWindowClosed(False)
+        self.ollama_service = OllamaService(config.OLLAMA_URL)
+        if config.ASSISTANT_BACKEND == "ollama":
+            self.ollama_service.start()
 
         self.popup = create_popup()
         self.tray = TrayIcon(config.TRAY_ICON, config.APP_NAME)
-        self.tray.left_clicked.connect(self.popup.show_at_cursor)
+        self.tray.left_clicked.connect(self.popup.toggle_at_anchor)
         self.tray.quit_requested.connect(qt_app.quit)
         self.tray.show()
 
@@ -112,5 +116,8 @@ class Application:
         self._unsubscribe = []
         self.hotkey.unregister()
         self.tray.hide()
+        self.popup.hide()
+        self.popup.release_desktop_resources()
         self.popup.content.close_bridge()
         self.popup.content.deleteLater()
+        self.ollama_service.close()

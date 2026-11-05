@@ -1,10 +1,10 @@
 # Personal Digital Agent (PDA)
 
-Tray-Anwendung für Windows: Ein Klick auf das Tray-Icon öffnet ein Popup mit einem
+Desktop-Anwendung für macOS und Windows: Ein Klick auf das Symbol öffnet ein Popup mit einem
 **Anzeigebereich** (oben) und einem **Chat mit einem Assistenten** (unten). Rechtsklick öffnet
 das Kontextmenü mit „Beenden“.
 
-Das Projekt ist die **Grundlage** für einen persönlichen KI-Assistenten mit lokalem
+Das Projekt ist die **Grundlage** für einen persönlichen Assistenten mit lokalem
 Sprachmodell (Ollama). Er hat drei **Fähigkeiten**: Morning-Briefing, Weg zum nächsten Termin
 (Travel) und Organisation von Nachrichten und Terminen (im Projektplan „Assistant²“). Der
 Assistent läuft mit einem lokalen Modell aus Ollama und nutzt Werkzeuge von **MCP-Servern**
@@ -14,35 +14,86 @@ weiterhin ohne Modell.
 
 ## Starten
 
-1. [Ollama](https://ollama.com) installieren und starten, ein Modell mit Tool-Calling laden:
-   ```
-   ollama pull qwen3:8b        # oder llama3.1:8b, qwen2.5:7b; klein: llama3.2:3b
-   ```
-2. Programm starten:
-   ```
-   pip install -r requirements.txt
-   python main.py
-   ```
-3. Im Popup links neben dem Eingabefeld das Modell wählen (alle in Ollama installierten Modelle).
+Python 3.12 oder 3.13 verwenden. Auf beiden Betriebssystemen startet dieselbe `main.py`;
+die Plattform wird automatisch erkannt. Unter macOS erscheint das Symbol oben in der
+Menüleiste, unter Windows unten im Infobereich. Ein Klick öffnet bzw. schließt das Popup.
+Rechtsklick zeigt das Menü mit „Proaktive Meldung testen“ und „Beenden“.
 
-Windows, Python 3.12. Ohne Ollama: `set PDA_ASSISTANT_BACKEND=commands` startet nur mit den
-festen Befehlen.
+### macOS
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python main.py
+```
+
+Danach kann auch `Start.command` per Doppelklick verwendet werden. Die Anwendung bleibt
+im Hintergrund aktiv und hat auf dem Mac kein zusätzliches Dock-Symbol. Das Popup öffnet
+sich unter dem Menüleistensymbol und bleibt auch beim Vergrößern im sichtbaren Bildschirm.
+Die genaue Symbolposition bestimmt die Anordnung der Menüleiste; bei wenig Platz neben
+der Notch können Symbole verborgen sein.
+
+### Windows
+
+```bat
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python main.py
+```
+
+Danach kann auch `Start.bat` verwendet werden. Das Popup öffnet sich oberhalb des Symbols.
+
+### PyCharm
+
+Als Projektinterpreter die lokale Umgebung auswählen: `.venv/bin/python` am Mac bzw.
+`.venv\Scripts\python.exe` unter Windows. Die gemeinsame Startkonfiguration heißt
+**Personal Digital Agent**. Konfiguration auswählen und auf ▶ drücken. Alternativ `main.py` starten.
+
+### Sprachmodell
+
+Standardmäßig werden ausschließlich Cloud-Modelle angeboten. [Ollama](https://ollama.com)
+installieren und einmal mit `ollama signin` anmelden. Das Programm startet den lokalen
+Ollama-Zugang bei Bedarf automatisch; ein bereits laufender Dienst wird weiterverwendet.
+Es wird kein lokales Modell heruntergeladen. Die Antworten selbst entstehen in der Cloud.
+Beim ersten Start wird ein verfügbares Cloud-Modell mit Werkzeugunterstützung ausgewählt;
+anschließend bleibt die eigene Modellauswahl gespeichert. Der Anbieter benötigt dafür ein
+entsprechendes Cloud-Kontingent bzw. Guthaben.
+
+Lokale Modelle können später mit `PDA_OLLAMA_CLOUD_ONLY=0` wieder zugelassen werden.
+Ohne nutzbares Cloud-Kontingent funktionieren weiterhin die festen Befehle.
+
+Nur Befehle verwenden:
+
+```sh
+# macOS
+PDA_ASSISTANT_BACKEND=commands .venv/bin/python main.py
+```
+
+```bat
+rem Windows
+set PDA_ASSISTANT_BACKEND=commands
+.venv\Scripts\python main.py
+```
 
 ### Sprache
 
 Rechts neben dem Eingabefeld startet 🎤 die Spracheingabe, ein zweiter Klick sendet die Nachricht,
 **Escape** bricht ab. Antworten auf gesprochene Nachrichten werden vorgelesen (Escape stoppt das
-Vorlesen). Alles läuft lokal:
+Vorlesen). Aufnahme, Spracherkennung und Sprachausgabe laufen lokal; der transkribierte Nachrichtentext
+geht bei Verwendung eines Cloud-Modells zur Beantwortung an Ollama:
 
 - Spracherkennung: [faster-whisper](https://github.com/SYSTRAN/faster-whisper), Modell `small`
   (≈ 480 MB)
 - Sprachausgabe: [Piper](https://github.com/OHF-Voice/piper1-gpl), Stimme `de_DE-pavoque-low`
-  (≈ 60 MB); geht Piper nicht, die eingebaute Windows-Stimme
+  (≈ 60 MB); geht Piper nicht, eine installierte macOS-Stimme bzw. die eingebaute Windows-Stimme
 
-Modell und Stimme werden beim ersten Gebrauch nach `%APPDATA%\PersonalDigitalAgent\speech`
-geladen, die erste Aufnahme dauert deshalb länger. Andere Größen und Stimmen über
+Modell und Stimme werden beim ersten Gebrauch im Datenordner unter `speech` geladen,
+die erste Aufnahme dauert deshalb länger. Die macOS-Ersatzstimme benötigt keinen Modelldownload.
+Beim ersten Klick auf das Mikrofon fragt macOS nach der Aufnahmefreigabe. Wird sie abgelehnt,
+kann sie unter Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon geändert werden;
+beim Start aus PyCharm kann die Freigabe PyCharm oder Python zugeordnet sein. Andere Größen und Stimmen über
 `PDA_WHISPER_MODEL` (`tiny`, `base`, `medium` …), `PDA_PIPER_VOICE` und `PDA_SPEECH_LANGUAGE`
-(siehe [config.py](backend/config.py)).
+(siehe [config.py](backend/config.py)). `PDA_MAC_VOICE` legt optional eine installierte Mac-Stimme fest.
 
 ### MCP-Server einbinden
 
@@ -81,22 +132,27 @@ Programm neu starten.
 
 ### Sprachmodell: lokal oder Ollama-Cloud
 
-Der Assistent braucht ein laufendes [Ollama](https://ollama.com). Entweder ein Modell lokal
-herunterladen (`ollama pull qwen3.5:9b`) oder ein **Cloud-Modell** nutzen. Das läuft auf
-ollama.com, es wird nichts heruntergeladen:
+Der Assistent verwendet standardmäßig **Cloud-Modelle** über den lokalen Ollama-Zugang.
+Es werden keine lokalen Modellgewichte geladen:
 
-1. Kostenloses Konto auf ollama.com anlegen und einmal im Terminal `ollama signin` ausführen.
-2. Im Chat `modelle` eingeben. Die Liste zeigt lokale und Cloud-Modelle.
+1. Bei ollama.com anmelden und einmal im Terminal `ollama signin` ausführen.
+2. Im Chat `modelle` eingeben. Die Liste zeigt die verfügbaren Cloud-Modelle.
 3. Mit `modell gemma4:31b-cloud` wechseln. Die Wahl bleibt gespeichert.
 
-Im Free-Plan sind nur einige Cloud-Modelle enthalten, und es gibt ein Nutzungskontingent. Bei
-einem kostenpflichtigen Modell nennt die Fehlermeldung ein kostenloses Modell als Alternative.
-`PDA_OLLAMA_CLOUD=0` blendet die Cloud-Modelle aus.
+Welche Modelle genutzt werden können, hängt vom aktuellen Konto und Kontingent ab.
+HTTP 402 bedeutet, dass Ollama Guthaben oder einen passenden Tarif verlangt; HTTP 429 bedeutet,
+dass ein Nutzungslimit erreicht wurde.
+Für lokale Modelle später `PDA_OLLAMA_CLOUD_ONLY=0` setzen; mit zusätzlich `PDA_OLLAMA_CLOUD=0`
+werden die Cloud-Modelle ausgeblendet.
 
 ### Einstellungen (Präferenzen)
 
 **⚙ Einstellungen** oben links im Chat öffnet ein Formular über dem ganzen Popup. Gespeichert wird
-in `%APPDATA%\PersonalDigitalAgent\preferences.json`, gültig ab der nächsten Nachricht.
+in `preferences.json` im Datenordner, gültig ab der nächsten Nachricht.
+
+- macOS: `~/Library/Application Support/PersonalDigitalAgent`
+- Windows: `%APPDATA%\PersonalDigitalAgent`
+- Eigener Ort: Umgebungsvariable `PDA_APP_DATA_DIR` (auch für MCP-Werkzeuge gültig).
 
 - **Antworten:** Länge, Tiefe, Darstellung (Fließtext, Stichpunkte, strukturiert …), Ton, Anrede
   (du/Sie), Sprache, Emojis, Rückfragen statt Raten und ein Freitext für weitere Wünsche.
@@ -112,26 +168,25 @@ in `%APPDATA%\PersonalDigitalAgent\preferences.json`, gültig ab der nächsten N
 ### Proaktive Meldungen
 
 Der PDA kann sich **von sich aus** melden, ohne dass man etwas gefragt hat. Zum Vorführen gibt es
-ein Test-Makro: **Strg+Alt+P** (funktioniert überall in Windows, auch bei geschlossenem Popup) oder
+ein Test-Makro: **⌘+⌥+P** auf macOS bzw. **Strg+Alt+P** unter Windows (auch bei geschlossenem Popup) oder
 Rechtsklick aufs Tray-Icon → „Proaktive Meldung testen“. Dann
 
 1. formuliert das Sprachmodell eine kurze Meldung (ohne Modell: fester Text),
-2. **öffnet sich das Popup von selbst** – genau wie bei einem Klick aufs Tray-Icon (Ecke an der
-   Mitte des Icons, gleiche Einfahr-Animation, schließt sich beim Klick daneben),
+2. **öffnet sich das Popup von selbst** – genau wie bei einem Klick aufs Tray-Icon (am Symbol, mit passender Einfahr-Animation; schließt sich beim Klick daneben),
 3. steht die Meldung im Chat, markiert mit 🔔, und oben eine Ansicht mit Zeitpunkt und Auslöser,
 4. wird sie vorgelesen, wenn die Sprachausgabe verfügbar ist.
 
 Man kann direkt im Chat antworten – das Modell kennt seine Meldung. Einstellungen:
 `PDA_PROACTIVE_HOTKEY` (z. B. `Ctrl+Shift+F9`, leer = aus), `PDA_PROACTIVE_SPEAK=0` (nicht vorlesen),
-`PDA_PROACTIVE_OPEN_POPUP=0` (statt des Popups nur eine Windows-Benachrichtigung; Klick öffnet es).
+`PDA_PROACTIVE_OPEN_POPUP=0` (statt des Popups nur eine Systembenachrichtigung; Klick öffnet es).
 Später lösen echte Anlässe (Briefing um 7 Uhr, Termin, neue Mail) dasselbe aus, siehe
 [backend/proactive.py](backend/proactive.py).
 
 ## Testen
 
 ```
-pip install -r requirements-dev.txt
-pytest
+python -m pip install -r requirements-dev.txt
+python -m pytest
 ```
 
 `pytest` misst die Testabdeckung und schlägt fehl, wenn sie unter 80 % liegt.
@@ -148,7 +203,7 @@ Für die eigentliche Projektarbeit braucht ihr nur diese Stellen:
 | Funktion, die das Frontend aufrufen kann | [backend/api.py](backend/api.py) |
 | eigenes Werkzeug (MCP) | [mcp_servers/pda_server.py](mcp_servers/pda_server.py) – Funktion mit `@mcp.tool()` |
 | fremder MCP-Server | [mcp_servers.json](mcp_servers.json) |
-| Verhalten des KI-Assistenten (Anweisungen, Tool-Schleife) | [backend/assistant/ollama_assistant.py](backend/assistant/ollama_assistant.py) |
+| Verhalten des Assistenten (Anweisungen, Tool-Schleife) | [backend/assistant/ollama_assistant.py](backend/assistant/ollama_assistant.py) |
 | Sprache (Erkennung, Vorlesen) | [backend/speech.py](backend/speech.py) |
 
 Alles andere ist **Infrastruktur** und muss für neue Funktionen nicht angefasst werden:

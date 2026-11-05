@@ -32,9 +32,9 @@ def _ollama_assistant() -> Assistant:
 
     catalog = (OllamaClient(config.OLLAMA_CLOUD_URL, config.OLLAMA_CLOUD_CATALOG_TIMEOUT_S,
                             "Ohne Internet gibt es nur lokale Modelle.")
-               if config.OLLAMA_CLOUD else None)
+               if config.OLLAMA_CLOUD or config.OLLAMA_CLOUD_ONLY else None)
     model = OllamaModel(OllamaClient(config.OLLAMA_URL, config.OLLAMA_TIMEOUT_S),
-                        config.OLLAMA_MODEL, config.OLLAMA_OPTIONS, catalog)
+                        config.OLLAMA_MODEL, config.OLLAMA_OPTIONS, catalog, cloud_only=config.OLLAMA_CLOUD_ONLY)
     mcp_servers = load_mcp_servers(config.MCP_SERVERS_FILE, config.ROOT_DIR)
     tools = CompositeToolProvider([*mcp_servers, *(skill.tools for skill in SKILLS)])
     instructions = "\n\n".join(skill.instructions for skill in SKILLS)

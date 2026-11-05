@@ -59,7 +59,7 @@ COMMANDS: dict[str, tuple[str, Callable[[], AssistantReply]]] = {
     "uhrzeit": ("Zeigt Uhrzeit und Datum", _time),
     "system": ("Zeigt Systeminformationen", _system),
     "start": ("Zurück zur Startansicht", _start),
-    "neu": ("Neues Gespräch (KI vergisst den Verlauf)", _new_conversation),
+    "neu": ("Neues Gespräch (Verlauf zurücksetzen)", _new_conversation),
 }
 
 

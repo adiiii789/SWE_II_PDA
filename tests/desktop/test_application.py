@@ -1,4 +1,5 @@
 import threading
+import sys
 import time
 import unittest
 
@@ -8,7 +9,7 @@ from tests.qt_helpers import qt_app, wait_until
 
 from backend import api, config
 from backend.desktop.application import Application, ProactiveTrigger, create_popup, forward_proactive_notices
-from backend.desktop.popup_window import PopupWindow
+from backend.desktop.popup_window import PopupWindow, popup_geometry
 from backend.desktop.tray_icon import TrayIcon
 from backend.desktop.web_view import WebView
 from backend.events import PROACTIVE_NOTICE, EventBus, events
@@ -81,7 +82,7 @@ class ApplicationTest(unittest.TestCase):
         # Die Icon-Position kann sich ändern, wenn andere Tray-Icons kommen und gehen - daher der beim Öffnen benutzte Punkt.
         anchor, = used
         self.assertEqual(popup._animation.endValue(),
-                         QRect(anchor.x() - popup.width(), anchor.y() - popup.height(), popup.width(), popup.height()))
+                         popup_geometry(anchor, popup._screen().availableGeometry(), popup.width(), popup.height(), sys.platform == "darwin"))
         popup.hide()
 
     def test_enlarge_event_resizes_popup(self):

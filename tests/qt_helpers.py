@@ -1,8 +1,9 @@
 """Gemeinsame Hilfen für Tests, die Qt brauchen."""
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
+
+from PyQt5.QtCore import QEventLoop, QTimer
 
 from PyQt5.QtWebEngineWidgets import QWebEnginePage  # muss vor QApplication importiert sein
 from PyQt5.QtWidgets import QApplication
@@ -24,13 +25,35 @@ def qt_app() -> QApplication:
 
 def wait_until(condition: Callable[[], bool], timeout_s: float = 10.0) -> bool:
     """Qt-Events verarbeiten, bis condition() wahr ist oder die Zeit abläuft."""
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        qt_app().processEvents()
-        if condition():
-            return True
-        time.sleep(0.01)
-    return False
+    qt_app()
+    if condition():
+        return True
+    # macOS liefert WebEngine- und Cocoa-Ereignisse erst in einer echten Ereignisschleife.
+    loop = QEventLoop()
+    poll, timeout = QTimer(), QTimer()
+    errors = []
+    matched = []
+
+    def check():
+        try:
+            if condition():
+                matched.append(True)
+                loop.quit()
+        except Exception as error:
+            errors.append(error)
+            loop.quit()
+
+    poll.timeout.connect(check)
+    timeout.setSingleShot(True)
+    timeout.timeout.connect(loop.quit)
+    poll.start(10)
+    timeout.start(max(1, int(timeout_s * 1000)))
+    loop.exec_()
+    poll.stop()
+    timeout.stop()
+    if errors:
+        raise errors[0]
+    return bool(matched)
 
 
 def run_js(page: QWebEnginePage, script: str, timeout_s: float = 10.0):

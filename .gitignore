@@ -6,3 +6,5 @@ dist/
 .coverage
 .pytest_cache/
 mcp_servers/.env
+
+.test-data/
