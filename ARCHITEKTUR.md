@@ -85,7 +85,9 @@ mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von
 frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
   popup.html/.css/.js         Popup: Anzeige oben, Chat unten
   settings.js                 ⚙ Einstellungen: Formular, allein aus dem Schema von get_settings()
-  theme.css                   gemeinsame Farben
+  avatar.js                   animierter, runder Avatar (Canvas) – zeigt Bereit/Denkt/Hört zu/Spricht
+  appearance.js               Designs (Farbschemata) und Avatar-Stil, Auswahl über den Design-Knopf
+  theme.css                   gemeinsame Farben (Standard-Design "Nacht")
   templates/
     default.html.j2           Standard-Template (Titel, Text, Tabelle) – weitere *.html.j2 möglich
     view.css                  gemeinsames Layout der Ansichten
@@ -494,6 +496,26 @@ der Auslöser nicht im Bridge-Thread läuft.
 - **[theme.css](frontend/theme.css):** Farben als CSS-Variablen. Das Popup bindet die Datei
   ein, und die Templates betten sie in jede Ansicht ein. So steht jede Farbe nur an
   einer Stelle.
+- **[appearance.js](frontend/appearance.js):** weitere Designs überschreiben die Variablen aus
+  `theme.css`: Farbschemata (Graphit, Hell, Wald, Sand, Klassisch) nur die Farben, Stile
+  auch Form, Schatten und Schrift. Die Stile sind in Gruppen sortiert (`THEME_GROUPS`):
+  Modern (Apple, Apple Dunkel, Glas, Clay, Material, 3D, Neumorph), Retro (Gameboy, Win 95,
+  Terminal, Vaporwave, Zeitung, Art déco), Ausdrucksstark (Maximal, Brutal, Comic, Bauhaus,
+  Cyberpunk) und Besonders (Nachhaltig, Papier, Blaupause, E-Reader, Kontrast). Dazu
+  kommen eigene, rein statische Regeln in `popup.css` unter `html[data-theme=…]`, optional
+  `viewCss` für die Ansicht und `look` für den Avatar (pixel, gloss, still). `showView` gibt das HTML der Ansicht
+  mit einem `<style>`-Block dieser Variablen ins iframe (`Appearance.themedHtml`). Die Wahl
+  steht nur im Browser-Speicher der Seite (`localStorage`), nicht in den Präferenzen.
+- **[avatar.js](frontend/avatar.js):** runde, animierte Kugel in der Kopfzeile, groß während der
+  Spracheingabe und klein bei „denkt nach …". `popup.js` meldet nur den Zustand
+  (`updateAgentState`), Stile: Nebula, Wellen, Kern.
+- **Leistung:** Die Popup-Seite wickelt auch die Python-Aufrufe ab (QWebChannel). Was den
+  JavaScript-Thread oder den Compositor dauerhaft beschäftigt, verzögert Antworten bis zu
+  Timeouts. Deshalb: Der Avatar zeichnet im Ruhezustand nur ein Bild, sonst höchstens 30 pro
+  Sekunde und nur bei sichtbarer Seite; im CSS keine Dauer-Animationen, kein `filter: blur`,
+  keine Masken über großen Flächen.
+- Qt 5.15.2 bringt **Chromium 83** mit: `gap` bei Flexbox wirkt dort nicht – Abstände in
+  Flex-Containern deshalb über `margin`.
 - **[popup.js](frontend/popup.js):** `sendMessage` zeigt die Nachricht an, ruft `chat` auf und
   gibt die Antwort an `showReply`. `showReply` zeigt den Text an und wechselt bei Bedarf die
   Ansicht – auch für Nachrichten, die das Backend von sich aus schickt

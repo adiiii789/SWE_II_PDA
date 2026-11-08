@@ -209,7 +209,9 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(run_js(self.page, "isNearBottom()"))
 
     def test_long_reply_is_shown_from_its_start(self):
-        run_js(self.page, "scrollToBottom(); showReply({text: 'Anfang\n\n' + 'Absatz\n\n'.repeat(200)})")
+        # \\n: der Zeilenumbruch muss im JavaScript-String als Escape ankommen, sonst ist das Skript ungültig
+        run_js(self.page, "scrollToBottom(); showReply({text: 'Anfang\\n\\n' + 'Absatz\\n\\n'.repeat(200)})")
+        self.assertTrue(run_js(self.page, "Array.from(document.querySelectorAll('.message')).pop().textContent.startsWith('Anfang')"))
         visible = run_js(self.page, """(() => { const m = Array.from(document.querySelectorAll('.message')).pop();
           return m.offsetTop >= chatHistory.scrollTop && m.offsetTop < chatHistory.scrollTop + 10; })()""")
         self.assertTrue(visible)
@@ -220,6 +222,19 @@ class PopupPageTest(unittest.TestCase):
         self.assertEqual(run_js(self.page, frame_display), "none")
         run_js(self.page, "document.getElementById('chat-max-button').click()")
         self.assertNotEqual(run_js(self.page, frame_display), "none")
+
+    def test_chat_maximize_after_dragging_splitter_fills_height(self):
+        # Nach dem Ziehen hat der Chat flex-grow < 1 - allein muss er trotzdem die ganze Höhe bekommen,
+        # sonst rutscht er beim Ausblenden der Ansicht nach oben.
+        chat_grow = "getComputedStyle(document.getElementById('chat-panel')).flexGrow"
+        run_js(self.page, "setSplit(0.4)")
+        try:
+            run_js(self.page, "document.getElementById('chat-max-button').click()")
+            self.assertEqual(run_js(self.page, chat_grow), "1")
+            run_js(self.page, "document.getElementById('chat-max-button').click()")
+            self.assertEqual(run_js(self.page, chat_grow), "0.6")   # Aufteilung gilt wieder
+        finally:
+            run_js(self.page, "setSplit(null)")
 
 
 class SettingsPanelTest(unittest.TestCase):

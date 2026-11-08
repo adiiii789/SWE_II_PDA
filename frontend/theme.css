@@ -1,19 +1,40 @@
-/* Gemeinsame Farben für Popup und Templates (templates/base.html.j2 bettet diese Datei ein). */
+/* Gemeinsame Gestaltung für Popup und Templates (templates/default.html.j2 bettet diese Datei ein).
+   Das sind die Werte des Standard-Designs "Nacht". Weitere Farbschemata und Stile stehen in
+   frontend/appearance.js; das gewählte Design überschreibt diese Variablen im Popup und in der
+   Ansicht (iframe). Neben Farben gehören dazu Form (Radien, Rahmen), Schatten und Schrift. */
 :root {
-  --background: #2E2E2E;   /* identisch mit POPUP_BACKGROUND in backend/config.py */
-  --surface: #383838;
-  --text: #F1F1F1;
-  --text-muted: #AAAAAA;
-  --control: #3E3E3E;
-  --control-hover: #4E4E4E;
-  --border: #555555;
-  --accent: #3A4A6A;
+  --background: #111215;   /* identisch mit POPUP_BACKGROUND in backend/config.py */
+  --page-bg: #111215;      /* Hintergrund des Popups, darf ein Verlauf oder Muster sein */
+  --surface: #18191D;
+  --surface-2: #1E2025;
+  --text: #E6E7EA;
+  --text-muted: #8B8E98;
+  --control: #212328;
+  --control-hover: #2A2C33;
+  --border: #2A2C32;
+  --accent: #7C83F2;
+  --accent-text: #FFFFFF;
+  --link: #9AA8FF;
+  --danger: #F2626F;
+  --warning: #E9B44C;
+  --user-bg: #262A3D;
+  --user-text: #E6E7EA;
+
+  --radius: 12px;          /* Karten: Ansicht, Eingabe, Panels */
+  --radius-sm: 8px;        /* Knöpfe, Felder */
+  --bw: 1px;               /* Rahmenstärke */
+  --card-shadow: none;
+  --control-shadow: none;
+  --bubble-shadow: none;
+  --inset-shadow: none;    /* eingedrückte Flächen (Eingabefelder) */
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-heading: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
 }
 
 html, body {
   margin: 0;
   background: var(--background);
   color: var(--text);
-  font-family: system-ui, "Segoe UI", sans-serif;
+  font-family: var(--font);
   font-size: 13px;
 }

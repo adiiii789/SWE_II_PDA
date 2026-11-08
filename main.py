@@ -15,7 +15,6 @@ from PyQt5.QtWidgets import QApplication  # noqa: E402
 from backend import config  # noqa: E402
 from backend.desktop.application import Application  # noqa: E402
 
-
 def configure_qt() -> None:
     """Einstellungen, die vor dem Erzeugen der QApplication gesetzt sein müssen."""
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
