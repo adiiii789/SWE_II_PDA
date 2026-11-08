@@ -3,6 +3,7 @@ import unittest
 from unittest import mock
 
 from backend import api
+from backend.events import POPUP_ENLARGED, events
 from backend.views import InvalidViewRequestError
 
 
@@ -79,6 +80,30 @@ class SpeechApiTest(unittest.TestCase):
                 api.start_recording()
             with self.assertRaisesRegex(RuntimeError, "Sprachausgabe"):
                 api.speak("Hallo")
+
+
+class OpenLinkTest(unittest.TestCase):
+    def test_opens_web_links_in_browser(self):
+        with mock.patch("webbrowser.open") as browser:
+            api.open_link("https://ollama.com")
+        browser.assert_called_once_with("https://ollama.com")
+
+    def test_rejects_other_schemes(self):
+        with mock.patch("webbrowser.open") as browser:
+            for url in ("javascript:alert(1)", "file:///C:/Windows/System32/cmd.exe"):
+                with self.assertRaises(ValueError):
+                    api.open_link(url)
+        browser.assert_not_called()
+
+
+class EnlargePopupTest(unittest.TestCase):
+    def test_publishes_event(self):
+        received = []
+        unsubscribe = events.subscribe(lambda name, payload: received.append((name, payload)))
+        self.addCleanup(unsubscribe)
+        self.assertTrue(api.enlarge_popup(True))
+        self.assertFalse(api.enlarge_popup(0))
+        self.assertEqual(received, [(POPUP_ENLARGED, True), (POPUP_ENLARGED, False)])
 
 
 class RenderViewTest(unittest.TestCase):

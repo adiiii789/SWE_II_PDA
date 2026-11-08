@@ -23,6 +23,11 @@ OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("PDA_OLLAMA_MODEL", "")   # leer = zuletzt gewähltes bzw. erstes installiertes
 OLLAMA_TIMEOUT_S = 300                # Laden eines großen Modells kann dauern
 OLLAMA_OPTIONS: dict = {}             # z. B. {"temperature": 0.2, "num_ctx": 8192}
+# Cloud-Modelle (z. B. "gemma4:31b-cloud") laufen über das lokale Ollama auf ollama.com,
+# einmalig "ollama signin" nötig. Die Liste kommt von OLLAMA_CLOUD_URL; "0" blendet sie aus.
+OLLAMA_CLOUD = os.environ.get("PDA_OLLAMA_CLOUD", "1") != "0"
+OLLAMA_CLOUD_URL = "https://ollama.com"
+OLLAMA_CLOUD_CATALOG_TIMEOUT_S = 5
 ASSISTANT_MAX_TOOL_ROUNDS = 5         # Werkzeug-Runden pro Nachricht, gegen Endlosschleifen
 ASSISTANT_MAX_HISTORY = 30            # Nachrichten im Verlauf, die das Modell sieht
 
@@ -44,8 +49,17 @@ SPEECH_LANGUAGE = os.environ.get("PDA_SPEECH_LANGUAGE", "de")         # leer = W
 WHISPER_MODEL = os.environ.get("PDA_WHISPER_MODEL", "small")          # tiny, base, small, medium …
 PIPER_VOICE = os.environ.get("PDA_PIPER_VOICE", "de_DE-pavoque-low")
 
+# Proaktive Meldungen (backend/proactive.py): der PDA meldet sich von sich aus.
+# Test-Makro: globales Tastenkürzel (überall in Windows), leer = aus. Auch über das Tray-Menü auslösbar.
+PROACTIVE_HOTKEY = os.environ.get("PDA_PROACTIVE_HOTKEY", "Ctrl+Alt+P")
+PROACTIVE_SPEAK = os.environ.get("PDA_PROACTIVE_SPEAK", "1") != "0"           # Meldung vorlesen
+# Popup von selbst öffnen (wie ein Klick aufs Tray-Icon); "0" = stattdessen Windows-Benachrichtigung
+PROACTIVE_OPEN_POPUP = os.environ.get("PDA_PROACTIVE_OPEN_POPUP", "1") != "0"
+PROACTIVE_NOTICE_MS = 8000            # Anzeigedauer der Benachrichtigung (Klick darauf öffnet das Popup)
+
 POPUP_PAGE = FRONTEND_DIR / "popup.html"
 POPUP_SIZE_RATIO = (0.3, 0.6)         # Anteil des Bildschirms (Breite, Höhe)
+POPUP_ENLARGED_SIZE_RATIO = (0.55, 0.9)   # vergrößertes Popup (Knopf im Chat)
 POPUP_BACKGROUND = "#2E2E2E"          # identisch mit --background in frontend/theme.css
 POPUP_MARGIN_PX = 8
 POPUP_SLIDE_IN_OFFSET_PX = 50         # Start der Animation unterhalb der Endposition

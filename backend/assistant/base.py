@@ -31,11 +31,21 @@ class ModelSelection(Protocol):
     """Optional: Assistenten mit Sprachmodell, deren Modell man im Popup wählen kann."""
 
     def available_models(self) -> list[dict]:
-        """Installierte Modelle: [{"name": str, "tools": bool}, ...]"""
+        """Wählbare Modelle: [{"name": str, "tools": bool, "cloud": bool}, ...]"""
         ...
 
     def current_model(self) -> str:
         ...
 
     def select_model(self, name: str) -> None:
+        ...
+
+
+@runtime_checkable
+class ProactiveAssistant(Protocol):
+    """Optional: Assistenten, die eine Meldung von sich aus formulieren können (backend/proactive.py)."""
+
+    def announce(self, instruction: str) -> str | None:
+        """Meldung an den Nutzer zum Auftrag `instruction` (kommt vom Programm, nicht vom Nutzer).
+        Die Meldung gehört danach zum Gesprächsverlauf. None = gerade nicht möglich (z. B. kein Modell)."""
         ...

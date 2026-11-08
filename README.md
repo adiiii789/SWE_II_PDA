@@ -81,6 +81,54 @@ Unterstützt werden Server über **stdio** (Unterprozess). `"python"` startet da
 dem das Programm läuft; `"disabled": true` schaltet einen Eintrag ab. Nach Änderungen das
 Programm neu starten.
 
+### Sprachmodell: lokal oder Ollama-Cloud
+
+Der Assistent braucht ein laufendes [Ollama](https://ollama.com). Entweder ein Modell lokal
+herunterladen (`ollama pull qwen3.5:9b`) oder ein **Cloud-Modell** nutzen. Das läuft auf
+ollama.com, es wird nichts heruntergeladen:
+
+1. Kostenloses Konto auf ollama.com anlegen und einmal im Terminal `ollama signin` ausführen.
+2. Im Chat `modelle` eingeben. Die Liste zeigt lokale und Cloud-Modelle.
+3. Mit `modell gemma4:31b-cloud` wechseln. Die Wahl bleibt gespeichert.
+
+Im Free-Plan sind nur einige Cloud-Modelle enthalten, und es gibt ein Nutzungskontingent. Bei
+einem kostenpflichtigen Modell nennt die Fehlermeldung ein kostenloses Modell als Alternative.
+`PDA_OLLAMA_CLOUD=0` blendet die Cloud-Modelle aus.
+
+### Einstellungen (Präferenzen)
+
+**⚙ Einstellungen** oben links im Chat öffnet ein Formular über dem ganzen Popup. Gespeichert wird
+in `%APPDATA%\PersonalDigitalAgent\preferences.json`, gültig ab der nächsten Nachricht.
+
+- **Antworten:** Länge, Tiefe, Darstellung (Fließtext, Stichpunkte, strukturiert …), Ton, Anrede
+  (du/Sie), Sprache, Emojis, Rückfragen statt Raten und ein Freitext für weitere Wünsche.
+- **Werkzeuge:** Für jede Werkzeuggruppe einstellbar, ob der Assistent sie überhaupt nutzt, wie
+  ausführlich er Ergebnisse im Chat wiedergibt, ob oben eine Tabelle der Aufrufe erscheint
+  (aus, gekürzt, vollständig) und ein Freitext zur Darstellung. **E-Mail** zusätzlich: welche
+  Angaben je Mail (Absender, Betreff, Datum, Vorschau, Anhänge …), wie viel Inhalt (nur Angaben,
+  Zusammenfassung, Wichtiges, Volltext), Liste oder Tabelle, Höchstzahl, Rückfrage vor dem Senden.
+- **Neue Werkzeuge** (z. B. aus einem weiteren MCP-Server) erscheinen automatisch mit den
+  Grundeinstellungen. Eigene Zusatzfelder: `ToolGroup` in
+  [backend/assistant/settings.py](backend/assistant/settings.py) eintragen.
+
+### Proaktive Meldungen
+
+Der PDA kann sich **von sich aus** melden, ohne dass man etwas gefragt hat. Zum Vorführen gibt es
+ein Test-Makro: **Strg+Alt+P** (funktioniert überall in Windows, auch bei geschlossenem Popup) oder
+Rechtsklick aufs Tray-Icon → „Proaktive Meldung testen“. Dann
+
+1. formuliert das Sprachmodell eine kurze Meldung (ohne Modell: fester Text),
+2. **öffnet sich das Popup von selbst** – genau wie bei einem Klick aufs Tray-Icon (Ecke an der
+   Mitte des Icons, gleiche Einfahr-Animation, schließt sich beim Klick daneben),
+3. steht die Meldung im Chat, markiert mit 🔔, und oben eine Ansicht mit Zeitpunkt und Auslöser,
+4. wird sie vorgelesen, wenn die Sprachausgabe verfügbar ist.
+
+Man kann direkt im Chat antworten – das Modell kennt seine Meldung. Einstellungen:
+`PDA_PROACTIVE_HOTKEY` (z. B. `Ctrl+Shift+F9`, leer = aus), `PDA_PROACTIVE_SPEAK=0` (nicht vorlesen),
+`PDA_PROACTIVE_OPEN_POPUP=0` (statt des Popups nur eine Windows-Benachrichtigung; Klick öffnet es).
+Später lösen echte Anlässe (Briefing um 7 Uhr, Termin, neue Mail) dasselbe aus, siehe
+[backend/proactive.py](backend/proactive.py).
+
 ## Testen
 
 ```

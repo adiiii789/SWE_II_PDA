@@ -1,7 +1,9 @@
 """OllamaAssistant: Assistent mit lokalem Sprachmodell und Werkzeugen (Tool-Calling).
 
 Ablauf von reply(message):
-  1. Feste Befehle (commands.COMMANDS, z. B. "hilfe") direkt beantworten.
+  1. Feste Befehle (commands.COMMANDS, z. B. "hilfe") direkt beantworten, ebenso
+     MODEL_COMMANDS ("modelle", "modell <name>") zum Wechseln des Sprachmodells -
+     lokal installiert oder in der Ollama-Cloud.
   2. Nachricht an den Gesprächsverlauf anhängen.
   3. model.chat(Systemanweisung + Verlauf, alle Werkzeuge)
   4. Will das Modell Werkzeuge nutzen, ruft der Assistent sie über den ToolProvider
@@ -21,7 +23,8 @@ from collections.abc import Callable
 from backend.assistant.base import AssistantReply
 from backend.assistant.commands import COMMANDS
 from backend.assistant.llm import ChatMessage, ToolCall
-from backend.assistant.ollama import OllamaError, OllamaModel
+from backend.assistant.ollama import OllamaError, OllamaModel, cloud_name
+from backend.assistant.settings import SETTINGS_KEYS, AssistantSettings
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult
 from backend.preferences import PreferenceStore
 from backend.views import TemplateView
@@ -31,18 +34,29 @@ log = logging.getLogger(__name__)
 MODEL_PREFERENCE = "ollama_model"
 MAX_TOOL_RESULT_CHARS = 8000   # schützt das Kontextfenster kleiner Modelle
 
+# Länge, Sprache, Ton, Emojis usw. legt der Nutzer im Popup fest (backend/assistant/settings.py).
 BASE_INSTRUCTIONS = (
     "Du bist der Personal Digital Agent, ein persönlicher Assistent auf dem Windows-PC des Nutzers. "
-    "Antworte immer auf Deutsch, kurz und freundlich. Verwende niemals Emojis"
-    "Nutze Werkzeuge nur, wenn du sie für die Antwort brauchst, und erfinde keine Ergebnisse. "
-    "Fehlt dir eine Angabe, frag kurz nach."
+    "Nutze Werkzeuge nur, wenn du sie für die Antwort brauchst, und erfinde keine Ergebnisse."
 )
+
+# Vor dem Auftrag einer proaktiven Meldung - das Modell soll ihn nicht für eine Frage des Nutzers halten.
+PROACTIVE_TRIGGER = ("[Automatischer Auslöser, nicht vom Nutzer geschrieben] Der Nutzer hat nichts gefragt. "
+                     "Schreib ihm von dir aus eine Nachricht. Auftrag: ")
 
 _WEEKDAYS = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
 
+MODEL_COMMANDS = {
+    "modelle": "Zeigt lokale und Cloud-Sprachmodelle",
+    "modell <name>": "Wechselt das Sprachmodell, z. B. modell gemma4:31b-cloud",
+}
+CLOUD_HINT = ("Cloud-Modelle laufen auf ollama.com statt auf deinem PC. Dafür einmal im Terminal "
+              "'ollama signin' ausführen. Im Free-Plan sind nur einige Modelle enthalten, mit einem "
+              "Nutzungskontingent.")
+
 
 class OllamaAssistant:
-    """Erfüllt Assistant und ModelSelection (base.py)."""
+    """Erfüllt Assistant, ModelSelection und ProactiveAssistant (base.py)."""
 
     def __init__(self, model: OllamaModel, tools: ToolProvider, preferences: PreferenceStore,
                  instructions: str = "", max_tool_rounds: int = 5, max_history: int = 30,
@@ -50,6 +64,7 @@ class OllamaAssistant:
         self.model = model
         self.tools = tools
         self.preferences = preferences
+        self.settings = AssistantSettings(preferences)   # Einstellungen aus dem Popup
         self.instructions = instructions
         self.max_tool_rounds = max_tool_rounds
         self.max_history = max_history
@@ -61,13 +76,20 @@ class OllamaAssistant:
         command = message.strip().lower()
         if command == "neu":
             self.history.clear()
+        if command == "hilfe":
+            return _with_model_commands(COMMANDS[command][1]())
         if command in COMMANDS:
             return COMMANDS[command][1]()
+        if command == "modelle":
+            return self._models_reply()
+        if command.startswith("modell "):
+            return self._select_reply(message.strip()[len("modell "):].strip())
 
         try:
             if not self._ensure_model():
-                return AssistantReply("In Ollama ist noch kein Modell installiert. "
-                                      "Lade eins herunter, z. B. mit: ollama pull llama3.2")
+                return AssistantReply("In Ollama ist noch kein Modell installiert. Lade eins herunter, "
+                                      "z. B. mit: ollama pull llama3.2 - oder nutze ein Cloud-Modell "
+                                      "(Liste mit 'modelle'). " + CLOUD_HINT)
         except OllamaError as error:
             return AssistantReply(str(error))
 
@@ -80,14 +102,38 @@ class OllamaAssistant:
             del self.history[start:]   # misslungene Runde nicht im Verlauf behalten
             return AssistantReply(f"Fehler von Ollama ({self.model.name}): {error}")
         self._trim_history()
-        return AssistantReply(text, _tool_view(tool_log) if tool_log else None, _attachments(tool_log))
+        return AssistantReply(text, _tool_view(tool_log, self.settings), _attachments(tool_log))
+
+    # --- ProactiveAssistant ------------------------------------------------------------
+    def announce(self, instruction: str) -> str | None:
+        """Meldung, die der Assistent von sich aus schickt (backend/proactive.py).
+
+        Der Auftrag landet nicht im Verlauf, die Meldung schon - so kann der Nutzer
+        direkt darauf antworten ("ja, mach das"). Ohne Werkzeuge, damit die Meldung schnell kommt.
+        """
+        try:
+            if not self._ensure_model():
+                return None
+            trigger = ChatMessage("user", PROACTIVE_TRIGGER + instruction)
+            response = self.model.chat([self._system_message(), *self.history, trigger], [])
+        except OllamaError as error:
+            log.warning("Proaktive Meldung ohne Modell: %s", error)
+            return None
+        text = response.message.content.strip()
+        if not text:
+            return None
+        self.history.append(ChatMessage("assistant", text))
+        self._trim_history()
+        return text
 
     def _run(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> str:
-        tools = self.tools.list_tools()
+        # Im Popup abgeschaltete Werkzeuge bekommt das Modell gar nicht erst zu sehen.
+        tools = [tool for tool in self.tools.list_tools() if self.settings.tool_enabled(tool.name)]
+        system = self._system_message([tool.name for tool in tools])
         for round_ in range(self.max_tool_rounds + 1):
             # In der letzten Runde keine Werkzeuge mehr anbieten: Das Modell muss antworten.
             offered = tools if round_ < self.max_tool_rounds else []
-            response = self.model.chat([self._system_message(), *self.history], offered)
+            response = self.model.chat([system, *self.history], offered)
             self.history.append(response.message)
             if not response.wants_tools:
                 return response.message.content.strip() or "(Das Modell hat keine Antwort geliefert.)"
@@ -100,17 +146,47 @@ class OllamaAssistant:
 
     def _call_tool(self, call: ToolCall) -> ToolResult:
         log.info("Werkzeug %s(%s)", call.name, call.arguments)
+        if not self.settings.tool_enabled(call.name):
+            return ToolResult(f"Das Werkzeug {call.name} hat der Nutzer in den Einstellungen abgeschaltet.",
+                              is_error=True)
         try:
             return self.tools.call_tool(call.name, call.arguments)
         except Exception as error:   # z. B. erfundener Werkzeugname - das Modell soll es korrigieren
             log.warning("Werkzeug %s fehlgeschlagen: %s", call.name, error)
             return ToolResult(str(error), is_error=True)
 
-    def _system_message(self) -> ChatMessage:
+    def _models_reply(self) -> AssistantReply:
+        try:
+            self._ensure_model()
+            models = self.model.available_models()
+        except OllamaError as error:
+            return AssistantReply(str(error))
+        rows = [[("▶ " if info.name == self.model.name else "") + info.name,
+                 "Cloud" if info.cloud else "Lokal",
+                 "ja" if info.supports_tools else "nein"] for info in models]
+        current = f"Aktuell: {self.model.name}. " if self.model.name else ""
+        return AssistantReply(
+            f'{current}Wechseln mit "modell <name>".',
+            TemplateView("default", {"title": "Sprachmodelle", "text": CLOUD_HINT,
+                                     "columns": ["Modell", "Ort", "Werkzeuge"], "rows": rows}))
+
+    def _select_reply(self, name: str) -> AssistantReply:
+        try:
+            selectable = self.model.selectable()
+            if name not in selectable and cloud_name(name) in selectable:
+                name = cloud_name(name)   # "gemma4:31b" meint das Cloud-Modell "gemma4:31b-cloud"
+            self.select_model(name)
+        except (ValueError, OllamaError) as error:
+            return AssistantReply(f'{error}. Alle Modelle zeigt "modelle".')
+        return AssistantReply(f"Ich nutze jetzt {name}.")
+
+    def _system_message(self, tools: list[str] = ()) -> ChatMessage:
         now = self.clock()
         parts = [BASE_INSTRUCTIONS,
-                 f"Jetzt ist {_WEEKDAYS[now.weekday()]}, der {now:%d.%m.%Y}, {now:%H:%M} Uhr."]
-        context = {k: v for k, v in self.preferences.all().items() if k != MODEL_PREFERENCE}
+                 f"Jetzt ist {_WEEKDAYS[now.weekday()]}, der {now:%d.%m.%Y}, {now:%H:%M} Uhr.",
+                 self.settings.instructions(tools)]
+        context = {k: v for k, v in self.preferences.all().items()
+                   if k != MODEL_PREFERENCE and k not in SETTINGS_KEYS}
         if context:
             parts.append("Bekanntes über den Nutzer: " + json.dumps(context, ensure_ascii=False))
         if self.instructions:
@@ -127,32 +203,46 @@ class OllamaAssistant:
 
     # --- ModelSelection ---------------------------------------------------------------
     def available_models(self) -> list[dict]:
-        return [{"name": info.name, "tools": info.supports_tools} for info in self.model.available_models()]
+        return [{"name": info.name, "tools": info.supports_tools, "cloud": info.cloud}
+                for info in self.model.available_models()]
 
     def current_model(self) -> str:
         self._ensure_model()
         return self.model.name
 
     def select_model(self, name: str) -> None:
-        if name not in self.model.installed():
-            raise ValueError(f"Modell {name!r} ist in Ollama nicht installiert")
+        if name not in self.model.selectable():
+            raise ValueError(f"Modell {name!r} ist weder installiert noch in der Ollama-Cloud verfügbar")
         self.model.name = name
         self.preferences.set(MODEL_PREFERENCE, name)
 
     def _ensure_model(self) -> bool:
-        """Modell festlegen, falls noch keins gewählt ist: zuletzt gewähltes, sonst erstes installiertes."""
+        """Modell festlegen, falls noch keins gewählt ist: zuletzt gewähltes (auch Cloud),
+        sonst erstes installiertes."""
         if self.model.name:
             return True
         installed = self.model.installed()
         saved = self.preferences.get(MODEL_PREFERENCE)
-        self.model.name = saved if saved in installed else (installed[0] if installed else "")
+        if saved and (saved in installed or saved in {info.name for info in self.model.cloud_models()}):
+            self.model.name = saved
+        else:
+            self.model.name = installed[0] if installed else ""
         return bool(self.model.name)
 
 
-def _tool_view(tool_log: list[tuple[ToolCall, ToolResult]]) -> TemplateView:
+def _with_model_commands(reply: AssistantReply) -> AssistantReply:
+    data = reply.view.data
+    rows = [*data["rows"], *([name, description] for name, description in MODEL_COMMANDS.items())]
+    return AssistantReply(reply.text, TemplateView(reply.view.template, {**data, "rows": rows}))
+
+
+def _tool_view(tool_log: list[tuple[ToolCall, ToolResult]], settings: AssistantSettings) -> TemplateView | None:
+    """Tabelle der Aufrufe - nur Werkzeuge, deren Einstellung "Tabelle oben" nicht aus ist."""
     rows = [[call.name, json.dumps(call.arguments, ensure_ascii=False),
-             ("Fehler: " if result.is_error else "") + _shorten(result.content)]
-            for call, result in tool_log]
+             ("Fehler: " if result.is_error else "") + _shorten(result.content, limit)]
+            for call, result in tool_log if (limit := settings.view_limit(call.name)) is not None]
+    if not rows:
+        return None
     return TemplateView("default", {"title": "Verwendete Werkzeuge",
                                     "columns": ["Werkzeug", "Argumente", "Ergebnis"], "rows": rows})
 
