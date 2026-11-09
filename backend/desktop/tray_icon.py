@@ -54,7 +54,7 @@ class TrayIcon(QSystemTrayIcon):
                          duration_ms)
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason == QSystemTrayIcon.Trigger:
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
             self.left_clicked.emit()
         elif sys.platform == "darwin" and reason == QSystemTrayIcon.Context:
             self._menu.popup(self.anchor())

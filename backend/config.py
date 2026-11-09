@@ -12,7 +12,7 @@ ROOT_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)
 FRONTEND_DIR = ROOT_DIR / "frontend"
 TEMPLATE_DIR = FRONTEND_DIR / "templates"   # Jinja2-Templates für das iframe
 
-APP_NAME = "Personal Digital Agent"
+APP_NAME = "EVE"
 APP_USER_MODEL_ID = "swe2.personaldigitalagent.1.0"
 IS_MAC = sys.platform == "darwin"
 TRAY_ICON = ROOT_DIR / "assets" / "tray-macos.svg" if IS_MAC else ROOT_DIR / "TrayIcon.ico"
@@ -58,7 +58,7 @@ WHISPER_MODEL = os.environ.get("PDA_WHISPER_MODEL", "small")          # tiny, ba
 PIPER_VOICE = os.environ.get("PDA_PIPER_VOICE", "de_DE-pavoque-low")
 MAC_VOICE = os.environ.get("PDA_MAC_VOICE", "")   # leer: installierte Stimme passend zur Sprache
 
-# Proaktive Meldungen (backend/proactive.py): der PDA meldet sich von sich aus.
+# Proaktive Meldungen (backend/proactive.py): EVE meldet sich von sich aus.
 # Test-Makro: globales Tastenkürzel, leer = aus. Auch über das Symbolmenü auslösbar.
 PROACTIVE_HOTKEY = os.environ.get("PDA_PROACTIVE_HOTKEY", "Cmd+Alt+P" if IS_MAC else "Ctrl+Alt+P")
 PROACTIVE_SPEAK = os.environ.get("PDA_PROACTIVE_SPEAK", "1") != "0"           # Meldung vorlesen

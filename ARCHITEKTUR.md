@@ -1,4 +1,4 @@
-# Architektur – Personal Digital Agent (PDA)
+# Architektur – EVE
 
 Ausführliche Beschreibung, wie das Projekt aufgebaut ist und warum. Für den Einstieg (Starten, Testen, wo arbeite ich?) reicht die [README](README.md).
 
@@ -447,7 +447,7 @@ Beim Öffnen holt `popup.js` die Startansicht einmal mit `await start_view()`.
 {...})` → Signal `event` der Bridge → `onPythonEvent("assistant_message", showReply)` in
 `popup.js`. Die Anzeige ist dieselbe wie bei einer Chat-Antwort.
 
-**Proaktive Meldung (der PDA meldet sich von sich aus):**
+**Proaktive Meldung (EVE meldet sich von sich aus):**
 
 ```
 ⌘+⌥+P (macOS Carbon) / Strg+Alt+P (Windows RegisterHotKey) oder Symbolmenü „Proaktive Meldung testen“

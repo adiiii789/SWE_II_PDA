@@ -65,7 +65,10 @@ class PopupPageTest(unittest.TestCase):
         return run_js(self.page, MESSAGES)[-1]
 
     def test_starts_with_start_view_and_greeting(self):
-        self.assertIn("Personal Digital Agent", self.initial_html)
+        self.assertIn("<h2>EVE</h2>", self.initial_html)
+        self.assertEqual(run_js(self.page, "document.querySelector('.brand strong').textContent"), "EVE")
+        self.assertEqual(run_js(self.page, "document.querySelector('.brand-caption').textContent"),
+                         "Enhanced Virtual Entity")
         self.assertEqual(len(self.initial_messages), 1)
         self.assertIn("hilfe", self.initial_messages[0])
 
@@ -96,7 +99,7 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(wait_until(lambda: "<h2>Briefing</h2>" in run_js(self.page, IFRAME_HTML)))
 
     def test_proactive_message_is_marked_in_chat(self):
-        # Der PDA meldet sich von selbst (Test-Makro) - ohne Sprachmodell mit dem Ersatztext.
+        # EVE meldet sich von selbst (Test-Makro) - ohne Sprachmodell mit dem Ersatztext.
         demo = proactive.OCCASIONS[proactive.DEMO]
         count = len(run_js(self.page, MESSAGES))
         with mock.patch.object(api.config, "PROACTIVE_SPEAK", False):

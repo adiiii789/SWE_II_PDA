@@ -1,4 +1,6 @@
-# Personal Digital Agent (PDA)
+# EVE
+
+Enhanced Virtual Entity
 
 Desktop-Anwendung für macOS und Windows: Ein Klick auf das Symbol öffnet ein Popup mit einem
 **Anzeigebereich** (oben) und einem **Chat mit einem Assistenten** (unten). Rechtsklick öffnet
@@ -220,7 +222,7 @@ in `preferences.json` im Datenordner, gültig ab der nächsten Nachricht.
 
 ### Proaktive Meldungen
 
-Der PDA kann sich **von sich aus** melden, ohne dass man etwas gefragt hat. Zum Vorführen gibt es
+EVE kann sich **von sich aus** melden, ohne dass man etwas gefragt hat. Zum Vorführen gibt es
 ein Test-Makro: **⌘+⌥+P** auf macOS bzw. **Strg+Alt+P** unter Windows (auch bei geschlossenem Popup) oder
 Rechtsklick aufs Tray-Icon → „Proaktive Meldung testen“. Dann
 

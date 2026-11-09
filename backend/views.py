@@ -14,6 +14,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Union
 
+from backend.config import APP_NAME
+
 
 @dataclass(frozen=True)
 class TemplateView:
@@ -29,7 +31,7 @@ class HtmlView:
 View = Union[TemplateView, HtmlView]
 
 START_VIEW = TemplateView("default", {
-    "title": "Personal Digital Agent",
+    "title": APP_NAME,
     "text": "Fragen, Nachrichten und die kleinen Dinge dazwischen. Was steht heute bei dir an?",
     "welcome": True,
 })

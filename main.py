@@ -1,4 +1,4 @@
-"""Einstiegspunkt des Personal Digital Agent (PDA)."""
+"""Einstiegspunkt von EVE."""
 from __future__ import annotations
 
 import ctypes
@@ -30,7 +30,8 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     configure_qt()
     qt_app = QApplication(sys.argv)
-    qt_app.setApplicationName(config.APP_NAME)
+    # Qt verwendet diesen internen Namen für das WebEngine-Profil mit der gespeicherten Designwahl.
+    qt_app.setApplicationName("Personal Digital Agent")
     qt_app.setApplicationDisplayName(config.APP_NAME)
     if sys.platform == "darwin":
         from backend.desktop.macos import configure_application

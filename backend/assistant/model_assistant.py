@@ -11,6 +11,7 @@ from backend.assistant.commands import COMMANDS
 from backend.assistant.llm import ChatMessage, LanguageModelError, SelectableLanguageModel, ToolCall
 from backend.assistant.settings import SETTINGS_KEYS, AssistantSettings
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult
+from backend.config import APP_NAME
 from backend.preferences import PreferenceStore
 from backend.views import TemplateView
 
@@ -21,7 +22,7 @@ MAX_TOOL_RESULT_CHARS = 8000   # schützt das Kontextfenster kleiner Modelle
 
 # Länge, Sprache, Ton, Emojis usw. legt der Nutzer im Popup fest (backend/assistant/settings.py).
 BASE_INSTRUCTIONS = (
-    "Du bist der Personal Digital Agent, ein persönlicher Assistent auf dem Computer des Nutzers. "
+    f"Du bist {APP_NAME} (Enhanced Virtual Entity), ein persönlicher Assistent auf dem Computer des Nutzers. "
     "Nutze Werkzeuge nur, wenn du sie für die Antwort brauchst, und erfinde keine Ergebnisse."
 )
 

@@ -45,7 +45,6 @@
 :root[data-theme="oled"] .welcome-emphasis { color: var(--accent); text-shadow: 0 0 18px rgba(103,255,18,.18); }
 :root[data-theme="oled"] #send-button { box-shadow: 0 0 14px rgba(103,255,18,.19); }
 :root[data-theme="oled"] .brand-mark { color: var(--accent); background: #040a02; }
-:root[data-theme="oled"] .brand-dot { text-shadow: 0 0 10px rgba(103,255,18,.5); }
 :root[data-theme="oled"] #design-panel { border: 1px solid #345424; }
 :root[data-theme="oled"] .composer-input { background: #020402; border-radius: 9px; }
 :root[data-theme="oled"] .message.assistant { background: #000000; }
@@ -86,7 +85,6 @@
 :root[data-theme="pixel"] .pending:before { border-radius: 0; }
 /* Maximalismus: kräftige Farbblöcke, Collagewinkel und grafische schwarze Kanten. */
 :root[data-theme="maximalist"] .brand strong { font-family: var(--display-font); font-size: 23px; font-weight: 900; text-shadow: 2px 2px #ff3bd4; }
-:root[data-theme="maximalist"] .brand-dot { color: #131313; }
 :root[data-theme="maximalist"] .brand-mark { border: 2px solid #131313; border-radius: 2px; background: #00ebed; color: #131313; box-shadow: 3px 3px 0 #131313; transform: rotate(-4deg); }
 :root[data-theme="maximalist"] .welcome { position: relative; }
 :root[data-theme="maximalist"] body { background: #fff500; }

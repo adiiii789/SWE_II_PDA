@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import sys
-import time
 
 from PyQt5.QtCore import (QEvent, QEasingCurve, QPoint, QParallelAnimationGroup, QPropertyAnimation,
                           QRect, QRectF, Qt, QTimer, pyqtSignal)
@@ -31,22 +30,22 @@ class PopupWindow(QWidget):
     # Ebenso aus jedem Thread: Popup von selbst öffnen (proaktive Meldung), wie bei einem Klick
     # aufs Tray-Icon - an dem Punkt, den anchor() liefert (Application: Mitte des Tray-Icons).
     show_requested = pyqtSignal()
-    hide_requested = pyqtSignal()
+    outside_click_detected = pyqtSignal()
 
     def __init__(self, content: QWidget):
         super().__init__()
         self._enlarged = False
         self._last_anchor: QPoint | None = None
-        self._last_hidden_at = float("-inf")
         self._outside_click_monitor = None
         self._closing = False
         self._native_rounded = False
         self.anchor: Callable[[], QPoint] = lambda: (self._screen().availableGeometry().topRight()
                                                     if sys.platform == "darwin"
                                                     else self._screen().availableGeometry().bottomRight())
+        self.tray_geometry: Callable[[], QRect] = QRect
         self.enlarge_requested.connect(self.set_enlarged)
         self.show_requested.connect(self._on_show_requested)
-        self.hide_requested.connect(self.dismiss)
+        self.outside_click_detected.connect(self._dismiss_on_outside_click)
         self.setObjectName("popupRoot")
         # Tool-Fenster erlauben eine Schließanimation, bevor die Fläche versteckt wird.
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
@@ -85,12 +84,9 @@ class PopupWindow(QWidget):
         self.show_at(QCursor.pos())
 
     def toggle_at_anchor(self) -> None:
-        if self.isVisible() and not self._closing:
+        if self.isVisible():
             self.dismiss()
-        elif self._closing:
-            self.show_at(self.anchor(), take_focus=True)
-        elif sys.platform != "darwin" or time.monotonic() - self._last_hidden_at > 0.2:
-            # Qt versteckt ein Popup beim erneuten Klick auf die Menüleiste schon vor dem Klicksignal.
+        else:
             self.show_at(self.anchor(), take_focus=sys.platform == "darwin")
 
     def show_at(self, corner: QPoint, take_focus: bool = False) -> None:
@@ -106,7 +102,7 @@ class PopupWindow(QWidget):
         self.activateWindow()
         if sys.platform == "darwin" and self._outside_click_monitor is None:
             from backend.desktop.macos import OutsideClickMonitor
-            self._outside_click_monitor = OutsideClickMonitor(self.hide_requested.emit)
+            self._outside_click_monitor = OutsideClickMonitor(self.outside_click_detected.emit)
 
     def _on_show_requested(self) -> None:
         if not self.isVisible() or self._closing:
@@ -190,7 +186,6 @@ class PopupWindow(QWidget):
         self._open_animation.stop()
         self._close_animation.stop()
         self._closing = False
-        self._last_hidden_at = time.monotonic()
         if self._outside_click_monitor is not None:
             self._outside_click_monitor.close()
             self._outside_click_monitor = None
@@ -222,13 +217,19 @@ class PopupWindow(QWidget):
         if app.activePopupWidget() is not None or (active is not None and self.isAncestorOf(active)):
             return
         if self.isVisible() and not self.isActiveWindow():
+            self._dismiss_on_outside_click()
+
+    def _dismiss_on_outside_click(self) -> None:
+        # Das Tray-Signal verarbeitet den Klick auf das Symbol selbst.
+        if not self.tray_geometry().contains(QCursor.pos()):
             self.dismiss()
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
         if self.isVisible() and event.type() == QEvent.MouseButtonPress:
             if QApplication.activePopupWidget() is not None:
                 return super().eventFilter(watched, event)
-            if not self.geometry().contains(event.globalPos()):
+            pos = event.globalPos()
+            if not self.geometry().contains(pos) and not self.tray_geometry().contains(pos):
                 self.dismiss()
         return super().eventFilter(watched, event)
 

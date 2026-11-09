@@ -19,7 +19,6 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, #splitter:fo
 .brand-mark svg { width: 21px; height: 21px; }
 .brand > div { min-width: 0; }
 .brand strong { display: block; font-size: 19px; font-weight: 650; letter-spacing: -.7px; line-height: 1.15; }
-.brand-dot { color: var(--accent); }
 .brand-caption { display: block; margin-top: 3px; color: var(--text-muted); font-size: 10px; letter-spacing: .1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .header-actions { display: flex; align-items: center; margin-left: 12px; }
 .header-actions > * + * { margin-left: 5px; }

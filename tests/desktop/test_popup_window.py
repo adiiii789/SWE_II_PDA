@@ -2,7 +2,7 @@ import unittest
 import sys
 from unittest import mock
 
-from PyQt5.QtCore import QPoint
+from PyQt5.QtCore import QPoint, QRect
 from PyQt5.QtGui import QCloseEvent, QCursor, QGuiApplication
 from PyQt5.QtWidgets import QLabel
 
@@ -114,16 +114,34 @@ class PopupWindowTest(unittest.TestCase):
             self.assertIs(self.popup.content, self.content)
             self.assertEqual(self.content.text(), "Inhalt")
 
-    def test_reopening_during_close_cancels_the_pending_hide(self):
+    def test_show_requested_during_close_cancels_the_pending_hide(self):
         with mock.patch.object(popup_window, "reduce_motion", return_value=False):
             self.popup.show_at(QPoint(900, 100))
             self.assertTrue(wait_until(lambda: self.popup.windowOpacity() > .99))
             self.popup.dismiss()
-            self.popup.toggle_at_anchor()
+            self.popup.show_requested.emit()
             self.assertFalse(self.popup._closing)
             self.assertTrue(wait_until(lambda: self.popup.windowOpacity() > .99))
             wait_until(lambda: False, .25)
             self.assertTrue(self.popup.isVisible())
+
+    def test_tray_click_is_handled_only_by_the_toggle(self):
+        icon_pos = QPoint(900, 10)
+        self.popup.anchor = lambda: icon_pos
+        self.popup.tray_geometry = lambda: QRect(890, 0, 20, 20)
+        with mock.patch.object(popup_window, "reduce_motion", return_value=True):
+            self.popup.toggle_at_anchor()
+            with mock.patch.object(QCursor, "pos", return_value=icon_pos):
+                self.popup.outside_click_detected.emit()
+            self.assertTrue(self.popup.isVisible())
+            self.popup.toggle_at_anchor()
+            self.assertFalse(self.popup.isVisible())
+
+            self.popup.toggle_at_anchor()
+            self.assertTrue(self.popup.isVisible())
+            with mock.patch.object(QCursor, "pos", return_value=QPoint(100, 100)):
+                self.popup.outside_click_detected.emit()
+            self.assertFalse(self.popup.isVisible())
 
     def test_reduce_motion_omits_movement_and_closes_immediately(self):
         with mock.patch.object(popup_window, "reduce_motion", return_value=True):

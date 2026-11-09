@@ -91,6 +91,8 @@ class Application:
 
         self.popup = create_popup()
         self.tray = TrayIcon(config.TRAY_ICON, config.APP_NAME)
+        self.popup.anchor = self.tray.anchor
+        self.popup.tray_geometry = self.tray.geometry
         self.tray.left_clicked.connect(self.popup.toggle_at_anchor)
         self.tray.quit_requested.connect(qt_app.quit)
         self.tray.show()
@@ -100,7 +102,6 @@ class Application:
         self.hotkey = GlobalHotkey(config.PROACTIVE_HOTKEY)
         self.hotkey.triggered.connect(self.proactive.fire)
         self.tray.proactive_test_requested.connect(self.proactive.fire)
-        self.popup.anchor = self.tray.anchor   # von selbst öffnen: dort, wo ein Klick aufs Icon wäre
         self.tray.messageClicked.connect(self.popup.show_requested.emit)
         if self.hotkey.registered:
             self.tray.setToolTip(f"{config.APP_NAME} - Test-Meldung: {config.PROACTIVE_HOTKEY}")

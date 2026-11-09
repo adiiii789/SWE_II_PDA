@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from PyQt5.QtCore import QObject, QRect, QUrl, pyqtSignal
+from PyQt5.QtWidgets import QSystemTrayIcon
 
 from tests.qt_helpers import qt_app, wait_until
 
@@ -54,16 +55,18 @@ class ApplicationTest(unittest.TestCase):
     def test_tray_is_configured(self):
         self.assertTrue(self.application.tray.toolTip().startswith(config.APP_NAME))
 
-    def test_left_click_and_notice_click_open_popup(self):
+    def test_left_click_toggles_popup_and_notice_click_opens_it(self):
         # Ein Test statt zwei: jede Application startet ein eigenes Chromium, zu viele davon
         # lassen spätere Tests (test_popup_page) beim Laden scheitern.
-        self.application.tray.left_clicked.emit()
+        self.application.tray.activated.emit(QSystemTrayIcon.Trigger)
         self.assertTrue(self.application.popup.isVisible())
-        self.application.popup.hide()
+        self.application.tray.activated.emit(QSystemTrayIcon.Trigger)
+        self.assertTrue(wait_until(lambda: not self.application.popup.isVisible()))
         settle()
         self.application.tray.messageClicked.emit()   # Klick auf die Benachrichtigung einer Meldung
         self.assertTrue(wait_until(self.application.popup.isVisible))
-        self.application.popup.hide()
+        self.application.tray.activated.emit(QSystemTrayIcon.DoubleClick)
+        self.assertTrue(wait_until(lambda: not self.application.popup.isVisible()))
 
     def test_proactive_notice_opens_popup_like_a_tray_click(self):
         # Wie im Betrieb: Meldung aus einem fremden Thread, das Programm hat keinen Fokus, vorher war

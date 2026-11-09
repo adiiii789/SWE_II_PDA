@@ -1,4 +1,4 @@
-"""Backend des Personal Digital Agent (PDA) - alles, was in Python läuft.
+"""Backend von EVE - alles, was in Python läuft.
 
   api.py           Schnittstelle zum Frontend: jede Funktion hier ist im JavaScript aufrufbar
   events.py        Ereignisse vom Backend ans Frontend (Push, z. B. für autonome Abläufe)

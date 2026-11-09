@@ -145,7 +145,7 @@ def enlarge_popup(enlarged: bool) -> bool:
 
 
 def proactive_message(occasion: str = proactive.DEMO) -> dict[str, Any]:
-    """Der PDA meldet sich von sich aus (Anlass aus backend/proactive.py, z. B. "demo").
+    """EVE meldet sich von sich aus (Anlass aus backend/proactive.py, z. B. "demo").
 
     Die Meldung erscheint als Push im Chat und als Windows-Benachrichtigung und wird
     vorgelesen (config.PROACTIVE_SPEAK). Gibt die Chat-Nachricht zurück. Darf aus jedem
