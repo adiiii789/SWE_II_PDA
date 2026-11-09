@@ -87,6 +87,7 @@ frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
   settings.js                 ⚙ Einstellungen: Formular, allein aus dem Schema von get_settings()
   avatar.js                   animierter, runder Avatar (Canvas) – zeigt Bereit/Denkt/Hört zu/Spricht
   appearance.js               Designs (Farbschemata) und Avatar-Stil, Auswahl über den Design-Knopf
+  proactive_alert.js/.css     große Einblendung bei proaktiven Meldungen, je Design eigener Auftritt
   theme.css                   gemeinsame Farben (Standard-Design "Nacht")
   templates/
     default.html.j2           Standard-Template (Titel, Text, Tabelle) – weitere *.html.j2 möglich
@@ -462,6 +463,13 @@ Strg+Alt+P (hotkey.py: RegisterHotKey → WM_HOTKEY)  oder  Tray-Menü „Proakt
     mit PDA_PROACTIVE_OPEN_POPUP=0 stattdessen: tray.notify_requested → Windows-Benachrichtigung,
                                                 Klick darauf → popup.show_requested
 ```
+
+**Einblendung** (`frontend/proactive_alert.js`): Über Ansicht und Verlauf erscheint ein großes
+Ausrufezeichen, dann wächst die Fläche auf und zeigt Titel und Inhalt der Meldung für 10 Sekunden (ein
+Klick beendet das früher). Danach schrumpft sie auf die Chat-Nachricht, die erst dann sichtbar wird; was
+nicht auf die Fläche passt, liest man dort weiter. Ist das Popup zu, wird sie beim Öffnen nachgeholt. Das
+Aussehen pro Design steht in `proactive_alert.css`; ein neues Design ohne eigenen Abschnitt nimmt
+automatisch die Grundform in seinen Farben.
 
 **Fokus:** Windows gibt einem Programm ohne vorherige Aktion des Nutzers keinen Fokus
 (Foreground-Lock), und ein `Qt.Popup` ohne Fokus schließt sich sofort. `foreground.py` hängt den

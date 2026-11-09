@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from PyQt5.QtCore import QPoint, Qt
+
 from tests.assistant.test_settings import MemoryStore
 from tests.qt_helpers import qt_app, run_js, wait_until
 
@@ -31,6 +33,13 @@ IFRAME_SANDBOX = "document.getElementById('view-frame').getAttribute('sandbox')"
 RECORD = "document.getElementById('record-button').click()"
 RECORD_LABEL = "document.getElementById('record-button').textContent"
 ESCAPE = "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))"
+ALERT_THERE = "Boolean(document.getElementById('proactive-alert'))"
+ALERT_OPEN = "Boolean(document.querySelector('#proactive-alert.open'))"
+ALERT_TITLE = "document.querySelector('.alert-title').textContent"
+ALERT_BODY = "document.querySelector('.alert-body').innerHTML"
+ALERT_MORE_HIDDEN = "document.querySelector('.alert-more').hidden"
+ALERT_CLICK = "document.getElementById('proactive-alert').click()"
+LAST_VISIBILITY = "getComputedStyle(Array.from(document.querySelectorAll('.message')).pop()).visibility"
 
 
 class PopupPageTest(unittest.TestCase):
@@ -106,6 +115,19 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(last.startswith(f"message assistant proactive:🔔 {demo.title} · "), last)
         self.assertTrue(last.endswith(demo.fallback), last)
         self.assertTrue(wait_until(lambda: f"<h2>{demo.title}</h2>" in run_js(self.page, IFRAME_HTML)))
+
+    def test_proactive_alert_waits_until_popup_is_opened(self):
+        run_js(self.page, "showReply({text: 'Hallo', proactive: true, title: 'Termin'})")
+        self.assertFalse(run_js(self.page, ALERT_THERE))   # Popup zu: noch nichts zu sehen
+        self.assertEqual(run_js(self.page, LAST_VISIBILITY), "hidden")
+
+        run_js(self.page, "Object.defineProperty(document, 'hidden', {configurable: true, get: () => false})")
+        self.addCleanup(run_js, self.page, "delete document.hidden")
+        run_js(self.page, "document.dispatchEvent(new Event('visibilitychange'))")
+        self.assertTrue(wait_until(lambda: run_js(self.page, ALERT_THERE)))
+        run_js(self.page, ALERT_CLICK)
+        self.assertTrue(wait_until(lambda: not run_js(self.page, ALERT_THERE)))
+        self.assertEqual(run_js(self.page, LAST_VISIBILITY), "visible")
 
     def test_attachments_can_be_opened_and_saved(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -235,6 +257,69 @@ class PopupPageTest(unittest.TestCase):
             self.assertEqual(run_js(self.page, chat_grow), "0.6")   # Aufteilung gilt wieder
         finally:
             run_js(self.page, "setSplit(null)")
+
+
+class ProactiveAlertTest(unittest.TestCase):
+    """Große Einblendung (frontend/proactive_alert.js) - im geöffneten Popup, damit die Seite ihre echte
+    Größe hat. Klick beendet jeweils die 10 Sekunden Lesezeit."""
+
+    @classmethod
+    def setUpClass(cls):
+        PopupPageTest.setUpClass.__func__(cls)
+        cls.popup.setAttribute(Qt.WA_DontShowOnScreen, True)
+        cls.popup.show_at(QPoint(1500, 900))
+        if not wait_until(lambda: not run_js(cls.page, "document.hidden") and run_js(cls.page, "innerHeight") > 300):
+            raise TimeoutError("Popup nicht geöffnet")
+
+    @classmethod
+    def tearDownClass(cls):
+        PopupPageTest.tearDownClass.__func__(cls)
+
+    def js(self, script):
+        return run_js(self.page, script)
+
+    def wait_open(self):
+        self.assertTrue(wait_until(lambda: self.js(ALERT_OPEN)))
+
+    def dismiss(self):
+        self.js(ALERT_CLICK)
+        self.assertTrue(wait_until(lambda: not self.js(ALERT_THERE)))
+
+    def test_shows_mark_then_message_then_lands_in_chat(self):
+        self.js("showReply({text: '**Hallo** Welt', proactive: true, title: '<b>Termin</b>'})")
+        count = len(self.js(MESSAGES))
+        self.assertTrue(self.js(ALERT_THERE))
+        self.assertEqual(self.js("document.querySelector('.alert-mark').textContent"), "!")
+        self.assertFalse(self.js(ALERT_OPEN))    # erst nur das Ausrufezeichen
+        self.assertEqual(self.js(LAST_VISIBILITY), "hidden")
+
+        self.wait_open()
+        self.assertEqual(self.js(ALERT_TITLE), "<b>Termin</b>")   # als Text, nicht als HTML
+        self.assertIn("<strong>Hallo</strong>", self.js(ALERT_BODY))
+        self.assertTrue(self.js(ALERT_MORE_HIDDEN))               # passt, also kein Verweis
+
+        self.dismiss()
+        self.assertEqual(len(self.js(MESSAGES)), count)           # die Nachricht bleibt im Chat
+        self.assertEqual(self.js(LAST_VISIBILITY), "visible")
+
+    def test_points_to_chat_when_text_does_not_fit(self):
+        self.js("showReply({text: 'Absatz\\n\\n'.repeat(200), proactive: true, title: 'Lang'})")
+        self.wait_open()
+        self.assertFalse(self.js(ALERT_MORE_HIDDEN))
+        self.dismiss()
+
+    def test_works_without_animations_in_still_theme(self):
+        # "Nachhaltig" schaltet alle Animationen ab - die Phasen müssen trotzdem durchlaufen.
+        self.js("Appearance.applyTheme('eco', false)")
+        self.addCleanup(self.js, "Appearance.applyTheme('night', false)")
+        self.js("showReply({text: 'Hallo', proactive: true, title: 'Termin'})")
+        mark = "getComputedStyle(document.querySelector('.alert-mark'))"
+        self.assertEqual(self.js(f"{mark}.animationName"), "none")
+        self.assertEqual(self.js(f"{mark}.opacity"), "1")
+        self.wait_open()
+        self.assertEqual(self.js(f"{mark}.opacity"), "0")
+        self.assertEqual(self.js("getComputedStyle(document.querySelector('.alert-content')).opacity"), "1")
+        self.dismiss()
 
 
 class SettingsPanelTest(unittest.TestCase):

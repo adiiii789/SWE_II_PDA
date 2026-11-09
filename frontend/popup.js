@@ -178,6 +178,7 @@ function showReply(reply) {
   if (reply.attachments && reply.attachments.length) addAttachments(message, reply.attachments);
   appendToChat(message);   // erst komplett aufbauen, dann einblenden - so stimmt die Scrollposition
   if (reply.html) showView(reply.html);
+  if (reply.proactive) ProactiveAlert.show(message, reply.title || "Meldung", reply.text);
 }
 
 // Kennzeichnung "meldet sich von selbst" über der Nachricht - Titel nur als Text, nie als HTML.
