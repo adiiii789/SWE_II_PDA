@@ -4,12 +4,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests.assistant.test_settings import MemoryStore
 from tests.qt_helpers import qt_app, run_js, wait_until
 
 from backend import api, presenter, proactive
 from backend.assistant import AssistantReply
 from backend.assistant.tools import Attachment
 from backend.attachments import AttachmentStore
+from backend.assistant.settings import AssistantSettings
 from backend.desktop.application import create_popup
 from backend.views import TemplateView
 
@@ -63,9 +65,40 @@ class PopupPageTest(unittest.TestCase):
         return run_js(self.page, MESSAGES)[-1]
 
     def test_starts_with_start_view_and_greeting(self):
-        self.assertIn("Personal Digital Agent", self.initial_html)
+        self.assertIn("<h2>EVE</h2>", self.initial_html)
+        self.assertIn("<p>Enhanced Virtual Entity</p>", self.initial_html)
         self.assertEqual(len(self.initial_messages), 1)
         self.assertIn("hilfe", self.initial_messages[0])
+
+    def test_model_menu_groups_and_switches_providers(self):
+        class Models:
+            selected = "gemini/gemini-test"
+
+            def available_models(self):
+                return [{"id": "gemini/gemini-test", "name": "gemini-test", "cloud": True, "tools": True},
+                        {"id": "ollama/lokal:latest", "name": "lokal:latest", "cloud": False, "tools": False}]
+
+            def current_model(self):
+                return self.selected
+
+            def select_model(self, name):
+                self.selected = name
+
+        assistant = Models()
+        with mock.patch.object(api, "_assistant", return_value=assistant):
+            run_js(self.page, "loadModels(); true")
+            self.assertTrue(wait_until(lambda: run_js(self.page, "modelSelect.value") == "gemini/gemini-test"))
+            self.assertEqual(run_js(self.page, "Array.from(modelSelect.children).map(group => group.label)"),
+                             ["Lokal (Ollama)", "Cloud (Gemini)"])
+            run_js(self.page, """
+                modelSelect.value = 'ollama/lokal:latest';
+                modelSelect.dispatchEvent(new Event('change'));
+            """)
+            self.assertTrue(wait_until(lambda: assistant.selected == "ollama/lokal:latest"
+                                       and run_js(self.page, "!modelSelect.disabled")))
+            self.assertEqual(run_js(self.page, "modelSelect.value"), "ollama/lokal:latest")
+        run_js(self.page, "loadModels(); true")
+        self.assertTrue(wait_until(lambda: run_js(self.page, "modelSelect.hidden")))
 
     def test_chat_command_switches_iframe_view(self):
         answer = self._send("system")
@@ -94,7 +127,7 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(wait_until(lambda: "<h2>Briefing</h2>" in run_js(self.page, IFRAME_HTML)))
 
     def test_proactive_message_is_marked_in_chat(self):
-        # Der PDA meldet sich von selbst (Test-Makro) - ohne Sprachmodell mit dem Ersatztext.
+        # EVE meldet sich von selbst (Test-Makro) - ohne Sprachmodell mit dem Ersatztext.
         demo = proactive.OCCASIONS[proactive.DEMO]
         count = len(run_js(self.page, MESSAGES))
         with mock.patch.object(api.config, "PROACTIVE_SPEAK", False):
@@ -218,6 +251,91 @@ class PopupPageTest(unittest.TestCase):
         self.assertEqual(run_js(self.page, frame_display), "none")
         run_js(self.page, "document.getElementById('chat-max-button').click()")
         self.assertNotEqual(run_js(self.page, frame_display), "none")
+
+
+class SettingsPanelTest(unittest.TestCase):
+    """⚙ Einstellungen (frontend/settings.js) - Speicher im Arbeitsspeicher statt APPDATA."""
+
+    @classmethod
+    def setUpClass(cls):
+        PopupPageTest.setUpClass.__func__(cls)
+
+    @classmethod
+    def tearDownClass(cls):
+        PopupPageTest.tearDownClass.__func__(cls)
+
+    def setUp(self):
+        self.store = MemoryStore()
+        patcher = mock.patch.object(api, "_settings", return_value=AssistantSettings(self.store))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(run_js, self.page, "closeSettings()")
+
+    def open(self):
+        run_js(self.page, "document.getElementById('settings-button').click()")
+        self.assertTrue(wait_until(lambda: run_js(self.page, "document.querySelectorAll('.setting').length") > 0))
+
+    def js(self, script):
+        return run_js(self.page, script)
+
+    def test_panel_shows_answer_and_tool_settings(self):
+        self.open()
+        self.assertFalse(self.js("document.getElementById('settings-panel').hidden"))
+        visible = "Array.from(document.querySelectorAll('.settings-section')).filter(s => !s.hidden).map(s => s.dataset.tab)"
+        self.assertEqual(self.js(visible), ["answer"])
+        self.assertEqual(self.js("document.querySelector('[data-key=length] select').value"), "kurz")
+        self.js("document.querySelector('#settings-tabs [data-tab=tools]').click()")
+        self.assertEqual(self.js(visible), ["tools"])
+        groups = self.js("Array.from(document.querySelectorAll('.settings-group')).map(g => g.dataset.group)")
+        self.assertEqual(groups[:2], ["mail", "basics"])
+        mail_keys = self.js("Array.from(document.querySelectorAll('[data-group=mail] .setting')).map(r => r.dataset.key)")
+        self.assertIn("fields", mail_keys)
+        self.assertIn("max", mail_keys)
+
+    def test_save_changes_and_confirm_in_chat(self):
+        self.open()
+        count = len(self.js(MESSAGES))
+        self.js("""
+          document.querySelector('[data-key=length] select').value = 'ausfuehrlich';
+          document.querySelector('[data-group=mail] [data-key=max] input').value = '4';
+          document.querySelector('[data-group=mail] [data-key=fields] input[value=preview]').click();
+          document.querySelector('[data-group=basics] [data-key=enabled] input').click();
+          document.getElementById('settings-save').click();""")
+        self.assertTrue(wait_until(lambda: self.js("document.getElementById('settings-panel').hidden")))
+        settings = AssistantSettings(self.store)
+        self.assertEqual(settings.answer_values()["length"], "ausfuehrlich")
+        self.assertEqual(settings.tool_values("list_emails")["max"], 4)
+        self.assertEqual(settings.tool_values("list_emails")["fields"], ["sender", "subject", "date", "preview"])
+        self.assertFalse(settings.tool_enabled("calculate"))
+        self.assertTrue(wait_until(lambda: len(self.js(MESSAGES)) == count + 1))
+        self.assertIn("Einstellungen gespeichert", self.js(MESSAGES)[-1])
+
+    def test_invalid_value_keeps_panel_open_with_error(self):
+        self.open()
+        self.js("document.querySelector('[data-group=mail] [data-key=max] input').value = '500';"
+                "document.getElementById('settings-save').click();")
+        self.assertTrue(wait_until(lambda: "zwischen 1 und 50" in self.js("document.getElementById('settings-status').textContent")))
+        self.assertFalse(self.js("document.getElementById('settings-panel').hidden"))
+        self.assertEqual(self.store.values, {})
+
+    def test_reset_needs_second_click(self):
+        AssistantSettings(self.store).save(answer={"tone": "locker"})
+        self.open()
+        self.js("document.getElementById('settings-reset').click()")
+        self.assertIn("Wirklich", self.js("document.getElementById('settings-reset').textContent"))
+        self.assertEqual(AssistantSettings(self.store).answer_values()["tone"], "locker")
+        self.js("document.getElementById('settings-reset').click()")
+        self.assertTrue(wait_until(lambda: AssistantSettings(self.store).answer_values()["tone"] == "freundlich"))
+        self.assertTrue(wait_until(lambda: self.js("document.querySelector('[data-key=tone] select').value") == "freundlich"))
+
+    def test_disabled_group_is_greyed_and_escape_closes(self):
+        self.open()
+        self.js("document.querySelector('[data-group=mail] [data-key=enabled] input').click()")
+        self.assertTrue(self.js("document.querySelector('[data-group=mail]').classList.contains('disabled')"))
+        self.js("document.getElementById('settings-panel').dispatchEvent("
+                "new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+        self.assertTrue(self.js("document.getElementById('settings-panel').hidden"))
+        self.assertEqual(self.store.values, {})   # Schließen ohne Speichern
 
 
 if __name__ == "__main__":

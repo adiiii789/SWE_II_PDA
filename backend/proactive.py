@@ -1,4 +1,4 @@
-"""Proaktive Meldungen: Der PDA meldet sich von sich aus beim Nutzer.
+"""Proaktive Meldungen: EVE meldet sich von sich aus beim Nutzer.
 
 Ablauf:
   Auslöser          heute: Makro Strg+Alt+P oder Tray-Menü (Vorführung, backend/desktop/)
@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from backend.assistant import Assistant, AssistantReply, ProactiveAssistant
+from backend.config import APP_NAME
 from backend.events import ASSISTANT_MESSAGE, PROACTIVE_NOTICE, EventBus
 from backend.views import TemplateView
 
@@ -33,7 +34,7 @@ NOTICE_MAX_CHARS = 200   # Windows kürzt längere Benachrichtigungen ohnehin
 
 @dataclass(frozen=True)
 class Occasion:
-    """Anlass, zu dem sich der PDA meldet."""
+    """Anlass, zu dem sich EVE meldet."""
 
     title: str         # Überschrift der Benachrichtigung und Ansicht
     instruction: str   # Auftrag ans Sprachmodell
@@ -45,12 +46,12 @@ DEMO = "demo"
 
 OCCASIONS: dict[str, Occasion] = {
     DEMO: Occasion(
-        title="Dein PDA meldet sich",
+        title=f"{APP_NAME} meldet sich",
         instruction=("Das ist eine Vorführung der proaktiven Meldung. Begrüße den Nutzer passend zur "
                      "Tageszeit, sag in einem Satz, wobei du dich künftig von selbst melden wirst "
                      "(z. B. Erinnerung an Termine, Morning-Briefing, wichtige neue Nachrichten), "
                      "und frag, ob du gerade helfen kannst. Höchstens drei kurze Sätze."),
-        fallback=("Hallo, hier meldet sich dein PDA von sich aus. So kann ich dich künftig an Termine "
+        fallback=(f"Hallo, hier meldet sich {APP_NAME} von sich aus. So kann ich dich künftig an Termine "
                   "erinnern, morgens ein Briefing geben oder auf wichtige Nachrichten hinweisen. "
                   "Kann ich dir gerade helfen?"),
         trigger="Makro (Test)",
@@ -77,7 +78,7 @@ def compose(assistant: Assistant, occasion: Occasion,
     now = clock()
     view = TemplateView("default", {
         "title": occasion.title,
-        "text": "Der PDA hat sich von sich aus gemeldet - ohne dass du etwas gefragt hast.",
+        "text": f"{APP_NAME} hat sich von sich aus gemeldet - ohne dass du etwas gefragt hast.",
         "columns": ["", ""],
         "rows": [["Ausgelöst", f"{now:%d.%m.%Y, %H:%M} Uhr"],
                  ["Auslöser", occasion.trigger],

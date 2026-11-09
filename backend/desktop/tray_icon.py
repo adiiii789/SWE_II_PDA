@@ -1,8 +1,9 @@
 """Tray-Icon: Linksklick meldet sich per Signal, Rechtsklick zeigt das Kontextmenü,
-notify() zeigt eine Windows-Benachrichtigung (proaktive Meldungen)."""
+notify() zeigt eine Systembenachrichtigung (proaktive Meldungen)."""
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 from PyQt5.QtCore import QObject, QPoint, pyqtSignal
 from PyQt5.QtGui import QGuiApplication, QIcon
@@ -22,14 +23,18 @@ class TrayIcon(QSystemTrayIcon):
     def __init__(self, icon_path: Path, tooltip: str, parent: QObject | None = None):
         super().__init__(parent)
         if icon_path.exists():
-            self.setIcon(QIcon(str(icon_path)))
+            icon = QIcon(str(icon_path))
+            icon.setIsMask(sys.platform == "darwin")
+            self.setIcon(icon)
         self.setToolTip(tooltip)
 
         self._menu = QMenu()
         self._menu.addAction(PROACTIVE_TEST_ACTION, self.proactive_test_requested.emit)
         self._menu.addSeparator()
         self._menu.addAction("Beenden", self.quit_requested.emit)
-        self.setContextMenu(self._menu)
+        # Ein natives macOS-Menü würde bereits beim Linksklick öffnen und das Chat-Popup blockieren.
+        if sys.platform != "darwin":
+            self.setContextMenu(self._menu)
 
         self.activated.connect(self._on_activated)
         self.notify_requested.connect(self.notify)
@@ -40,13 +45,16 @@ class TrayIcon(QSystemTrayIcon):
         geometry = self.geometry()
         if geometry.isValid() and not geometry.isEmpty():
             return geometry.center()
-        return QGuiApplication.primaryScreen().availableGeometry().bottomRight()
+        available = QGuiApplication.primaryScreen().availableGeometry()
+        return available.topRight() if sys.platform == "darwin" else available.bottomRight()
 
     def notify(self, title: str, text: str, duration_ms: int) -> None:
-        """Windows-Benachrichtigung am Tray-Icon; ein Klick darauf sendet messageClicked."""
+        """Systembenachrichtigung am Tray-Icon; ein Klick darauf sendet messageClicked."""
         self.showMessage(title, text, self.icon() if not self.icon().isNull() else QSystemTrayIcon.Information,
                          duration_ms)
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason == QSystemTrayIcon.Trigger:
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
             self.left_clicked.emit()
+        elif sys.platform == "darwin" and reason == QSystemTrayIcon.Context:
+            self._menu.popup(self.anchor())

@@ -1,11 +1,12 @@
-"""OllamaAssistant: Tool-Calling-Schleife, Verlauf und Modellwahl - mit Attrappen statt Ollama."""
+"""GeminiAssistant: Tool-Calling-Schleife, Verlauf und Modellwahl - mit Attrappen statt Gemini."""
 import datetime
 import unittest
 
 from backend.assistant import Assistant, ModelSelection, ProactiveAssistant
 from backend.assistant.llm import ChatMessage, ModelResponse, ToolCall
-from backend.assistant.ollama import ModelInfo, OllamaError
-from backend.assistant.ollama_assistant import MODEL_PREFERENCE, PROACTIVE_TRIGGER, OllamaAssistant
+from backend.assistant.gemini import MODELS, GeminiError
+from backend.assistant.llm import ModelInfo
+from backend.assistant.gemini_assistant import MODEL_PREFERENCE, PROACTIVE_TRIGGER, GeminiAssistant
 from backend.assistant.tools import Attachment, CompositeToolProvider, ToolResult, ToolSpec
 from backend.views import START_VIEW
 
@@ -13,12 +14,12 @@ from backend.views import START_VIEW
 class FakeModel:
     """Spielt vorbereitete Antworten ab und merkt sich, was es bekommen hat."""
 
-    def __init__(self, *responses, installed=("llama3.2",), name="", cloud=()):
+    def __init__(self, *responses, models=MODELS, name=""):
         self.responses = list(responses)
         self.calls = []
         self.name = name
-        self._installed = list(installed)
-        self._cloud = list(cloud)
+        self.models = list(models)
+        self.default_name = self.models[0]
 
     def chat(self, messages, tools=()):
         self.calls.append((list(messages), list(tools)))
@@ -27,14 +28,8 @@ class FakeModel:
             raise response
         return ModelResponse(response)
 
-    def installed(self):
-        return self._installed
-
-    def cloud_models(self):
-        return [ModelInfo(name, True, True) for name in self._cloud]
-
     def available_models(self):
-        return [ModelInfo(name, name != "gemma") for name in self._installed] + self.cloud_models()
+        return [ModelInfo(name, True, True) for name in self.models]
 
     def selectable(self):
         return [info.name for info in self.available_models()]
@@ -78,7 +73,7 @@ FIXED_NOW = datetime.datetime(2026, 10, 14, 9, 30)
 
 
 def make(model, tools=None, preferences=None, **kwargs):
-    return OllamaAssistant(model, tools or EchoTools(), preferences or MemoryPreferences(),
+    return GeminiAssistant(model, tools or EchoTools(), preferences or MemoryPreferences(),
                            clock=lambda: FIXED_NOW, **kwargs)
 
 
@@ -165,8 +160,8 @@ class ReplyTest(unittest.TestCase):
         assistant.reply("b")
         self.assertEqual([m.role for m in assistant.history], ["user", "assistant"])
 
-    def test_ollama_error_is_answer_and_history_rolled_back(self):
-        assistant = make(FakeModel(OllamaError("kaputt")))
+    def test_gemini_error_is_answer_and_history_rolled_back(self):
+        assistant = make(FakeModel(GeminiError("kaputt")))
         reply = assistant.reply("x")
         self.assertIn("kaputt", reply.text)
         self.assertEqual(assistant.history, [])
@@ -193,66 +188,104 @@ class ReplyTest(unittest.TestCase):
         self.assertTrue(system.endswith("Briefing kurz halten."))
 
 
+class SettingsTest(unittest.TestCase):
+    """Einstellungen aus dem Popup (backend/assistant/settings.py) wirken auf Modell und Ansicht."""
+
+    def make_with(self, model, tools=None, answer=None, tool_settings=None):
+        assistant = make(model, tools)
+        assistant.settings.save(answer, tool_settings)
+        return assistant
+
+    def test_answer_wishes_in_system_message_not_as_raw_json(self):
+        model = FakeModel(text("ok"))
+        self.make_with(model, answer={"length": "ausfuehrlich", "address": "sie"}).reply("x")
+        system = model.calls[0][0][0].content
+        self.assertIn("Antworte ausführlich und vollständig.", system)
+        self.assertIn("Sieze den Nutzer.", system)
+        self.assertNotIn("Bekanntes über den Nutzer", system)   # Einstellungen sind kein Kontextwissen
+        self.assertNotIn("answer_settings", system)
+
+    def test_tool_wishes_for_offered_tools(self):
+        model = FakeModel(text("ok"))
+        self.make_with(model, tool_settings={"tool:echo": {"notes": "immer in Großbuchstaben"}}).reply("x")
+        self.assertIn('Darstellung von "echo": immer in Großbuchstaben', model.calls[0][0][0].content)
+
+    def test_disabled_tool_is_not_offered_and_refused(self):
+        tools = EchoTools()
+        model = FakeModel(calls(ToolCall("echo", {"text": "a"})), text("Geht nicht"))
+        reply = self.make_with(model, tools, tool_settings={"tool:echo": {"enabled": False}}).reply("x")
+        self.assertEqual(model.calls[0][1], [])
+        self.assertEqual(tools.calls, [])   # auch ein erfundener Aufruf läuft nicht
+        self.assertIn("abgeschaltet", model.calls[1][0][-1].content)
+        self.assertEqual(reply.text, "Geht nicht")
+
+    def test_view_off_hides_table(self):
+        model = FakeModel(calls(ToolCall("echo", {"text": "a"})), text("Fertig"))
+        reply = self.make_with(model, tool_settings={"tool:echo": {"view": "aus"}}).reply("x")
+        self.assertIsNone(reply.view)
+
+    def test_full_view_does_not_shorten(self):
+        class LongTools(EchoTools):
+            def call_tool(self, name, arguments):
+                return ToolResult("x" * 1000)
+
+        model = FakeModel(calls(ToolCall("echo")), text("Fertig"))
+        short = make(FakeModel(calls(ToolCall("echo")), text("Fertig")), LongTools()).reply("x")
+        full = self.make_with(model, LongTools(), tool_settings={"tool:echo": {"view": "voll"}}).reply("x")
+        self.assertEqual(len(short.view.data["rows"][0][2]), 300 + len(" …"))
+        self.assertEqual(full.view.data["rows"][0][2], "x" * 1000)
+
+    def test_announce_uses_answer_wishes(self):
+        model = FakeModel(text("Hallo"))
+        self.make_with(model, answer={"language": "englisch"}).announce("Sag Hallo")
+        self.assertIn("Antworte immer auf Englisch.", model.calls[0][0][0].content)
+
+
 class ModelSelectionTest(unittest.TestCase):
-    def test_picks_first_installed_model(self):
-        model = FakeModel(text("ok"), installed=["a", "b"])
+    def test_picks_default_model(self):
+        model = FakeModel(text("ok"), models=["a", "b"])
         make(model).reply("x")
         self.assertEqual(model.name, "a")
 
     def test_prefers_saved_model(self):
-        model = FakeModel(installed=["a", "b"])
+        model = FakeModel(models=["a", "b"])
         self.assertEqual(make(model, preferences=MemoryPreferences(**{MODEL_PREFERENCE: "b"})).current_model(), "b")
 
-    def test_saved_model_no_longer_installed(self):
-        model = FakeModel(installed=["a"])
+    def test_saved_model_no_longer_available(self):
+        model = FakeModel(models=["a"])
         self.assertEqual(make(model, preferences=MemoryPreferences(**{MODEL_PREFERENCE: "weg"})).current_model(), "a")
 
     def test_configured_model_wins(self):
-        self.assertEqual(make(FakeModel(installed=["a"], name="fest")).current_model(), "fest")
-
-    def test_no_model_installed(self):
-        reply = make(FakeModel(installed=[])).reply("x")
-        self.assertIn("ollama pull", reply.text)
-
-    def test_ollama_not_running(self):
-        model = FakeModel()
-        model.installed = lambda: (_ for _ in ()).throw(OllamaError("nicht erreichbar"))
-        self.assertIn("nicht erreichbar", make(model).reply("x").text)
+        self.assertEqual(make(FakeModel(models=["a"], name="fest")).current_model(), "fest")
 
     def test_select_model_is_saved(self):
         prefs = MemoryPreferences()
-        model = FakeModel(installed=["a", "b"])
+        model = FakeModel(models=["a", "b"])
         assistant = make(model, preferences=prefs)
         assistant.select_model("b")
         self.assertEqual(model.name, "b")
         self.assertEqual(prefs.get(MODEL_PREFERENCE), "b")
 
     def test_select_unknown_model(self):
-        with self.assertRaisesRegex(ValueError, "weder installiert noch in der Ollama-Cloud"):
-            make(FakeModel(installed=["a"])).select_model("b")
+        with self.assertRaisesRegex(ValueError, "steht nicht zur Auswahl"):
+            make(FakeModel(models=["a"])).select_model("b")
 
     def test_available_models(self):
-        models = make(FakeModel(installed=["gemma", "qwen3"], cloud=["gpt-oss:120b-cloud"])).available_models()
-        self.assertEqual(models, [{"name": "gemma", "tools": False, "cloud": False},
-                                  {"name": "qwen3", "tools": True, "cloud": False},
-                                  {"name": "gpt-oss:120b-cloud", "tools": True, "cloud": True}])
+        models = make(FakeModel(models=["a", "b"])).available_models()
+        self.assertEqual(models, [{"name": "a", "tools": True, "cloud": True},
+                                  {"name": "b", "tools": True, "cloud": True}])
 
-    def test_saved_cloud_model_without_pull(self):
-        model = FakeModel(installed=["a"], cloud=["gemma4:31b-cloud"])
-        prefs = MemoryPreferences(**{MODEL_PREFERENCE: "gemma4:31b-cloud"})
-        self.assertEqual(make(model, preferences=prefs).current_model(), "gemma4:31b-cloud")
+    def test_models_command_lists_gemini_models(self):
+        reply = make(FakeModel(models=["a", "b"])).reply("modelle")
+        self.assertEqual(reply.view.data["rows"], [["▶ a", "Cloud", "ja"], ["b", "Cloud", "ja"]])
 
-    def test_models_command_lists_local_and_cloud(self):
-        reply = make(FakeModel(installed=["a"], cloud=["b-cloud"])).reply("modelle")
-        self.assertEqual(reply.view.data["rows"], [["▶ a", "Lokal", "ja"], ["b-cloud", "Cloud", "ja"]])
-
-    def test_model_command_accepts_cloud_name_without_suffix(self):
-        model = FakeModel(installed=["a"], cloud=["gemma4:31b-cloud"])
-        self.assertIn("gemma4:31b-cloud", make(model).reply("modell gemma4:31b").text)
-        self.assertEqual(model.name, "gemma4:31b-cloud")
+    def test_model_command_switches_model(self):
+        model = FakeModel(models=["a", "b"])
+        self.assertIn("b", make(model).reply("modell b").text)
+        self.assertEqual(model.name, "b")
 
     def test_model_command_unknown_model(self):
-        self.assertIn('"modelle"', make(FakeModel(installed=["a"])).reply("modell gibtsnicht").text)
+        self.assertIn('"modelle"', make(FakeModel(models=["a"])).reply("modell gibtsnicht").text)
 
     def test_help_lists_model_commands(self):
         rows = make(FakeModel()).reply("hilfe").view.data["rows"]
@@ -276,14 +309,9 @@ class AnnounceTest(unittest.TestCase):
         self.assertEqual(model.calls[1][0][1:], [ChatMessage("assistant", "Hallo von selbst!"),
                                                  ChatMessage("user", "Danke")])
 
-    def test_no_model_installed(self):
-        assistant = make(FakeModel(installed=()))
-        self.assertIsNone(assistant.announce("Sag Hallo"))
-        self.assertEqual(assistant.history, [])
-
-    def test_ollama_error(self):
-        assistant = make(FakeModel(OllamaError("Ollama läuft nicht")))
-        with self.assertLogs("backend.assistant.ollama_assistant", "WARNING"):
+    def test_gemini_error(self):
+        assistant = make(FakeModel(GeminiError("Gemini ist nicht erreichbar")))
+        with self.assertLogs("backend.assistant.model_assistant", "WARNING"):
             self.assertIsNone(assistant.announce("Sag Hallo"))
         self.assertEqual(assistant.history, [])
 

@@ -1,9 +1,9 @@
-# Architektur – Personal Digital Agent (PDA)
+# Architektur – EVE
 
 Ausführliche Beschreibung, wie das Projekt aufgebaut ist und warum. Für den Einstieg (Starten, Testen, wo arbeite ich?) reicht die [README](README.md).
 
-Tray-Anwendung für Windows: Das Programm läuft im Hintergrund und zeigt ein Icon im
-Infobereich der Taskleiste.
+Tray-Anwendung für macOS und Windows: Das Programm läuft im Hintergrund und zeigt ein Icon
+in der macOS-Menüleiste bzw. im Infobereich der Windows-Taskleiste.
 
 - **Linksklick** auf das Icon öffnet ein Popup: oben ein Anzeigebereich (iframe) für Daten,
   unten ein Chat mit einem Assistenten.
@@ -34,7 +34,7 @@ von sich aus Nachrichten an das Frontend schicken.
 
 ## Projektziel und Erweiterungspunkte
 
-Ziel ist **ein** durchgehender persönlicher KI-Assistent mit lokalem Sprachmodell (Ollama). Er
+Ziel ist **ein** durchgehender persönlicher KI-Assistent mit Google Gemini. Er
 deckt drei Aufgabenbereiche ab, im Code **Fähigkeiten** (Skills) genannt:
 
 | Fähigkeit | Wofür | Integrationen |
@@ -48,7 +48,7 @@ Person. Google Calendar brauchen alle drei Bereiche, und Anfragen mischen sie of
 los, und schreib Max, dass ich später komme“). Das Sprachmodell wählt per Tool-Calling selbst
 die passenden Werkzeuge, ein Umschalter oder Router zwischen Assistenten ist nicht nötig.
 
-Der KI-Assistent mit Ollama und MCP-Werkzeugen läuft; die Fähigkeiten selbst und eigene
+Der KI-Assistent mit Gemini und MCP-Werkzeugen läuft; die Fähigkeiten selbst und eigene
 Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen Platz:
 
 | Anforderung | Wo im Code | Stand |
@@ -56,9 +56,9 @@ Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen P
 | Fähigkeiten (morning, travel, organization) | `backend/assistant/skills/` – je ein `Skill` mit Integrationen und Anweisungen | `Skill`-Typ und Liste `SKILLS`, noch leer |
 | Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – je ein `ToolProvider`, gebündelt per `CompositeToolProvider` | Ort, Konvention und Sammel-Provider |
 | MCP-Server als Werkzeuge | `MCPToolProvider` in `backend/integrations/mcp_client.py`, Liste in `mcp_servers.json` | fertig (stdio), eigener Server `mcp_servers/pda_server.py` |
-| Lokales Sprachmodell (Ollama) | `OllamaModel` in `backend/assistant/ollama.py`, `OllamaAssistant` in `ollama_assistant.py` | fertig, Modellwahl im Popup |
-| Autonom (z. B. Briefing ohne Eingabe) | `backend/proactive.py`: Anlass → Modell formuliert Meldung → Chat, Windows-Benachrichtigung, Vorlesen; `api.proactive_message(name)` | proaktive Meldung fertig (Popup öffnet sich von selbst), Test-Makro Strg+Alt+P / Tray-Menü; echte Auslöser offen |
-| Kontextwissen, Präferenzen per UI | `PreferenceStore` / `JsonPreferenceStore` in `backend/preferences.py` | Speicherung fertig, UI offen |
+| Google Gemini | `GeminiModel` in `backend/assistant/gemini.py`, `GeminiAssistant` in `gemini_assistant.py` | fertig, Modellwahl im Popup |
+| Autonom (z. B. Briefing ohne Eingabe) | `backend/proactive.py`: Anlass → Modell formuliert Meldung → Chat, Systembenachrichtigung, Vorlesen; `api.proactive_message(name)` | proaktive Meldung fertig (Popup öffnet sich von selbst), Test-Makro Strg+Alt+P / Tray-Menü; echte Auslöser offen |
+| Kontextwissen, Präferenzen per UI | Speicher: `backend/preferences.py`; Einstellungen (Antworten, Werkzeuge): `backend/assistant/settings.py`, Formular `frontend/settings.js` | Antwort- und Werkzeug-Einstellungen fertig; Kontextwissen (Wohnort …) noch ohne UI |
 | Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` (faster-whisper, Piper bzw. Windows-Stimme) | fertig, Mikrofon-Knopf im Chat |
 | Kurze Antworten, Rückfragen | `Assistant.reply()`; der Assistent hält den Gesprächsverlauf | über das Protokoll möglich |
 | Langsame Aufrufe (Modell, APIs) | Bridge führt Aufrufe im Hintergrund-Thread aus | fertig |
@@ -84,6 +84,7 @@ mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von
 
 frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
   popup.html/.css/.js         Popup: Anzeige oben, Chat unten
+  settings.js                 ⚙ Einstellungen: Formular, allein aus dem Schema von get_settings()
   theme.css                   gemeinsame Farben
   templates/
     default.html.j2           Standard-Template (Titel, Text, Tabelle) – weitere *.html.j2 möglich
@@ -104,9 +105,10 @@ backend/                      BACKEND: läuft in Python
     base.py                   Assistant-Protokoll, AssistantReply, ModelSelection
     commands.py               CommandAssistant (feste Befehle, auch im KI-Assistenten gültig)
     llm.py                    LanguageModel-Protokoll
-    ollama.py                 OllamaModel: LanguageModel über die HTTP-API von Ollama
-    ollama_assistant.py       OllamaAssistant: Verlauf + Tool-Calling-Schleife
+    gemini.py                 GeminiModel: LanguageModel über die HTTPS-API von Google Gemini
+    gemini_assistant.py       GeminiAssistant: Verlauf + Tool-Calling-Schleife
     tools.py                  ToolProvider-Protokoll + CompositeToolProvider
+    settings.py               Einstellungen aus dem Popup: Schema, Prüfen, Anweisungen fürs Modell
     skills/                   Fähigkeiten des Assistenten (Skill-Typ, noch keine)
   integrations/               externe Dienste als ToolProvider
     mcp_client.py             MCPToolProvider: Werkzeuge eines MCP-Servers (stdio)
@@ -116,7 +118,7 @@ backend/                      BACKEND: läuft in Python
     bridge_client.js          JS-Seite der Brücke, wird automatisch in jede Seite eingefügt
   desktop/                    Qt-Hülle, in der das Frontend angezeigt wird
     application.py            setzt die Bausteine zusammen
-    tray_icon.py              Tray-Icon + Kontextmenü + Windows-Benachrichtigung, anchor() = Mitte des Icons
+    tray_icon.py              Tray-Icon + Kontextmenü + Systembenachrichtigung, anchor() = Mitte des Icons
     foreground.py             Fenster ohne Klick des Nutzers in den Vordergrund holen (Fokussperre)
     hotkey.py                 globales Tastenkürzel (Test-Makro für proaktive Meldungen)
     popup_window.py           Popup-Fenster + Einfahr-Animation
@@ -164,6 +166,9 @@ Die beiden Seiten kennen sich nur über **drei Verträge**:
    | `speech_support()` | – | `{"input": bool, "output": bool}` – was an Sprache verfügbar ist |
    | `start_recording()` / `stop_recording()` / `cancel_recording()` | – | `stop_recording` liefert den erkannten Text |
    | `speak(text)` / `stop_speaking()` | Text | – (kehrt sofort zurück) |
+   | `get_settings()` | – | Schema und Werte der Einstellungen (siehe `backend/assistant/settings.py`) |
+   | `save_settings(changes)` | `{"answer": {...}, "tools": {gruppe: {...}}}` | neues Formular; ungültige Werte → Fehler, nichts gespeichert |
+   | `reset_settings()` | – | Formular mit Standardwerten |
    | `proactive_message(occasion)` | Anlass, z. B. `"demo"` | Meldung wie bei `chat` plus `"proactive"`, `"title"`; kommt zusätzlich als Push |
 
 2. **Ansicht-Anfragen:** Eine Ansicht wird immer auf eine von zwei Arten angefordert – vom
@@ -187,7 +192,7 @@ Die beiden Seiten kennen sich nur über **drei Verträge**:
    | Ereignis | Payload | Wirkung im Popup |
    |---|---|---|
    | `assistant_message` | `{"text": str, "html": str \| null}` (wie bei `chat`), proaktiv zusätzlich `"proactive": true, "title"` | Nachricht im Chat, ggf. neue Ansicht; proaktive mit 🔔 markiert |
-   | `proactive_notice` | `{"title", "text"}` | nur Backend: Popup öffnet sich von selbst (`application.py`), sonst Windows-Benachrichtigung |
+   | `proactive_notice` | `{"title", "text"}` | nur Backend: Popup öffnet sich von selbst (`application.py`), sonst Systembenachrichtigung |
 
    Im Backend: `events.publish(name, payload)` aus [backend/events.py](backend/events.py), für
    Assistenten-Nachrichten einfach `presenter.push(reply)`.
@@ -219,7 +224,7 @@ main.py: main()
  │   │   └─ PopupWindow(view)                   Fenster um die Ansicht
  │   ├─ TrayIcon(...)                           Icon + Kontextmenü
  │   └─ Signale verbinden:
- │        tray.left_clicked   → popup.show_at_cursor
+ │        tray.left_clicked   → popup.toggle_at_anchor
  │        tray.quit_requested → qt_app.quit
  └─ qt_app.exec_()          Event-Schleife läuft bis „Beenden“
 ```
@@ -244,19 +249,18 @@ erzeugen, weil die Tests schon eine eigene `QApplication` haben.
 
 **[backend/desktop/tray_icon.py](backend/desktop/tray_icon.py)**
 
-- Im Konstruktor wird ein `QMenu` mit „Beenden“ als `contextMenu` gesetzt. Bei einem
-  Rechtsklick zeigt Windows dieses Menü automatisch an.
-- Bei einem Klick ruft Qt `_on_activated(reason)` auf. Nur bei `reason == Trigger` (Linksklick)
-  wird das Signal `left_clicked` gesendet.
+- Unter Windows zeigt Qt das Kontextmenü selbst. Unter macOS öffnet `_on_activated` das
+  Menü bei einem Rechtsklick, damit der Linksklick frei bleibt.
+- `Trigger` und `DoubleClick` senden `left_clicked`. Das Popup wechselt zwischen offen und ausgeblendet.
 - „Beenden“ sendet `quit_requested`. Was daraufhin passiert, entscheidet `application.py`.
 
 **[backend/desktop/popup_window.py](backend/desktop/popup_window.py)**
 
-- `Qt.Popup | Qt.FramelessWindowHint` ergibt ein Fenster ohne Rahmen, das sich bei einem Klick
-  daneben automatisch schließt.
-- `show_at_cursor()` berechnet die Größe als Anteil des Bildschirms (`POPUP_SIZE_RATIO`). Die
-  Endposition liegt so, dass die **untere rechte Ecke am Mauszeiger** sitzt, also dort, wo das
-  Tray-Icon ist. Eine `QPropertyAnimation` lässt das Fenster von rechts unten hineingleiten.
+- `Qt.Tool | Qt.FramelessWindowHint` zeigt ein Fenster ohne Rahmen. Beim Klick daneben blendet
+  es sich aus. Der Klick auf das Symbol wird separat verarbeitet.
+- Die Größe ist ein Anteil des Bildschirms (`POPUP_SIZE_RATIO`). Die Öffnungsanimation endet
+  am Symbol, unterhalb der Menüleiste auf dem Mac und oberhalb der Taskleiste bei der
+  üblichen Windows-Anordnung.
 - `closeEvent` versteckt das Fenster nur, statt es zu zerstören. Der Chat-Verlauf bleibt dadurch
   erhalten, wenn man das Popup wieder öffnet.
 
@@ -371,7 +375,7 @@ sequenceDiagram
     API->>A: reply(message) mit dem kompletten Text
     alt fester Befehl (hilfe, uhrzeit, system, start, neu)
         A->>A: direkt beantworten
-    else OllamaAssistant
+    else GeminiAssistant
         A->>A: Sprachmodell versteht den Text und<br/>ruft per Tool-Calling MCP-Werkzeuge auf
     end
     A-->>API: AssistantReply(text, view)
@@ -389,7 +393,7 @@ sequenceDiagram
 Die Schritte 1–7 (hin) und 14–19 (zurück) sind reiner Transport: Der Text kommt **unverändert**
 im Assistenten an, und die Antwort geht unverändert zurück. Was mit dem Text passiert, entscheidet
 allein der Assistent (Schritt 8 bzw. 9). Feste Befehle werden exakt verglichen. Alles andere
-bekommt der `OllamaAssistant`: Das Modell versteht den Text und wählt selbst die passenden
+bekommt der `GeminiAssistant`: Das Modell versteht den Text und wählt selbst die passenden
 Werkzeuge. Eine Antwort des Modells dauert je nach Modell und Rechner einige Sekunden; solange
 zeigt der Chat „denkt nach …“.
 
@@ -435,14 +439,14 @@ Beim Öffnen holt `popup.js` die Startansicht einmal mit `await start_view()`.
 {...})` → Signal `event` der Bridge → `onPythonEvent("assistant_message", showReply)` in
 `popup.js`. Die Anzeige ist dieselbe wie bei einer Chat-Antwort.
 
-**Proaktive Meldung (der PDA meldet sich von sich aus):**
+**Proaktive Meldung (EVE meldet sich von sich aus):**
 
 ```
 Strg+Alt+P (hotkey.py: RegisterHotKey → WM_HOTKEY)  oder  Tray-Menü „Proaktive Meldung testen“
   → ProactiveTrigger.fire()           application.py, eigener Thread – Tray und Tastatur blockieren nicht;
                                       während eine Meldung entsteht, zählt kein weiterer Druck
   → api.proactive_message("demo")
-      proactive.compose()             OllamaAssistant.announce(auftrag): Modell formuliert die Meldung
+      proactive.compose()             GeminiAssistant.announce(auftrag): Modell formuliert die Meldung
                                       (ohne Werkzeuge). Der Auftrag kommt nicht in den Verlauf, die
                                       Meldung schon – der Nutzer kann direkt antworten.
                                       Ohne Modell: fester Ersatztext des Anlasses.
@@ -450,14 +454,14 @@ Strg+Alt+P (hotkey.py: RegisterHotKey → WM_HOTKEY)  oder  Tray-Menü „Proakt
       speak(text)                     wenn config.PROACTIVE_SPEAK und Sprachausgabe da
   → application.py: PROACTIVE_NOTICE → popup.show_requested (Signal, aus jedem Thread)
       → popup.show_at(tray.anchor(), take_focus=True)
-        wie ein Klick aufs Tray-Icon: untere rechte Ecke an der Mitte des Icons, gleiche Animation
+        am Tray-Icon, mit derselben Öffnungsanimation
         (ist das Popup schon offen, bleibt es, wie es ist – die Meldung steht ja im Chat)
-    mit PDA_PROACTIVE_OPEN_POPUP=0 stattdessen: tray.notify_requested → Windows-Benachrichtigung,
+    mit PDA_PROACTIVE_OPEN_POPUP=0 stattdessen: tray.notify_requested → Systembenachrichtigung,
                                                 Klick darauf → popup.show_requested
 ```
 
 **Fokus:** Windows gibt einem Programm ohne vorherige Aktion des Nutzers keinen Fokus
-(Foreground-Lock), und ein `Qt.Popup` ohne Fokus schließt sich sofort. `foreground.py` hängt den
+(Foreground-Lock). `foreground.py` hängt den
 eigenen Thread deshalb kurz an den Eingabe-Thread des Vordergrundfensters (`AttachThreadInput`)
 und holt das Popup dann nach vorn. Liegt das Tray-Icon im ausgeblendeten Überlaufbereich, kennt
 Windows seine Position nicht – dann öffnet sich das Popup unten rechts am Bildschirm.
@@ -548,39 +552,24 @@ Fehlermeldung kommt im Frontend als JavaScript-Fehler an.
 `CommandAssistant` nutzt ein Wörterbuch `COMMANDS` aus Befehl → (Beschreibung, Funktion). Es
 gibt `hilfe`, `uhrzeit`, `system`, `start` und `neu`. `hilfe` erzeugt seine Tabelle direkt aus
 `COMMANDS` und ist dadurch immer aktuell. Die Wochentage stehen fest auf Deutsch, damit die
-Ausgabe nicht von der Spracheinstellung des Systems abhängt. Der `OllamaAssistant` beantwortet
+Ausgabe nicht von der Spracheinstellung des Systems abhängt. Der `GeminiAssistant` beantwortet
 diese Befehle ebenfalls sofort, ohne das Modell zu fragen; `neu` leert dort zusätzlich den
 Gesprächsverlauf.
 
-### Sprachmodell – [llm.py](backend/assistant/llm.py), [ollama.py](backend/assistant/ollama.py)
+### Sprachmodell – [llm.py](backend/assistant/llm.py), [gemini.py](backend/assistant/gemini.py)
 
-Vertrag in `llm.py`:
+`GeminiModel` implementiert `LanguageModel` und ruft Googles `generateContent` per HTTPS auf.
+Systemanweisungen, Gesprächsverlauf und freigegebene Funktionsbeschreibungen bilden die Anfrage.
+Bei Werkzeugaufrufen bleiben die originalen Antwortteile mit ihren Signaturen erhalten. Die
+`functionResponse` enthält dieselbe ID wie der zugehörige Aufruf. Der Schlüssel kommt aus
+`GEMINI_API_KEY` oder aus der Schlüsseldatei im App-Datenordner.
 
-- `ChatMessage(role, content, tool_calls, tool_name)` mit `role` aus `system`, `user`,
-  `assistant` oder `tool`, entsprechend dem Chat-Format von Ollama. `tool_name` sagt bei
-  `tool`-Nachrichten, zu welchem Werkzeug das Ergebnis gehört.
-- `ToolCall(name, arguments)`: Das Modell möchte ein Werkzeug aufrufen.
-- `ModelResponse(message)` mit `wants_tools`: ob das Modell Werkzeuge nutzen will.
-- `LanguageModel.chat(messages, tools) -> ModelResponse`.
-
-Umsetzung in `ollama.py` (nur Standardbibliothek, `urllib`):
-
-- `OllamaClient` schickt JSON an die HTTP-API (`config.OLLAMA_URL`, Standard
-  `http://localhost:11434`) und macht aus Verbindungs- und HTTP-Fehlern einen `OllamaError` mit
-  verständlicher Meldung.
-- `OllamaModel.chat` übersetzt Nachrichten und `ToolSpec`s ins Format von `POST /api/chat`
-  (`tools: [{"type": "function", "function": {name, description, parameters}}]`) und die
-  Antwort zurück in `ChatMessage`/`ToolCall`. Kann ein Modell kein Tool-Calling, fragt es
-  automatisch noch einmal ohne Werkzeuge.
-- `installed()` (`GET /api/tags`) und `available_models()` (zusätzlich `POST /api/show` →
-  `capabilities` enthält `"tools"`?) liefern die Modelle für die Auswahl im Popup.
-
-### Der KI-Assistent – [ollama_assistant.py](backend/assistant/ollama_assistant.py)
+### Der KI-Assistent – [gemini_assistant.py](backend/assistant/gemini_assistant.py)
 
 ```
 reply(message):
   1. fester Befehl (hilfe, uhrzeit …)? → sofort beantworten
-  2. Modell bestimmen: config.OLLAMA_MODEL, sonst gespeicherte Wahl, sonst erstes installiertes
+  2. Modell bestimmen: gespeicherte Gemini-Wahl, sonst konfiguriertes Standardmodell
   3. Nachricht an den Verlauf anhängen
   4. model.chat([Systemanweisung, *Verlauf], alle Werkzeuge)
   5. wants_tools? → für jeden ToolCall tools.call_tool(...)
@@ -589,22 +578,38 @@ reply(message):
   6. sonst: AssistantReply(Text, Tabelle der Werkzeugaufrufe oder None)
 ```
 
-- Die **Systemanweisung** entsteht bei jeder Anfrage neu: Grundanweisung (Deutsch, kurz, keine
-  erfundenen Ergebnisse), aktuelles Datum mit Uhrzeit, Präferenzen aus dem `PreferenceStore` und
-  die Anweisungen aller Fähigkeiten.
+- Die **Systemanweisung** entsteht bei jeder Anfrage neu: Grundanweisung (keine erfundenen
+  Ergebnisse), aktuelles Datum mit Uhrzeit, die **Einstellungen** des Nutzers als Sätze
+  (`AssistantSettings.instructions`, siehe unten), übriges Kontextwissen aus dem
+  `PreferenceStore` und die Anweisungen aller Fähigkeiten.
+- **Einstellungen** ([settings.py](backend/assistant/settings.py)): Jede `Setting` beschreibt sich
+  selbst – Art des Felds (`choice`, `multi`, `bool`, `number`, `text`), erlaubte Werte, Standard
+  und den Satz fürs Modell. Das Popup baut daraus sein Formular, `save()` prüft jeden Wert (alles
+  oder nichts). Wirkung im Assistenten:
+  - Antwort-Wünsche → Sätze in der Systemanweisung (Länge, Sprache, Emojis … stehen deshalb nicht
+    mehr fest in `BASE_INSTRUCTIONS`).
+  - Werkzeuggruppe „Nutzen“ aus → Werkzeuge werden dem Modell nicht angeboten; ruft es eines
+    trotzdem auf, kommt ein Fehler zurück.
+  - „Ergebnis im Chat“, „Darstellung“ und die Mail-Felder → Sätze in der Systemanweisung, nur für
+    Werkzeuge, die gerade angeboten werden.
+  - „Tabelle oben“ → `_tool_view`: Zeile weglassen, gekürzt (300 Zeichen) oder vollständig.
+  - Bekannte Gruppen in `TOOL_GROUPS` (E-Mail, Uhrzeit/Rechnen); jedes andere Werkzeug bildet
+    automatisch eine Gruppe `tool:<name>` mit den Grundeinstellungen.
+  - Assistent und Popup nutzen denselben Store (`preferences.default_store()`), sonst würde einer
+    die Änderungen des anderen überschreiben.
 - **Fehler von Werkzeugen** (auch erfundene Werkzeugnamen) gehen als `"Fehler: …"` an das Modell
-  zurück, damit es reagieren kann. **Fehler von Ollama** (läuft nicht, Modell fehlt) werden zur
+  zurück, damit es reagieren kann. **Fehler der Gemini API** (z. B. Schlüssel oder Kontingent) werden zur
   Antwort im Chat; die misslungene Runde verschwindet wieder aus dem Verlauf.
 - Der **Verlauf** wird auf `ASSISTANT_MAX_HISTORY` Nachrichten gekürzt, immer an einer
   Nutzernachricht, damit keine `tool`-Nachricht ohne ihren Aufruf übrig bleibt.
 - **Modellwahl** (`ModelSelection` aus `base.py`): `available_models`, `current_model`,
-  `select_model`. Die Wahl landet als `ollama_model` im `JsonPreferenceStore`
+  `select_model`. Die Wahl landet als `gemini_model` im `JsonPreferenceStore`
   (`%APPDATA%\PersonalDigitalAgent\preferences.json`).
 
 ### Werkzeuge und Integrationen – [tools.py](backend/assistant/tools.py)
 
 - `ToolSpec(name, description, input_schema)` entspricht einem MCP-Tool und lässt sich direkt
-  in das `tools`-Format von Ollama übersetzen.
+  in die Funktionsbeschreibungen von Gemini übersetzen.
 - `ToolResult(content, is_error)`.
 - `ToolProvider` mit `list_tools()` und `call_tool(name, arguments)`. Das ist entweder eine
   eigene Integration in [backend/integrations/](backend/integrations/__init__.py) (z. B. Wetter)
@@ -618,21 +623,21 @@ reply(message):
 
 - `PreferenceStore` mit `get(key, default)`, `set(key, value)` und `all()` für Kontextwissen
   und persönliche Präferenzen (Wohnort, Verkehrsmittel, Watchlist …). `JsonPreferenceStore`
-  speichert sie in `config.PREFERENCES_FILE`. Bearbeitung „vorab per UI“ später über ein
-  Template mit Formular und Funktionen in `api.py`.
+  speichert sie in `config.PREFERENCES_FILE`. Antwort- und Werkzeug-Einstellungen lassen sich im
+  Popup bearbeiten (⚙, `backend/assistant/settings.py`); weiteres Kontextwissen bekommt bei Bedarf
+  eigene `Setting`s nach demselben Muster.
 - Sprache, bisher nur Vertrag: `SpeechInput.listen() -> str` und `SpeechOutput.speak(text)`. Sprache läuft in Python, weil
   Qt WebEngine keine Spracherkennung mitbringt. Beide dürfen blockieren, denn Bridge-Aufrufe
   laufen im Hintergrund-Thread.
 
 ### Auswahl des Assistenten – [\_\_init\_\_.py](backend/assistant/__init__.py)
 
-`create_assistant()` liest `ASSISTANT_BACKEND` aus [config.py](backend/config.py) (Standard
-`"ollama"`, per Umgebungsvariable `PDA_ASSISTANT_BACKEND=commands` umschaltbar) und erzeugt den
-passenden Assistenten aus `_BACKENDS` (Factory). Für `"ollama"` setzt `_ollama_assistant()` alles
-zusammen: `OllamaModel`, die MCP-Server aus `mcp_servers.json` plus die Werkzeuge aller
-Fähigkeiten in einem `CompositeToolProvider`, die Anweisungen der Fähigkeiten und den
-`JsonPreferenceStore`. [api.py](backend/api.py) hält mit `@cache` genau **einen** Assistenten für
-die ganze Laufzeit, sodass er sich den Gesprächsverlauf merkt.
+`create_assistant()` liest `ASSISTANT_BACKEND` aus [config.py](backend/config.py). Der Standard
+`"models"` kombiniert Gemini und lokal installierte Ollama-Modelle. `ModelPicker` speichert
+die aktive Auswahl und hält getrennte Verläufe für die beiden Anbieter. Beide nutzen denselben
+`CompositeToolProvider` für MCP und Fähigkeiten. Ollama wird über die lokale API abgefragt.
+Wenn der Dienst ausfällt, bleibt das gewählte Modell aktiv und die Anfrage meldet den Fehler.
+[api.py](backend/api.py) hält den Assistenten für die ganze Laufzeit im Cache.
 
 ### Tool-Calling und MCP
 
@@ -641,15 +646,14 @@ Die beiden Begriffe sitzen auf verschiedenen Seiten derselben Kette:
 - **Tool-Calling** ist eine Fähigkeit des **Sprachmodells**. Man gibt ihm Werkzeuge (Name,
   Beschreibung, JSON-Schema) mit, und es antwortet statt mit Text strukturiert mit einem Aufruf,
   z. B. `get_weather(city="Mannheim")`. Das Modell führt nichts selbst aus: Der Assistent ruft das
-  Werkzeug auf und gibt das Ergebnis als `"tool"`-Nachricht zurück. Ollama unterstützt das über den
-  Parameter `tools` in `/api/chat` (das Modell muss Tool-Calling beherrschen).
+  Werkzeug auf und gibt das Ergebnis als `"tool"`-Nachricht zurück. Gemini unterstützt das über `functionDeclarations` und `functionResponse`.
 - **MCP** (Model Context Protocol) ist ein **Protokoll zwischen Programmen**: wie eine Anwendung
   Werkzeuge von einem Server abfragt (`tools/list`) und aufruft (`tools/call`). Das Modell kommt
   darin nicht vor. Nutzen: Ein vorhandener MCP-Server (z. B. für Google Calendar) lässt sich
   einbinden, ohne eigenen API-Code.
 
 ```
-Ollama ──tool_call: get_weather──► Assistent ──tools/call──► MCP-Server (Wetter)
+Gemini ──tool_call: get_weather──► Assistent ──tools/call──► MCP-Server (Wetter)
        ◄──── Ergebnis ──────────────         ◄── Ergebnis ──
   (Tool-Calling: Modell-Seite)              (MCP: Werkzeug-Seite)
 ```
@@ -712,7 +716,7 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   Dateinamen aus der Mail werden bereinigt (keine Pfadanteile, keine unter Windows verbotenen Namen).
 - **Dateien im Chat:** `MCPToolProvider` macht aus jedem `resource_link` ein `Attachment`
   (`ToolResult.attachments`); das Modell sieht nur `[Datei im Chat angehängt: name]`. Der
-  `OllamaAssistant` sammelt die Anhänge einer Runde in `AssistantReply.attachments`. `present()`
+  `GeminiAssistant` sammelt die Anhänge einer Runde in `AssistantReply.attachments`. `present()`
   meldet sie beim `AttachmentStore` ([backend/attachments.py](backend/attachments.py)) an: Der nimmt
   nur Dateien aus `config.ATTACHMENT_DIR` an (ein anderer MCP-Server kann so keine beliebigen
   Dateien anbieten) und gibt dem Frontend statt des Pfads eine zufällige ID. Im Chat erscheint
@@ -729,8 +733,8 @@ einen `DuplicateToolError`.
 ### Gesamtbild
 
 ```
-OllamaAssistant (erfüllt Assistant + ModelSelection)
-  ├─ model: OllamaModel ──HTTP──► Ollama (lokal)
+GeminiAssistant (erfüllt Assistant + ModelSelection)
+  ├─ model: GeminiModel ──HTTP──► Gemini API (Google)
   ├─ tools: CompositeToolProvider
   │    ├─ MCPToolProvider "pda"  ──stdio──► mcp_servers/pda_server.py (SDK) ──SMTP/IMAP──► Mail
   │    ├─ MCPToolProvider …      ──stdio──► weitere Server aus mcp_servers.json
@@ -779,7 +783,7 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_function_registry` | nur öffentliche, eigene Funktionen werden gefunden |
 | `test_web_bridge` | JSON-Umschläge, Fehlerfälle, Hintergrund-Thread, Ereignisse, Verhalten nach `close()` |
 | `test_web_view` | **Integration:** echte Seite ruft Python im Hintergrund-Thread auf und empfängt Ereignisse |
-| `test_popup_page` | **Ende-zu-Ende:** echter Chat wechselt das iframe, Push-Nachricht erscheint |
+| `test_popup_page` | **Ende-zu-Ende:** echter Chat wechselt das iframe, Push-Nachricht erscheint, Einstellungen öffnen, speichern, zurücksetzen |
 | `test_popup_window` | Größe, Position, Schließen versteckt nur |
 | `test_tray_icon` | Links- und Rechtsklick, Menü, Benachrichtigung |
 | `test_application` | Zusammenbau, Klick öffnet Popup, proaktive Meldung öffnet es am Tray-Icon und es bleibt offen, `ProactiveTrigger` |
@@ -788,9 +792,9 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_assistant` | Befehle, Factory; jeder Befehl rendert mit dem echten Template |
 | `test_views` | Ansicht-Anfragen aus JSON, ungültige Anfragen |
 | `test_rendering` | Template-Auswahl, Standard-Template, eigenes HTML, Autoescaping, ungültige Namen |
-| `test_assistant_interfaces` | Ollama- und Tool-Verträge sind erfüllbar |
-| `test_ollama` | `OllamaModel`: JSON-Format von Ollama, Tool-Calls, Rückfall ohne Werkzeuge, HTTP-Fehler (ohne echtes Ollama) |
-| `test_ollama_assistant` | Tool-Schleife, Rundenbegrenzung, Verlauf, Fehler, Modellwahl (mit Attrappen) |
+| `test_assistant_interfaces` | Sprachmodell- und Tool-Verträge sind erfüllbar |
+| `test_gemini` | Gemini-Anfrage, Werkzeugaufrufe mit Signaturen und Modellwechsel (mit HTTP-Attrappen) |
+| `test_gemini_assistant` | Tool-Schleife, Rundenbegrenzung, Verlauf, Fehler, Modellwahl (mit Attrappen) |
 | `test_mcp_client` | **Integration:** `MCPToolProvider` gegen den echten Demo-Server und Sonderfälle (Absturz, Timeout, ping, Seiten) |
 | `test_pda_server` | **Integration:** `MCPToolProvider` gegen den SDK-Server (übersprungen ohne `mcp`) |
 | `test_mailer` | Mail-Einstellungen, Freigabeliste, Versand (SMTP gemockt) |
@@ -803,6 +807,7 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_presenter` | Antwort → `{"text", "html", "attachments"}`, `push()` |
 | `test_proactive` | Meldung formulieren (Modell/Ersatztext), Chat + Benachrichtigung, `api.proactive_message` |
 | `test_interfaces` | Verträge für Präferenzen und Sprache sind erfüllbar |
+| `assistant/test_settings`, `test_settings_api` | Einstellungen prüfen, speichern, zurücksetzen, Sätze fürs Modell, Formular, neue Werkzeuge |
 | `test_main`, `test_config`, `test_api` | Startlogik (mit Mocks), Dateien vorhanden, API |
 
 [tests/qt_helpers.py](tests/qt_helpers.py) enthält die gemeinsamen Hilfen:
@@ -844,8 +849,8 @@ Die Qt-Tests öffnen kurz echte Fenster, und während eines Laufs taucht kurz ei
 | Daten im iframe anzeigen | im Assistenten `TemplateView("default", {"title": ..., ...})` zurückgeben, im Frontend `await render_view({template: "default", data: {...}})` |
 | eigenes HTML anzeigen | `HtmlView("<...>")` bzw. `await render_view({html: "<...>"})` |
 | neues Template | `frontend/templates/<name>.html.j2` anlegen (Vorlage: `default.html.j2`, erwartete Daten oben als Kommentar), dann per `template: "<name>"` ansprechen |
-| anderes Ollama-Modell | `ollama pull <modell>`, Programm neu starten, im Popup auswählen |
-| Verhalten des Modells ändern | `BASE_INSTRUCTIONS` in `backend/assistant/ollama_assistant.py`, Optionen (`temperature`, `num_ctx`) in `config.OLLAMA_OPTIONS` |
+| anderes Gemini-Modell | im Popup auswählen oder `PDA_GEMINI_MODEL` setzen |
+| Verhalten des Modells ändern | `BASE_INSTRUCTIONS` in `backend/assistant/gemini_assistant.py` |
 | fertigen MCP-Server nutzen | Eintrag in `mcp_servers.json` (Format wie Claude Desktop) |
 | eigenes Werkzeug | Funktion mit `@mcp.tool()` in `mcp_servers/pda_server.py` (Docstring = Beschreibung fürs Modell) |
 | eigener weiterer MCP-Server | Python-Skript mit dem MCP-SDK nach dem Muster von `pda_server.py`, in `mcp_servers.json` eintragen |
@@ -854,7 +859,9 @@ Die Qt-Tests öffnen kurz echte Fenster, und während eines Laufs taucht kurz ei
 | Nachricht ohne Eingabe (autonom) | `presenter.push(AssistantReply(...))` aus beliebigem Thread |
 | neuer Anlass für proaktive Meldungen | `Occasion` in `OCCASIONS` (`backend/proactive.py`) eintragen, Auslöser ruft `api.proactive_message("<name>")` – aus beliebigem Thread |
 | eigenes Ereignis ans Frontend | Backend: `events.publish("name", {...})`, Frontend: `onPythonEvent("name", handler)` |
-| Präferenzen speichern | `PreferenceStore` (`backend/preferences.py`) implementieren, Einstellungs-UI als Template + Funktionen in `api.py` |
+| neue Einstellung | `Setting` in `ANSWER_SETTINGS`, `TOOL_SETTINGS` oder bei einer `ToolGroup` (`backend/assistant/settings.py`) – das Formular im Popup entsteht von selbst |
+| Zusatzfelder für ein Werkzeug | `ToolGroup(id, Titel, (werkzeugnamen…), extra=(Setting(...),))` in `TOOL_GROUPS` |
+| anderer Speicher für Präferenzen | `PreferenceStore` (`backend/preferences.py`) implementieren |
 | Sprache | `SpeechInput` / `SpeechOutput` (`backend/speech.py`) implementieren, über Funktionen in `api.py` anbinden |
 | Größe oder Farbe ändern | `backend/config.py` (Farbe zusätzlich in `frontend/theme.css`) |
 

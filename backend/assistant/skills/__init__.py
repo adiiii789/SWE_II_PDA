@@ -26,7 +26,7 @@ Konvention:
     passenden Fähigkeit mit - die Struktur bleibt dieselbe.
   - Kontextwissen kommt aus dem PreferenceStore (backend/preferences.py).
   - Jedes Modul liefert ein Skill-Objekt (siehe unten); es wird in SKILLS
-    eingetragen. Der OllamaAssistant (backend/assistant/ollama_assistant.py)
+    eingetragen. Der GeminiAssistant (backend/assistant/gemini_assistant.py)
     gibt dem Modell die Werkzeuge und Anweisungen aller Fähigkeiten mit.
 
 Beispiel skills/morning.py:

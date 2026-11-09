@@ -1,7 +1,8 @@
-"""Globales Tastenkürzel (Windows): funktioniert überall, auch wenn das Popup zu ist.
+"""Globales Tastenkürzel für Windows und macOS, auch bei geschlossenem Popup.
 
 Windows meldet das Kürzel (RegisterHotKey) als WM_HOTKEY an die Nachrichtenschleife des
 Haupt-Threads; ein nativer Event-Filter von Qt fängt sie ab und sendet das Signal `triggered`.
+macOS registriert sein Kürzel in macos_hotkey.py mit Carbon.
 Heute das Test-Makro für proaktive Meldungen (config.PROACTIVE_HOTKEY).
 """
 from __future__ import annotations
@@ -59,7 +60,7 @@ class _HotkeyFilter(QAbstractNativeEventFilter):
 
 class GlobalHotkey(QObject):
     """Meldet sich mit `triggered`, wenn das Kürzel gedrückt wird. `registered` sagt, ob es geklappt hat
-    (nicht unter Windows oder Kürzel schon von einem anderen Programm belegt → False)."""
+    (nicht unterstützt, ungültig oder bereits belegt → False)."""
 
     triggered = pyqtSignal()
     _next_id = 0xB000   # Windows erlaubt für Anwendungen 0x0000-0xBFFF
@@ -70,10 +71,21 @@ class GlobalHotkey(QObject):
         GlobalHotkey._next_id += 1
         self._id = GlobalHotkey._next_id
         self._filter: _HotkeyFilter | None = None
+        self._mac_hotkey = None
         self.registered = self._register()
 
     def _register(self) -> bool:
-        if sys.platform != "win32" or not self.text:
+        if not self.text:
+            return False
+        if sys.platform == "darwin":
+            from backend.desktop.macos_hotkey import MacHotkey
+            try:
+                self._mac_hotkey = MacHotkey(self.text, self._id, self.triggered.emit)
+                return True
+            except (ValueError, OSError, RuntimeError) as error:
+                log.warning("Tastenkürzel nicht verfügbar: %s", error)
+                return False
+        if sys.platform != "win32":
             return False
         try:
             modifiers, key = parse_hotkey(self.text)
@@ -91,6 +103,10 @@ class GlobalHotkey(QObject):
         if not self.registered:
             return
         self.registered = False
+        if self._mac_hotkey is not None:
+            self._mac_hotkey.close()
+            self._mac_hotkey = None
+            return
         ctypes.windll.user32.UnregisterHotKey(None, self._id)
         app = QCoreApplication.instance()
         if app is not None and self._filter is not None:

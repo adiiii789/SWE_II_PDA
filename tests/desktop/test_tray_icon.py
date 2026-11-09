@@ -1,4 +1,5 @@
 import unittest
+import sys
 from pathlib import Path
 
 from PyQt5.QtWidgets import QSystemTrayIcon
@@ -35,18 +36,18 @@ class TrayIconTest(unittest.TestCase):
         self.assertEqual(self.left_clicks, [])
 
     def test_context_menu_actions(self):
-        actions = self.tray.contextMenu().actions()
+        actions = self.tray._menu.actions()
         self.assertEqual([a.text() for a in actions], [PROACTIVE_TEST_ACTION, "", "Beenden"])
         self.assertEqual(self.quits, [])
 
     def test_context_menu_quit_action(self):
-        self.tray.contextMenu().actions()[-1].trigger()
+        self.tray._menu.actions()[-1].trigger()
         self.assertEqual(self.quits, [True])
 
     def test_context_menu_proactive_test_action(self):
         tests = []
         self.tray.proactive_test_requested.connect(lambda: tests.append(True))
-        self.tray.contextMenu().actions()[0].trigger()
+        self.tray._menu.actions()[0].trigger()
         self.assertEqual(tests, [True])
         self.assertEqual(self.quits, [])
 
@@ -56,7 +57,8 @@ class TrayIconTest(unittest.TestCase):
         self.addCleanup(self.tray.hide)
         geometry = self.tray.geometry()
         expected = (geometry.center() if geometry.isValid() and not geometry.isEmpty()
-                    else QGuiApplication.primaryScreen().availableGeometry().bottomRight())
+                    else (QGuiApplication.primaryScreen().availableGeometry().topRight() if sys.platform == "darwin"
+                          else QGuiApplication.primaryScreen().availableGeometry().bottomRight()))
         self.assertEqual(self.tray.anchor(), expected)
 
     def test_notify_requested_shows_message(self):

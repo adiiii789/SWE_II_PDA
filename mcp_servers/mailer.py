@@ -19,14 +19,26 @@ fremder Text regelmäßig beim Modell - die Liste ist dann der eigentliche Schut
 from __future__ import annotations
 
 import os
+import re
 import smtplib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from email.headerregistry import Address
 from email.message import EmailMessage
 from pathlib import Path
 
+from backend.config import APP_NAME
+
 ENV_FILE = Path(__file__).with_name(".env")
 MAX_BODY_CHARS = 20_000
+_OLD_AGENT_NAME = r"(?:PDA|Personal Digital Agent(?:[ \t]+\(PDA\))?)"
+_OLD_SIGNATURE = re.compile(
+    r"^([ \t]*(?:mit freundlichen grüßen|mit freundlichem gruß|freundliche grüße|viele grüße|"
+    r"beste grüße|liebe grüße|herzliche grüße|mit besten grüßen|kind regards|best regards|"
+    r"regards|best wishes|sincerely|yours sincerely|--)[:,]?\s+)"
+    + _OLD_AGENT_NAME + r"(?=[.!]?\s*\Z)",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 class MailError(ValueError):
@@ -86,9 +98,14 @@ def send_email(settings: MailSettings, to: str, subject: str, body: str) -> str:
 
     message = EmailMessage()
     message["From"] = settings.sender
+    senders = message["From"].addresses
+    if len(senders) == 1 and re.fullmatch(_OLD_AGENT_NAME, senders[0].display_name, re.IGNORECASE):
+        address = senders[0]
+        message.replace_header("From", Address(APP_NAME, address.username, address.domain))
     message["To"] = to
     message["Subject"] = subject.strip()
-    message.set_content(body)
+    # Nur einen alten Namen in der abschließenden Signatur ersetzen, nie Erwähnungen im Mailtext.
+    message.set_content(_OLD_SIGNATURE.sub(r"\g<1>" + APP_NAME, body))
 
     # smtplib stellt sich sonst mit dem Rechnernamen vor (EHLO). Enthält der Umlaute
     # (z. B. "Gergö-PC"), scheitert das, weil SMTP-Befehle nur ASCII erlauben.

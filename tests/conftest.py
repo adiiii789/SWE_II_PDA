@@ -1,7 +1,7 @@
 """Wird von pytest vor allen Testmodulen geladen.
 
-Die Tests laufen mit dem CommandAssistant: Sie sollen nicht von einem laufenden
-Ollama abhängen. Der OllamaAssistant wird in tests/assistant/ mit Attrappen getestet.
+Die Tests laufen mit dem CommandAssistant: Sie sollen nicht von Gemini abhängen.
+Der GeminiAssistant wird in tests/assistant/ mit Attrappen getestet.
 Außerdem wird onnxruntime vor PyQt5 geladen, wie in main.py (siehe backend/speech.py).
 """
 import os

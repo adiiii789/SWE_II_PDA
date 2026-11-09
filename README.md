@@ -1,32 +1,69 @@
-# Personal Digital Agent (PDA)
+# EVE
 
-Tray-Anwendung für Windows: Ein Klick auf das Tray-Icon öffnet ein Popup mit einem
-**Anzeigebereich** (oben) und einem **Chat mit einem Assistenten** (unten). Rechtsklick öffnet
-das Kontextmenü mit „Beenden“.
+Enhanced Virtual Entity
 
-Das Projekt ist die **Grundlage** für einen persönlichen KI-Assistenten mit lokalem
-Sprachmodell (Ollama). Er hat drei **Fähigkeiten**: Morning-Briefing, Weg zum nächsten Termin
-(Travel) und Organisation von Nachrichten und Terminen (im Projektplan „Assistant²“). Der
-Assistent läuft mit einem lokalen Modell aus Ollama und nutzt Werkzeuge von **MCP-Servern**
-(eingetragen in [mcp_servers.json](mcp_servers.json)). Die Fähigkeiten selbst sind noch nicht
-umgesetzt. Feste Befehle wie `hilfe`, `uhrzeit`, `system`, `start` und `neu` funktionieren
-weiterhin ohne Modell.
+EVE läuft unter macOS in der Menüleiste und unter Windows im Infobereich der Taskleiste.
+Ein Linksklick auf das Symbol öffnet das Popup mit Anzeigebereich und Chat. Ein weiterer
+Linksklick blendet es aus. Per Rechtsklick erreichst du das Kontextmenü mit „Beenden“.
+
+Der Assistent nutzt Google Gemini oder lokal installierte Ollama-Modelle und die Werkzeuge aus
+[mcp_servers.json](mcp_servers.json).
+Feste Befehle wie `hilfe`, `uhrzeit`, `system`, `start` und `neu` funktionieren auch ohne API-Schlüssel.
+Das Projekt bietet die Grundlage für Morning-Briefing, den Weg zum nächsten Termin (Travel)
+und die Organisation von Nachrichten und Terminen (Assistant²).
 
 ## Starten
 
-1. [Ollama](https://ollama.com) installieren und starten, ein Modell mit Tool-Calling laden:
-   ```
-   ollama pull qwen3:8b        # oder llama3.1:8b, qwen2.5:7b; klein: llama3.2:3b
-   ```
-2. Programm starten:
-   ```
-   pip install -r requirements.txt
-   python main.py
-   ```
-3. Im Popup links neben dem Eingabefeld das Modell wählen (alle in Ollama installierten Modelle).
+Verwende Python 3.12 oder neuer und führe die Befehle im Projektordner aus.
 
-Windows, Python 3.12. Ohne Ollama: `set PDA_ASSISTANT_BACKEND=commands` startet nur mit den
-festen Befehlen.
+### macOS
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+./Start.command
+```
+
+Das Fenster erscheint unterhalb des Menüleistensymbols. Beim ersten Start der Spracheingabe
+fragt macOS nach Mikrofonzugriff.
+
+### Windows
+
+```bat
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+Start.bat
+```
+
+Das Fenster erscheint am Symbol im Infobereich, gegebenenfalls unter dem Überlaufpfeil.
+
+### Gemini einrichten
+
+Erstelle in [Google AI Studio](https://aistudio.google.com/api-keys) einen API-Schlüssel. Setze
+`GEMINI_API_KEY` in der Startumgebung oder speichere den Schlüssel in `gemini-api-key.txt`
+im App-Datenordner. Die Datei enthält nur den Schlüssel und liegt außerhalb des Projekts.
+
+- macOS: `~/Library/Application Support/PersonalDigitalAgent`
+- Windows: `%APPDATA%\PersonalDigitalAgent`
+
+`PDA_APP_DATA_DIR` kann einen anderen App-Datenordner angeben. Standardmäßig verwendet EVE
+`gemini-3.5-flash-lite`. Das Modell lässt sich im Popup oder mit `modell <name>` wechseln.
+`modelle` zeigt die Auswahl. Mit `PDA_GEMINI_MODEL` kannst du einen weiteren Modellnamen
+als Gemini-Standard vorgeben. Gemini verarbeitet den Chatverlauf und verwendete Werkzeugergebnisse
+in der Google-Cloud.
+
+### Lokales Ollama-Modell wählen
+
+Starte [Ollama](https://ollama.com/) auf demselben Rechner. Ist noch kein Modell installiert,
+lade in Ollama ein Modell für deinen Rechner. Öffne EVE und wähle es unter **Lokal (Ollama)** im
+Modellmenü neben der Eingabe. `modelle` aktualisiert die Liste, `modell ollama/<name>` wechselt im Chat.
+Die Auswahl bleibt gespeichert. Lokale Antworten brauchen keinen Gemini-Schlüssel. Der lokale
+Chatverlauf wird beim Wechsel zu Gemini nicht mitgesendet. Einzelne MCP-Werkzeuge können weiterhin
+Netzdienste nutzen.
+
+In der Standardkonfiguration sind beide Anbieter auswählbar. `PDA_ASSISTANT_BACKEND=ollama` oder
+`PDA_ASSISTANT_BACKEND=gemini` beschränkt die Auswahl auf einen Anbieter.
+`PDA_ASSISTANT_BACKEND=commands` startet mit festen Befehlen.
 
 ### Sprache
 
@@ -37,9 +74,9 @@ Vorlesen). Alles läuft lokal:
 - Spracherkennung: [faster-whisper](https://github.com/SYSTRAN/faster-whisper), Modell `small`
   (≈ 480 MB)
 - Sprachausgabe: [Piper](https://github.com/OHF-Voice/piper1-gpl), Stimme `de_DE-pavoque-low`
-  (≈ 60 MB); geht Piper nicht, die eingebaute Windows-Stimme
+  (≈ 60 MB); geht Piper nicht, eine installierte Stimme von macOS oder Windows
 
-Modell und Stimme werden beim ersten Gebrauch nach `%APPDATA%\PersonalDigitalAgent\speech`
+Modell und Stimme werden beim ersten Gebrauch in den Unterordner `speech` des App-Datenordners
 geladen, die erste Aufnahme dauert deshalb länger. Andere Größen und Stimmen über
 `PDA_WHISPER_MODEL` (`tiny`, `base`, `medium` …), `PDA_PIPER_VOICE` und `PDA_SPEECH_LANGUAGE`
 (siehe [config.py](backend/config.py)).
@@ -79,24 +116,26 @@ Unterstützt werden Server über **stdio** (Unterprozess). `"python"` startet da
 dem das Programm läuft; `"disabled": true` schaltet einen Eintrag ab. Nach Änderungen das
 Programm neu starten.
 
-### Sprachmodell: lokal oder Ollama-Cloud
+### Einstellungen (Präferenzen)
 
-Der Assistent braucht ein laufendes [Ollama](https://ollama.com). Entweder ein Modell lokal
-herunterladen (`ollama pull qwen3.5:9b`) oder ein **Cloud-Modell** nutzen. Das läuft auf
-ollama.com, es wird nichts heruntergeladen:
+**⚙ Einstellungen** oben links im Chat öffnet ein Formular über dem ganzen Popup. Gespeichert wird
+in `preferences.json` im App-Datenordner, gültig ab der nächsten Nachricht.
 
-1. Kostenloses Konto auf ollama.com anlegen und einmal im Terminal `ollama signin` ausführen.
-2. Im Chat `modelle` eingeben. Die Liste zeigt lokale und Cloud-Modelle.
-3. Mit `modell gemma4:31b-cloud` wechseln. Die Wahl bleibt gespeichert.
-
-Im Free-Plan sind nur einige Cloud-Modelle enthalten, und es gibt ein Nutzungskontingent. Bei
-einem kostenpflichtigen Modell nennt die Fehlermeldung ein kostenloses Modell als Alternative.
-`PDA_OLLAMA_CLOUD=0` blendet die Cloud-Modelle aus.
+- **Antworten:** Länge, Tiefe, Darstellung (Fließtext, Stichpunkte, strukturiert …), Ton, Anrede
+  (du/Sie), Sprache, Emojis, Rückfragen statt Raten und ein Freitext für weitere Wünsche.
+- **Werkzeuge:** Für jede Werkzeuggruppe einstellbar, ob der Assistent sie überhaupt nutzt, wie
+  ausführlich er Ergebnisse im Chat wiedergibt, ob oben eine Tabelle der Aufrufe erscheint
+  (aus, gekürzt, vollständig) und ein Freitext zur Darstellung. **E-Mail** zusätzlich: welche
+  Angaben je Mail (Absender, Betreff, Datum, Vorschau, Anhänge …), wie viel Inhalt (nur Angaben,
+  Zusammenfassung, Wichtiges, Volltext), Liste oder Tabelle, Höchstzahl, Rückfrage vor dem Senden.
+- **Neue Werkzeuge** (z. B. aus einem weiteren MCP-Server) erscheinen automatisch mit den
+  Grundeinstellungen. Eigene Zusatzfelder: `ToolGroup` in
+  [backend/assistant/settings.py](backend/assistant/settings.py) eintragen.
 
 ### Proaktive Meldungen
 
-Der PDA kann sich **von sich aus** melden, ohne dass man etwas gefragt hat. Zum Vorführen gibt es
-ein Test-Makro: **Strg+Alt+P** (funktioniert überall in Windows, auch bei geschlossenem Popup) oder
+EVE kann sich **von sich aus** melden, ohne dass man etwas gefragt hat. Zum Vorführen gibt es
+ein Test-Makro: **Cmd+Alt+P** unter macOS bzw. **Strg+Alt+P** unter Windows (auch bei geschlossenem Popup) oder
 Rechtsklick aufs Tray-Icon → „Proaktive Meldung testen“. Dann
 
 1. formuliert das Sprachmodell eine kurze Meldung (ohne Modell: fester Text),
@@ -107,7 +146,7 @@ Rechtsklick aufs Tray-Icon → „Proaktive Meldung testen“. Dann
 
 Man kann direkt im Chat antworten – das Modell kennt seine Meldung. Einstellungen:
 `PDA_PROACTIVE_HOTKEY` (z. B. `Ctrl+Shift+F9`, leer = aus), `PDA_PROACTIVE_SPEAK=0` (nicht vorlesen),
-`PDA_PROACTIVE_OPEN_POPUP=0` (statt des Popups nur eine Windows-Benachrichtigung; Klick öffnet es).
+`PDA_PROACTIVE_OPEN_POPUP=0` (statt des Popups nur eine Systembenachrichtigung; Klick öffnet es).
 Später lösen echte Anlässe (Briefing um 7 Uhr, Termin, neue Mail) dasselbe aus, siehe
 [backend/proactive.py](backend/proactive.py).
 
@@ -132,7 +171,7 @@ Für die eigentliche Projektarbeit braucht ihr nur diese Stellen:
 | Funktion, die das Frontend aufrufen kann | [backend/api.py](backend/api.py) |
 | eigenes Werkzeug (MCP) | [mcp_servers/pda_server.py](mcp_servers/pda_server.py) – Funktion mit `@mcp.tool()` |
 | fremder MCP-Server | [mcp_servers.json](mcp_servers.json) |
-| Verhalten des KI-Assistenten (Anweisungen, Tool-Schleife) | [backend/assistant/ollama_assistant.py](backend/assistant/ollama_assistant.py) |
+| Verhalten des KI-Assistenten (Anweisungen, Tool-Schleife) | [backend/assistant/gemini_assistant.py](backend/assistant/gemini_assistant.py) |
 | Sprache (Erkennung, Vorlesen) | [backend/speech.py](backend/speech.py) |
 
 Alles andere ist **Infrastruktur** und muss für neue Funktionen nicht angefasst werden:
@@ -181,5 +220,5 @@ return AssistantReply(
 
 [ARCHITEKTUR.md](ARCHITEKTUR.md) erklärt den Aufbau ausführlich. Dort stehen der
 Programmablauf, die Brücke zwischen JavaScript und Python, der Weg einer Chat-Nachricht,
-Templates und Sicherheit, die Schnittstellen für Ollama und Integrationen (inkl. Tool-Calling
+Templates und Sicherheit, die Schnittstellen für Gemini und Integrationen (inkl. Tool-Calling
 und MCP), die Tests und bekannte Fallstricke.

@@ -18,7 +18,7 @@ class ChatTest(unittest.TestCase):
         self.assertIsNone(api.chat("unbekannt")["html"])
 
     def test_start_view(self):
-        self.assertIn("Personal Digital Agent", api.start_view())
+        self.assertIn("EVE", api.start_view())
 
 
 class ModelSelectionApiTest(unittest.TestCase):
