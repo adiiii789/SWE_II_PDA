@@ -57,6 +57,9 @@ PROACTIVE_SPEAK = os.environ.get("PDA_PROACTIVE_SPEAK", "1") != "0"           # 
 PROACTIVE_OPEN_POPUP = os.environ.get("PDA_PROACTIVE_OPEN_POPUP", "1") != "0"
 PROACTIVE_NOTICE_MS = 8000            # Anzeigedauer der Benachrichtigung (Klick darauf öffnet das Popup)
 
+# Beim Programmstart das Popup mit dem Ladebildschirm öffnen; "0" = erst beim Klick aufs Tray-Icon
+STARTUP_OPEN_POPUP = os.environ.get("PDA_STARTUP_OPEN_POPUP", "1") != "0"
+
 POPUP_PAGE = FRONTEND_DIR / "popup.html"
 POPUP_SIZE_RATIO = (0.3, 0.6)         # Anteil des Bildschirms (Breite, Höhe)
 POPUP_ENLARGED_SIZE_RATIO = (0.55, 0.9)   # vergrößertes Popup (Knopf im Chat)

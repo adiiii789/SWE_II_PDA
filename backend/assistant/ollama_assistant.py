@@ -216,6 +216,12 @@ class OllamaAssistant:
         self.model.name = name
         self.preferences.set(MODEL_PREFERENCE, name)
 
+    # --- ModelPreloading ---------------------------------------------------------------
+    def preload_model(self) -> None:
+        """Gewähltes Modell schon vor der ersten Nachricht in den Speicher laden."""
+        if self._ensure_model():
+            self.model.preload()
+
     def _ensure_model(self) -> bool:
         """Modell festlegen, falls noch keins gewählt ist: zuletzt gewähltes (auch Cloud),
         sonst erstes installiertes."""

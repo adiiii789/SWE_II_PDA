@@ -412,8 +412,14 @@ enlargeButton.addEventListener("click", toggleEnlarged);
 document.addEventListener("keydown", onKeyDown);
 onPythonEvent("assistant_message", showReply);   // Nachrichten, die das Backend von sich aus schickt
 start_view().then(showView);
-loadModels();
-loadSpeechSupport();
 updateLayoutButtons();
 addMessage('Hallo! Frag mich etwas oder schreib "hilfe" für die festen Befehle.', "assistant");
-messageInput.focus();
+// Erst schreiben, wenn der Assistent bereit ist; Modellliste und Sprache setzen ihn voraus.
+messageInput.disabled = true;
+LoadingScreen.begin(async () => {
+  await loadModels();
+  await loadSpeechSupport();
+}).then(() => {
+  messageInput.disabled = false;
+  messageInput.focus();
+});

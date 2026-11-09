@@ -6,6 +6,19 @@
 //
 // Leistung: alles statisch (keine Dauer-Animationen) - diese Seite wickelt auch die Python-Aufrufe ab.
 
+// Grobes Pixelmuster als Kachel (Hintergrund "Minecraft"), immer gleich, ohne Bilddatei
+function pixelTile(colors) {
+  let rects = "", seed = 5;
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      seed = (seed * 31 + 7) % 1009;
+      rects += `<rect x='${x * 4}' y='${y * 4}' width='4' height='4' fill='${colors[seed % colors.length]}'/>`;
+    }
+  }
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' shape-rendering='crispEdges'>${rects}</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 0 0 / 64px 64px`;
+}
+
 const THEMES = [
   // --- Farbschemata: schlicht, nur andere Farben -------------------------------------------------
   {id: "night", group: "colors", name: "Nacht", orb: ["#7C83F2", "#4FB3E8", "#C77DDB"], orbBase: "#14152A",
@@ -248,6 +261,57 @@ const THEMES = [
       "--font": "Bahnschrift, \"Segoe UI\", sans-serif", "--font-heading": "Bahnschrift, \"Agency FB\", \"Segoe UI\", sans-serif"},
     viewCss: "h2 { text-transform: uppercase; letter-spacing: 0.18em; color: #FCEE0A; } h2::before { content: '// '; color: #FF003C; } th { color: #00F0FF; text-transform: uppercase; letter-spacing: 0.1em; } th, td { border-bottom-color: rgba(252, 238, 10, 0.35); }"},
 
+  // Spiele & Getränke: nur der Stil, gezeichnet ohne Logos, Figuren oder Texturen der Vorbilder
+  {id: "minecraft", group: "fun", name: "Minecraft", description: "Erde, Stein und grobe Pixel, Block für Block",
+    orb: ["#5FAB3A", "#8B5A2B", "#7ED0E8"], orbBase: "#2B1C10", look: {pixel: true},
+    vars: {"--background": "#593D29", "--page-bg": pixelTile(["#866043", "#866043", "#79553A", "#9B7653", "#6B4A30"]),
+      "--surface": "rgba(24, 18, 13, 0.84)", "--surface-2": "rgba(70, 58, 46, 0.92)", "--text": "#FFFFFF",
+      "--text-muted": "#CFC8BC", "--control": "#6F6F6F", "--control-hover": "#858585", "--border": "#000000",
+      "--accent": "#4C7A2A", "--accent-text": "#FFFFFF", "--link": "#7FE0FF", "--danger": "#FF6B6B",
+      "--warning": "#FFD83D", "--user-bg": "#4C7A2A", "--user-text": "#FFFFFF", "--radius": "0px", "--radius-sm": "0px",
+      "--bw": "2px", "--card-shadow": "inset 2px 2px 0 rgba(255, 255, 255, 0.16), inset -2px -2px 0 rgba(0, 0, 0, 0.5)",
+      "--control-shadow": "inset 2px 2px 0 rgba(255, 255, 255, 0.35), inset -2px -2px 0 rgba(0, 0, 0, 0.4)",
+      "--bubble-shadow": "inset -2px -2px 0 rgba(0, 0, 0, 0.3), inset 2px 2px 0 rgba(255, 255, 255, 0.18)",
+      "--inset-shadow": "inset 2px 2px 0 rgba(0, 0, 0, 0.6)",
+      "--font": "\"Cascadia Mono\", Consolas, monospace", "--font-heading": "\"Cascadia Mono\", Consolas, monospace"},
+    viewCss: "html, body { background: #231B14; color: #FFF; } h2 { color: #FFD83D; text-shadow: 2px 2px 0 #4A3C10; } th { color: #8FE36A; } th, td { border-bottom: 2px solid #4A3F33; }"},
+  {id: "roblox", group: "fun", name: "Roblox", description: "Knallige Bausteine mit Noppen, dicke Knöpfe",
+    orb: ["#E2231A", "#0D69AC", "#F5CD30"], orbBase: "#1B1B1F", look: {gloss: true},
+    vars: {"--background": "#0D69AC",
+      "--page-bg": "radial-gradient(circle at 12px 12px, rgba(255, 255, 255, 0.20) 0 7px, rgba(0, 0, 0, 0.12) 7px 8.5px, transparent 9px) 0 0 / 24px 24px, #0D69AC",
+      "--surface": "#FFFFFF", "--surface-2": "#EEF2F6", "--text": "#1B1F27", "--text-muted": "#5B6472",
+      "--control": "#FFFFFF", "--control-hover": "#FFE680", "--border": "#0A4F82", "--accent": "#D81E15",
+      "--accent-text": "#FFFFFF", "--link": "#0B5FB0", "--danger": "#C4160E", "--warning": "#F5CD30",
+      "--user-bg": "#2F7D32", "--user-text": "#FFFFFF", "--radius": "12px", "--radius-sm": "9px", "--bw": "0px",
+      "--card-shadow": "0 6px 0 rgba(0, 0, 0, 0.28)", "--control-shadow": "0 4px 0 rgba(0, 0, 0, 0.25)",
+      "--bubble-shadow": "0 4px 0 rgba(0, 0, 0, 0.20)",
+      "--font": "\"Arial Rounded MT Bold\", \"Trebuchet MS\", \"Segoe UI\", sans-serif",
+      "--font-heading": "\"Arial Black\", \"Arial Rounded MT Bold\", sans-serif"},
+    viewCss: "h2 { color: #0D69AC; font-size: 24px; } th { background: #F5CD30; color: #1B1F27; padding-left: 8px; } td:first-child { padding-left: 8px; }"},
+  {id: "white-monster", group: "fun", name: "White Monster", description: "Eiskaltes Weiß, gebürstetes Silber, null Zucker",
+    orb: ["#DCE6EE", "#8FD8F0", "#9AA6B2"], orbBase: "#0C0D0F", look: {gloss: true},
+    vars: {"--background": "#E4E9EE",
+      "--page-bg": "linear-gradient(105deg, #FFFFFF 0%, #E4E9EE 28%, #FAFCFD 46%, #CCD4DC 72%, #F2F5F7 100%)",
+      "--surface": "#FFFFFF", "--surface-2": "#EEF1F4", "--text": "#0C0D0F", "--text-muted": "#59626C",
+      "--control": "#FFFFFF", "--control-hover": "#DDF1F9", "--border": "#0C0D0F", "--accent": "#0C0D0F",
+      "--accent-text": "#FFFFFF", "--link": "#006E94", "--danger": "#C4161C", "--warning": "#0093C4",
+      "--user-bg": "#0C0D0F", "--user-text": "#FFFFFF", "--radius": "2px", "--radius-sm": "2px", "--bw": "1px",
+      "--card-shadow": "0 10px 26px rgba(30, 45, 60, 0.16)",
+      "--font": "Bahnschrift, \"Segoe UI\", sans-serif",
+      "--font-heading": "\"Bahnschrift Condensed\", Bahnschrift, Impact, sans-serif"},
+    viewCss: "h2 { font-style: italic; font-weight: 800; font-size: 26px; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 3px solid #8FD8F0; padding-bottom: 4px; } th { text-transform: uppercase; letter-spacing: 0.08em; color: #0C0D0F; }"},
+  {id: "spezi", group: "fun", name: "Paulaner Spezi", description: "Cola trifft Orange im Biergarten",
+    orb: ["#F28C1E", "#5A2A12", "#FFC24A"], orbBase: "#2A1208", look: {gloss: true},
+    vars: {"--background": "#F28C1E",
+      "--page-bg": "linear-gradient(135deg, #FFB347 0%, #F28C1E 34%, #A2501A 66%, #4A2210 100%)",
+      "--surface": "#FFF8EC", "--surface-2": "#FFEFD6", "--text": "#33190C", "--text-muted": "#7A5A44",
+      "--control": "#FFF8EC", "--control-hover": "#FFE3B8", "--border": "#4A2210", "--accent": "#1F6FB5",
+      "--accent-text": "#FFFFFF", "--link": "#1A5F9E", "--danger": "#B3261E", "--warning": "#D9690A",
+      "--user-bg": "#F7A23B", "--user-text": "#2A1208", "--radius": "14px", "--radius-sm": "10px", "--bw": "2px",
+      "--card-shadow": "0 6px 16px rgba(60, 25, 5, 0.32)", "--bubble-shadow": "0 2px 5px rgba(60, 25, 5, 0.25)",
+      "--font": "\"Trebuchet MS\", \"Segoe UI\", sans-serif", "--font-heading": "Georgia, \"Times New Roman\", serif"},
+    viewCss: "h2 { font-style: italic; color: #A2501A; border-bottom: 3px dotted #F28C1E; padding-bottom: 4px; } th { color: #1F6FB5; }"},
+
   // Besonders
   {id: "eco", group: "special", name: "Nachhaltig", description: "Flach, klare Linien, kräftige Flächen, ohne Animation",
     orb: ["#7ED957", "#00AEEF", "#E9B7A9"], orbBase: "#1565C0", look: {still: true},
@@ -305,6 +369,7 @@ const THEME_GROUPS = [
   {id: "modern", label: "Modern"},
   {id: "retro", label: "Retro"},
   {id: "bold", label: "Ausdrucksstark"},
+  {id: "fun", label: "Spiele & Getränke"},
   {id: "special", label: "Besonders"},
 ];
 

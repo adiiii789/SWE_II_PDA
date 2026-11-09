@@ -16,12 +16,13 @@ from functools import cache
 from typing import Any
 
 from backend import config, proactive
-from backend.assistant import Assistant, ModelSelection, create_assistant
+from backend.assistant import Assistant, ModelPreloading, ModelSelection, create_assistant
 from backend.assistant.settings import AssistantSettings
 from backend.preferences import default_store
 from backend.events import POPUP_ENLARGED, events
 from backend.presenter import attachment_store, present, renderer
 from backend.speech import SpeechInput, SpeechOutput, create_speech_input, create_speech_output
+from backend.startup import Startup, Step
 from backend.views import START_VIEW, view_from_dict
 
 log = logging.getLogger(__name__)
@@ -201,6 +202,33 @@ def reset_settings() -> dict[str, Any]:
     """Alle Einstellungen auf die Standardwerte. Gibt das Formular zurück."""
     _settings().reset()
     return get_settings()
+
+
+def _prepare_assistant() -> None:
+    # Unter dem Lock: Eine proaktive Meldung darf den Assistenten nicht gleichzeitig ein zweites Mal
+    # erzeugen. Andere Aufrufer gibt es so früh nicht, das Frontend wartet auf den Ladebildschirm.
+    with _assistant_lock:
+        _assistant()
+    _available_tools()   # startet die MCP-Server
+
+
+def _load_model() -> None:
+    assistant = _assistant()
+    if isinstance(assistant, ModelPreloading):
+        assistant.preload_model()
+
+
+@cache
+def _startup() -> Startup:
+    return Startup([Step("Einstellungen werden gelesen", lambda: _settings().answer_values()),
+                    Step("Assistent und Werkzeuge starten", _prepare_assistant),
+                    Step("Sprachmodell wird geladen", _load_model, skippable=True)],
+                   events)
+
+
+def loading_status() -> dict[str, Any]:
+    """Stand des Hochfahrens fürs Frontend, siehe backend/startup.py. Der erste Aufruf startet es."""
+    return _startup().start()
 
 
 def _require(component: Any, name: str) -> Any:

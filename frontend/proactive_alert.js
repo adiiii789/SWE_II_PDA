@@ -39,18 +39,23 @@ const ProactiveAlert = (() => {
   }
 
   // Fläche genau über Ansicht und Verlauf legen - innerhalb ihrer Rahmen (Gameboy: nur der Bildschirm).
-  function place() {
-    if (!overlay) return;
+  function displayArea() {
     const view = document.getElementById("view-frame");
     const chat = document.getElementById("chat-scroll");
     const viewBox = view.getBoundingClientRect();
     const chatBox = chat.getBoundingClientRect();
     const chatTop = chatBox.top + chat.clientTop;
     const top = viewBox.height > 0 ? viewBox.top + view.clientTop : chatTop;
-    overlay.style.left = `${chatBox.left + chat.clientLeft}px`;
-    overlay.style.top = `${top}px`;
-    overlay.style.width = `${chat.clientWidth}px`;
-    overlay.style.height = `${chatTop + chat.clientHeight - top}px`;
+    return {left: chatBox.left + chat.clientLeft, top, width: chat.clientWidth, height: chatTop + chat.clientHeight - top};
+  }
+
+  function place() {
+    if (!overlay) return;
+    const area = displayArea();
+    overlay.style.left = `${area.left}px`;
+    overlay.style.top = `${area.top}px`;
+    overlay.style.width = `${area.width}px`;
+    overlay.style.height = `${area.height}px`;
     // Passt der Inhalt nicht, läuft er aus und verweist auf den Chat.
     const body = overlay.querySelector(".alert-body");
     const clipped = body.scrollHeight > body.clientHeight + 1;
@@ -132,5 +137,5 @@ const ProactiveAlert = (() => {
   // "Chat groß" oder größeres Fenster während der Einblendung
   new ResizeObserver(place).observe(document.getElementById("chat-scroll"));
 
-  return {show};
+  return {show, displayArea};
 })();

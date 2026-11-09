@@ -29,6 +29,8 @@ from backend.assistant.tools import ToolSpec
 
 log = logging.getLogger(__name__)
 
+_CLOUD_SUFFIXES = ("-cloud", ":cloud")
+
 
 class OllamaError(RuntimeError):
     """Ollama ist nicht erreichbar oder hat mit einem Fehler geantwortet."""
@@ -118,6 +120,12 @@ class OllamaModel:
             data = self.client.post("/api/chat", body)
         return ModelResponse(_message_from_ollama(data["message"]))
 
+    def preload(self) -> None:
+        """Modell in den Speicher laden (Ollama lädt es bei einer Anfrage ohne Prompt nur).
+        Cloud-Modelle laufen auf ollama.com, da gibt es nichts zu laden."""
+        if not self.name.endswith(_CLOUD_SUFFIXES):
+            self.client.post("/api/generate", {"model": self.name, "stream": False})
+
     def installed(self) -> list[str]:
         """Namen aller in Ollama installierten Modelle, alphabetisch."""
         return sorted(model["name"] for model in self.client.get("/api/tags").get("models", []))
@@ -164,7 +172,7 @@ def cloud_name(name: str) -> str:
 
 
 def _is_cloud(model: dict[str, Any]) -> bool:
-    return bool(model.get("remote_host")) or model["name"].endswith(("-cloud", ":cloud"))
+    return bool(model.get("remote_host")) or model["name"].endswith(_CLOUD_SUFFIXES)
 
 
 # --- Übersetzung in das JSON-Format von Ollama --------------------------------

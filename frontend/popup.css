@@ -1060,3 +1060,59 @@ html[data-theme=contrast] #input-form:focus-within { border-color: #FFFF00; }
 html[data-theme=contrast] .icon-button { color: #FFFFFF; }
 html[data-theme=contrast] .icon-button:hover, html[data-theme=contrast] .icon-button.active { color: #000; background: #FFFF00; }
 html[data-theme=contrast] .assistant a { text-decoration: underline; }
+
+/* Minecraft: Grasnarbe oben, Erde als Hintergrund, Steinknöpfe mit Reliefkante */
+html[data-theme=minecraft] body { border-top: 8px solid transparent; border-image: repeating-linear-gradient(90deg, #5FAB3A 0 12px, #4C8F2E 12px 20px, #6CBB45 20px 32px, #4F9A30 32px 40px) 1; }
+html[data-theme=minecraft] #agent-name { font-weight: 700; color: #FFD83D; text-shadow: 2px 2px 0 #3F3210; }
+html[data-theme=minecraft] #agent-status { color: #FFFFFF; text-shadow: 1px 1px 0 #2B1C10; }
+html[data-theme=minecraft] #agent-orb { border: 2px solid #000; box-sizing: border-box; }
+html[data-theme=minecraft] .message.assistant.proactive { border-left: 4px solid #FFD83D; }
+html[data-theme=minecraft] .proactive-label { color: #FFD83D; }
+html[data-theme=minecraft] #chat-scroll { background: var(--surface); border: 2px solid #000000; box-shadow: var(--card-shadow); }
+html[data-theme=minecraft] #chat-history { padding: 6px 10px 8px; }
+html[data-theme=minecraft] #input-form > button { border-radius: 0; }
+html[data-theme=minecraft] #input-form { background: rgba(24, 18, 13, 0.9); }
+html[data-theme=minecraft] #record-button { background: #8B5A2B; }
+html[data-theme=minecraft] .icon-button { color: #FFFFFF; }
+html[data-theme=minecraft] .icon-button:hover, html[data-theme=minecraft] .icon-button.active { background: #858585; }
+html[data-theme=minecraft] button:active { box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.45), inset -2px -2px 0 rgba(255, 255, 255, 0.25); }
+
+/* Roblox: Noppenplatte als Hintergrund, Knöpfe wie dicke Plastiksteine */
+html[data-theme=roblox] #agent-name { font-family: var(--font-heading); font-size: 15px; color: #FFFFFF; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3); }
+html[data-theme=roblox] #agent-status { color: #D5ECFF; }
+html[data-theme=roblox] #agent-orb { border: 3px solid #F5CD30; border-radius: 8px; box-sizing: border-box; }
+html[data-theme=roblox] #chat-toolbar .icon-button { color: #FFFFFF; }
+html[data-theme=roblox] #chat-toolbar .icon-button:hover, html[data-theme=roblox] #chat-toolbar .icon-button.active { color: #1B1F27; background: #F5CD30; }
+html[data-theme=roblox] #chat-scroll { background: var(--surface); border-radius: var(--radius); box-shadow: var(--card-shadow); }
+html[data-theme=roblox] #chat-history { padding: 8px 12px 10px; }
+html[data-theme=roblox] #input-form > button { border-radius: var(--radius-sm); }
+html[data-theme=roblox] #send-button { background: #D81E15; color: #FFFFFF; }
+html[data-theme=roblox] #record-button { background: #F5CD30; color: #1B1F27; }
+html[data-theme=roblox] .message.assistant.proactive { border-left: 6px solid #F5CD30; }
+html[data-theme=roblox] .proactive-label { color: #C4160E; }
+html[data-theme=roblox] button:active, html[data-theme=roblox] #input-form > button:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25); }
+
+/* White Monster: Silber, Schwarz, eine eisblaue Linie, kursive Schrift wie auf einer Dose */
+html[data-theme=white-monster] #agent-name { padding-right: 5px; font-family: var(--font-heading); font-size: 17px; font-style: italic; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; }
+html[data-theme=white-monster] #view-frame { border-top: 4px solid #8FD8F0; }
+html[data-theme=white-monster] .message.user { font-style: italic; }
+html[data-theme=white-monster] .message.assistant.proactive { border-left: 4px solid #8FD8F0; }
+html[data-theme=white-monster] .proactive-label { color: #00789F; text-transform: uppercase; }
+html[data-theme=white-monster] #input-form:focus-within { border-color: #0093C4; }
+html[data-theme=white-monster] #send-button { background: linear-gradient(90deg, #AEB8C2, #FFFFFF 45%, #C4CDD6); color: #0C0D0F; border: 1px solid #0C0D0F; }
+html[data-theme=white-monster] #record-button { background: #0C0D0F; color: #8FD8F0; }
+html[data-theme=white-monster] .icon-button:hover, html[data-theme=white-monster] .icon-button.active { background: #0C0D0F; color: #FFFFFF; }
+
+/* Paulaner Spezi: Rautenband oben, Glasflächen in Creme, Cola-Orange-Verlauf dahinter */
+html[data-theme=spezi] body { border-top: 12px solid transparent; border-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12'%3E%3Crect width='24' height='12' fill='%23fff'/%3E%3Cpolygon points='12,0 24,6 12,12 0,6' fill='%231F6FB5'/%3E%3C/svg%3E") 12 0 0 0 round; }
+html[data-theme=spezi] #chat-scroll { background: var(--surface); border: 2px solid #4A2210; border-radius: var(--radius); box-shadow: var(--card-shadow); }
+html[data-theme=spezi] #chat-history { padding: 8px 12px 10px; }
+html[data-theme=spezi] #agent-name { padding-right: 5px; font-family: var(--font-heading); font-size: 15px; font-style: italic; font-weight: 700; color: #33190C; }
+html[data-theme=spezi] #agent-status { color: #4A2210; }
+html[data-theme=spezi] #agent-orb { border: 2px solid #4A2210; border-radius: 50%; box-sizing: border-box; }
+html[data-theme=spezi] #chat-toolbar .icon-button { color: #FFF8EC; }
+html[data-theme=spezi] #chat-toolbar .icon-button:hover, html[data-theme=spezi] #chat-toolbar .icon-button.active { color: #33190C; background: #FFE3B8; }
+html[data-theme=spezi] #send-button { border-radius: 50%; }
+html[data-theme=spezi] #record-button { background: #F28C1E; color: #2A1208; }
+html[data-theme=spezi] .message.assistant.proactive { border-left: 5px solid #F28C1E; }
+html[data-theme=spezi] .proactive-label { color: #B8560A; }

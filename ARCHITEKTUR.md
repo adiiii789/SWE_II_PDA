@@ -88,6 +88,8 @@ frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
   avatar.js                   animierter, runder Avatar (Canvas) – zeigt Bereit/Denkt/Hört zu/Spricht
   appearance.js               Designs (Farbschemata) und Avatar-Stil, Auswahl über den Design-Knopf
   proactive_alert.js/.css     große Einblendung bei proaktiven Meldungen, je Design eigener Auftritt
+  loading_screen.js/.css      Ladebildschirm beim Start, hängt am echten Stand aus backend/startup.py
+  loading_scenes.js           je Design eine gezeichnete Szene für den Ladebildschirm
   theme.css                   gemeinsame Farben (Standard-Design "Nacht")
   templates/
     default.html.j2           Standard-Template (Titel, Text, Tabelle) – weitere *.html.j2 möglich
@@ -98,6 +100,7 @@ backend/                      BACKEND: läuft in Python
   events.py                   ← Ereignisse vom Backend ans Frontend (Push)
   presenter.py                Antwort des Assistenten → {"text", "html", "attachments"}; push() für autonome Nachrichten
   proactive.py                proaktive Meldungen: Anlässe, Meldung formulieren, an Chat + Benachrichtigung
+  startup.py                  Hochfahren im Hintergrund: Einstellungen, Assistent/Werkzeuge, Modell vorladen
   attachments.py              Dateien im Chat (z. B. Mail-Anhänge): öffnen, speichern
   config.py                   alle Einstellungen
   views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
@@ -470,6 +473,17 @@ Klick beendet das früher). Danach schrumpft sie auf die Chat-Nachricht, die ers
 nicht auf die Fläche passt, liest man dort weiter. Ist das Popup zu, wird sie beim Öffnen nachgeholt. Das
 Aussehen pro Design steht in `proactive_alert.css`; ein neues Design ohne eigenen Abschnitt nimmt
 automatisch die Grundform in seinen Farben.
+
+**Ladebildschirm** (`frontend/loading_screen.js`, `backend/startup.py`): Beim Laden der Seite ruft das
+Frontend `loading_status()` auf. Das startet die Schritte einmalig in einem eigenen Thread (Einstellungen
+lesen, Assistent und MCP-Server starten, Sprachmodell vorladen; Cloud-Modelle brauchen das nicht), jeder
+Fortschritt kommt als Ereignis `startup_progress`. Ein fehlgeschlagener Schritt hält den Start nicht auf,
+der Chat meldet das Problem dann bei der ersten Nachricht. Die Eingabe ist gesperrt, bis das Backend fertig
+ist und die Modellliste steht; die Szene bleibt mindestens 2,5 Sekunden, und nach 12 Sekunden im
+Modell-Schritt lässt sich das Warten überspringen. Beim Programmstart öffnet sich das Popup dafür von
+selbst (`PDA_STARTUP_OPEN_POPUP=0` schaltet das ab). Die Szenen stehen pro Design in `loading_scenes.js`;
+ein Design ohne eigene Szene zeigt die von "Nacht". Gezeichnet wird auf ein einziges Canvas mit höchstens
+20 Bildern pro Sekunde und gar nicht bei geschlossenem Popup, weil dieselbe Seite die Python-Aufrufe abwickelt.
 
 **Fokus:** Windows gibt einem Programm ohne vorherige Aktion des Nutzers keinen Fokus
 (Foreground-Lock), und ein `Qt.Popup` ohne Fokus schließt sich sofort. `foreground.py` hängt den

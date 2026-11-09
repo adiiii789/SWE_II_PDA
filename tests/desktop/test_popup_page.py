@@ -1,5 +1,6 @@
 """Ende-zu-Ende: echte Popup-Seite, echter Chat, gerenderte Ansicht im iframe wechselt."""
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -15,6 +16,8 @@ from backend.assistant.tools import Attachment
 from backend.attachments import AttachmentStore
 from backend.assistant.settings import AssistantSettings
 from backend.desktop.application import create_popup
+from backend.events import events
+from backend.startup import Startup, Step
 from backend.views import TemplateView
 
 SEND = """
@@ -42,6 +45,69 @@ ALERT_CLICK = "document.getElementById('proactive-alert').click()"
 LAST_VISIBILITY = "getComputedStyle(Array.from(document.querySelectorAll('.message')).pop()).visibility"
 
 
+LOADER_THERE = "Boolean(document.getElementById('loading-screen'))"
+LOADER_STEP = "document.getElementById('loading-step').textContent"
+INPUT_DISABLED = "document.getElementById('message-input').disabled"
+# Jede Szene bei Start, nach langer Zeit (Gameboy spielt bis zum Überlauf) und in allen Fortschritts-Zuständen
+DRAW_ALL_SCENES = """(() => {
+  const broken = [], canvas = document.createElement('canvas'); canvas.width = 576; canvas.height = 648;
+  const c = canvas.getContext('2d'), labels = ['Eins', 'Zwei', 'Drei'];
+  for (const id of LoadingScenes.ids) {
+    try {
+      const scene = LoadingScenes.get(id), state = scene.start ? scene.start(576, 648) : {};
+      for (const [t, p, index] of [[0, 0, 0], [3.3, 0.5, 1], [47, 1, 3], [90, 1, 3], [130, 1, 3]]) {
+        scene.draw(c, 576, 648, t, state, {progress: p, smooth: p, index, total: 3, labels, label: index < 3 ? labels[index] : ''});
+      }
+    } catch (error) { broken.push(id + ': ' + error.message); }
+  }
+  return broken;
+})()"""
+
+
+class LoadingScreenTest(unittest.TestCase):
+    def setUp(self):
+        qt_app()
+        self.release = threading.Event()
+        self.addCleanup(self.release.set)
+        steps = [Step("Einstellungen", lambda: None), Step("Modell", self.release.wait, skippable=True)]
+        patcher = mock.patch.object(api, "_startup", return_value=Startup(steps, events))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.popup = create_popup()
+        self.page = self.popup.content.page()
+        self.addCleanup(self._close)
+        loaded = []
+        self.popup.content.loadFinished.connect(loaded.append)
+        self.assertTrue(wait_until(lambda: loaded, 40))
+        self.popup.setAttribute(Qt.WA_DontShowOnScreen, True)
+        self.popup.show_at(QPoint(1500, 900))
+        self.assertTrue(wait_until(lambda: run_js(self.page, LOADER_STEP) == "Modell …"))
+
+    def _close(self):
+        self.popup.content.close_bridge()
+        self.popup.content.deleteLater()
+        qt_app().processEvents()
+
+    def test_covers_page_until_backend_is_ready(self):
+        self.assertTrue(run_js(self.page, INPUT_DISABLED))
+        self.assertFalse(run_js(self.page, "LoadingScreen.ready"))
+        self.assertEqual(run_js(self.page, "document.getElementById('model-select').options.length"), 0)
+        self.release.set()
+        self.assertTrue(wait_until(lambda: run_js(self.page, "LoadingScreen.ready")))
+        self.assertTrue(wait_until(lambda: not run_js(self.page, LOADER_THERE)))
+        self.assertFalse(run_js(self.page, INPUT_DISABLED))
+
+    def test_skip_frees_input_while_model_is_still_loading(self):
+        run_js(self.page, "document.getElementById('loading-skip').click()")
+        self.assertTrue(wait_until(lambda: not run_js(self.page, LOADER_THERE)))
+        self.assertFalse(run_js(self.page, INPUT_DISABLED))
+
+    def test_every_design_has_a_scene_that_draws(self):
+        self.assertEqual(run_js(self.page, DRAW_ALL_SCENES), [])
+        themes = run_js(self.page, "THEMES.map(theme => theme.id)")
+        self.assertEqual(sorted(run_js(self.page, "LoadingScenes.ids")), sorted(themes))
+
+
 class PopupPageTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -53,6 +119,8 @@ class PopupPageTest(unittest.TestCase):
         # Großzügig: Laufen vorher Tests mit eigenem Chromium (test_application), dauert das Laden länger.
         if not wait_until(lambda: loaded, 40):
             raise TimeoutError("Popup-Seite nicht geladen")
+        if not wait_until(lambda: not run_js(cls.page, "LoadingScreen.visible"), 20):
+            raise TimeoutError("Ladebildschirm nicht verschwunden")
         # Anfangszustand festhalten, bevor ein Test chattet (Seite wird geteilt).
         # Die Startansicht kommt asynchron vom Backend.
         if not wait_until(lambda: run_js(cls.page, IFRAME_HTML)):

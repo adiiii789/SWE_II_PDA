@@ -7,7 +7,8 @@ from PyQt5.QtCore import QObject, QRect, QUrl, pyqtSignal
 from tests.qt_helpers import qt_app, wait_until
 
 from backend import api, config
-from backend.desktop.application import Application, ProactiveTrigger, create_popup, forward_proactive_notices
+from backend.desktop.application import (Application, ProactiveTrigger, create_popup, forward_proactive_notices,
+                                         open_when_page_loaded)
 from backend.desktop.popup_window import PopupWindow
 from backend.desktop.tray_icon import TrayIcon
 from backend.desktop.web_view import WebView
@@ -31,7 +32,7 @@ class CreatePopupTest(unittest.TestCase):
         self.assertIsInstance(popup.content, WebView)
         script = popup.content.page().scripts().findScript("python-bridge").sourceCode()
         self.assertTrue(callable(api.chat))
-        self.assertIn('["cancel_recording", "chat", "enlarge_popup", "get_settings", "list_models", "open_attachment", "open_link", "proactive_message", "render_view", "reset_settings", "save_attachment", "save_settings", "select_model", "speak", "speech_support", "start_recording", "start_view", "stop_recording", "stop_speaking"]', script)
+        self.assertIn('["cancel_recording", "chat", "enlarge_popup", "get_settings", "list_models", "loading_status", "open_attachment", "open_link", "proactive_message", "render_view", "reset_settings", "save_attachment", "save_settings", "select_model", "speak", "speech_support", "start_recording", "start_view", "stop_recording", "stop_speaking"]', script)
         expected = QUrl.fromLocalFile(str(config.POPUP_PAGE))
         self.assertTrue(wait_until(lambda: popup.content.url() == expected))
 
@@ -129,6 +130,31 @@ class ForwardProactiveNoticesTest(unittest.TestCase):
         self.addCleanup(forward_proactive_notices(self.tray, self.popup, self.bus, open_popup=False))
         self.bus.publish(PROACTIVE_NOTICE, {"title": "T", "text": "Hallo"})
         self.assertEqual(self.notices, [("T", "Hallo", config.PROACTIVE_NOTICE_MS)])
+        self.assertEqual(self.opened, [])
+
+
+class FakeContent(QObject):
+    loadFinished = pyqtSignal(bool)
+
+
+class OpenWhenPageLoadedTest(unittest.TestCase):
+    def setUp(self):
+        qt_app()
+        self.popup = FakePopup()
+        self.popup.content = FakeContent()
+        self.opened = []
+        self.popup.show_requested.connect(lambda: self.opened.append(True))
+
+    def test_opens_once_after_page_has_loaded(self):
+        open_when_page_loaded(self.popup, open_popup=True)
+        self.assertEqual(self.opened, [])
+        self.popup.content.loadFinished.emit(True)
+        self.popup.content.loadFinished.emit(True)
+        self.assertEqual(self.opened, [True])
+
+    def test_stays_closed_when_switched_off(self):
+        open_when_page_loaded(self.popup, open_popup=False)
+        self.popup.content.loadFinished.emit(True)
         self.assertEqual(self.opened, [])
 
 

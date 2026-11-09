@@ -127,6 +127,12 @@ Man kann direkt im Chat antworten – das Modell kennt seine Meldung. Einstellun
 Später lösen echte Anlässe (Briefing um 7 Uhr, Termin, neue Mail) dasselbe aus, siehe
 [backend/proactive.py](backend/proactive.py).
 
+## Ladebildschirm
+
+Beim Programmstart öffnet sich das Popup mit einem Ladebildschirm, bis Einstellungen, Assistent und
+Sprachmodell bereit sind. Jedes Design hat eine eigene Szene. Mit `PDA_STARTUP_OPEN_POPUP=0` bleibt das
+Popup zu, bis man aufs Tray-Icon klickt.
+
 ## Testen
 
 ```

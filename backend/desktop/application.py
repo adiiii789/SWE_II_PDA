@@ -55,6 +55,19 @@ def forward_proactive_notices(tray: TrayIcon, popup: PopupWindow, event_bus: Eve
     return event_bus.subscribe(forward)
 
 
+def open_when_page_loaded(popup: PopupWindow, open_popup: bool = config.STARTUP_OPEN_POPUP) -> None:
+    """Beim Programmstart das Popup mit dem Ladebildschirm zeigen - sobald die Seite da ist, sonst
+    sähe man kurz nur die leere Fensterfläche."""
+    if not open_popup:
+        return
+
+    def show(_ok: bool) -> None:
+        popup.content.loadFinished.disconnect(show)
+        popup.show_requested.emit()
+
+    popup.content.loadFinished.connect(show)
+
+
 class ProactiveTrigger:
     """Startet eine proaktive Meldung im Hintergrund - das Sprachmodell braucht ein paar Sekunden,
     Tray und Tastenkürzel sollen so lange nicht blockieren. Solange eine läuft, zählt kein weiterer Druck."""
@@ -97,6 +110,7 @@ class Application:
         self.hotkey.triggered.connect(self.proactive.fire)
         self.tray.proactive_test_requested.connect(self.proactive.fire)
         self.popup.anchor = self.tray.anchor   # von selbst öffnen: dort, wo ein Klick aufs Icon wäre
+        open_when_page_loaded(self.popup)
         self.tray.messageClicked.connect(self.popup.show_requested.emit)
         if self.hotkey.registered:
             self.tray.setToolTip(f"{config.APP_NAME} - Test-Meldung: {config.PROACTIVE_HOTKEY}")
