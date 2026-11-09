@@ -84,6 +84,16 @@ class FakeService:
         return FakeRequest({"id": arguments["task"], "title": "Titel"})
 
 
+class WatchedTasksTest(unittest.TestCase):
+    def test_data_of_all_lists(self):
+        service = FakeService([MINE, SHOP], {"l1": [{"title": "Sport", "notes": "um 18 Uhr", "due": due("2026-11-09")}],
+                                             "l2": [{"title": "Milch"}]})
+        self.assertEqual(gt.watched_tasks(service), [
+            {"id": "l1-t0", "title": "Sport", "notes": "um 18 Uhr", "due": "2026-11-09", "list": "Meine Aufgaben"},
+            {"id": "l2-t0", "title": "Milch", "notes": "", "due": None, "list": "Einkauf"}])
+        self.assertIs(service.list_calls[0]["showCompleted"], False)
+
+
 class ListTasksTest(unittest.TestCase):
     def test_due_first_then_without_date_across_lists(self):
         service = FakeService([MINE, SHOP], {

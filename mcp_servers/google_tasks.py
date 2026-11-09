@@ -144,6 +144,13 @@ def _clean(text: str) -> str:
     return re.sub(r"-{3,}", "-", gc._clean(text))
 
 
+def watched_tasks(service: Any) -> list[dict]:
+    """Alle offenen Aufgaben als Daten für den Wächter (backend/watcher.py)."""
+    return [{"id": task["id"], "title": task.get("title", ""), "notes": task.get("notes", ""),
+             "due": task["due"][:10] if task.get("due") else None, "list": task_list.get("title", "")}
+            for task_list in _task_lists(service) for task in _tasks_of(service, task_list["id"], None)]
+
+
 # --- Aufgaben und Listen anlegen ---------------------------------------------------------
 def create_task(service: Any, title: str, due: str = "", notes: str = "", list_name: str = "",
                 parent_id: str = "") -> str:

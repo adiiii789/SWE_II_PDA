@@ -146,6 +146,70 @@ class ImapTestCase(unittest.TestCase):
             return function(SETTINGS, *args, **kwargs)
 
 
+class WatchedImap(FakeImap):
+    """Antwortet wie ein echter Server: UIDVALIDITY nach SELECT, n:* immer mit der letzten Mail."""
+
+    def __init__(self, mails, validity=b"7", **kwargs):
+        super().__init__(mails, **kwargs)
+        self.validity = validity
+
+    def response(self, code):
+        return code, [self.validity]
+
+
+class NewMailsTest(ImapTestCase):
+    def new_mails(self, fake, *args):
+        return self.run_with(fake, inbox.new_mails, *args)
+
+    def test_first_call_only_records_position(self):
+        answer = self.new_mails(WatchedImap({3: raw_mail(), 8: raw_mail()}), 0)
+        self.assertEqual(answer, {"validity": "7", "latest_uid": 8, "baseline": True, "mails": []})
+
+    def test_new_mails_as_data_and_left_unread(self):
+        fake = WatchedImap({3: raw_mail(), 8: raw_mail(subject="Neu", body="Bitte\n  antworten")}, seen=[8])
+        answer = self.new_mails(fake, 3, "7")
+        self.assertEqual(answer["latest_uid"], 8)
+        self.assertFalse(answer["baseline"])
+        mail = answer["mails"][0]
+        self.assertEqual((mail["uid"], mail["subject"], mail["seen"], mail["bulk"]), ("8", "Neu", True, False))
+        self.assertEqual(mail["sender"], "Max <max@example.com>")
+        self.assertEqual(mail["preview"], "Bitte antworten")
+        self.assertIs(fake.commands[0][2], True)                          # read-only geöffnet
+        self.assertIn("BODY.PEEK[]", [c for c in fake.commands if c[0] == "FETCH"][0][2])
+        self.assertTrue(fake.logged_out)
+
+    def test_nothing_new_keeps_position(self):
+        # n:* liefert auch ohne neue Mail die letzte
+        answer = self.new_mails(WatchedImap({5: raw_mail()}), 5, "7")
+        self.assertEqual((answer["latest_uid"], answer["mails"]), (5, []))
+
+    def test_changed_validity_starts_over(self):
+        answer = self.new_mails(WatchedImap({2: raw_mail()}, validity=b"8"), 50, "7")
+        self.assertEqual(answer, {"validity": "8", "latest_uid": 2, "baseline": True, "mails": []})
+
+    def test_bulk_headers(self):
+        for name, value, bulk in (("List-Unsubscribe", "<mailto:x@example.com>", True), ("List-Id", "<a.example.com>", True),
+                                  ("Precedence", "bulk", True), ("Auto-Submitted", "auto-generated", True),
+                                  ("Auto-Submitted", "no", False), ("Precedence", "normal", False)):
+            with self.subTest(name=name, value=value):
+                fake = WatchedImap({2: raw_mail(headers={name: value})})
+                self.assertEqual(self.new_mails(fake, 1, "7")["mails"][0]["bulk"], bulk)
+
+    def test_batch_is_limited_to_newest(self):
+        fake = WatchedImap({uid: raw_mail() for uid in range(2, 2 + inbox.MAX_WATCHED_MAILS + 5)})
+        mails = self.new_mails(fake, 1, "7")["mails"]
+        self.assertEqual(len(mails), inbox.MAX_WATCHED_MAILS)
+        self.assertEqual(mails[-1]["uid"], str(1 + inbox.MAX_WATCHED_MAILS + 5))
+
+    def test_preview_is_limited(self):
+        fake = WatchedImap({2: raw_mail(body="x" * (inbox.WATCHED_PREVIEW_CHARS + 50))})
+        self.assertEqual(len(self.new_mails(fake, 1, "7")["mails"][0]["preview"]), inbox.WATCHED_PREVIEW_CHARS)
+
+    def test_empty_mailbox(self):
+        answer = self.new_mails(WatchedImap({}), 0)
+        self.assertEqual((answer["latest_uid"], answer["mails"]), (0, []))
+
+
 class ListTest(ImapTestCase):
     def test_newest_first_with_state(self):
         fake = FakeImap({1: raw_mail("Alt"), 2: raw_mail("Neu =?", sender="Anna <anna@example.com>")}, seen={1})

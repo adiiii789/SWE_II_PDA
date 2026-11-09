@@ -77,6 +77,33 @@ class FakeService:
         return FakeRequest("")
 
 
+class WatchedEventsTest(unittest.TestCase):
+    def test_data_of_visible_calendars(self):
+        service = FakeService([PRIMARY, WORK, HIDDEN], {
+            "ich@example.com": [timed("Arzt", "2026-11-10T16:00:00+01:00", "2026-11-10T17:00:00+01:00", location="Praxis",
+                                      description="<b>Karte</b> mitbringen", transparency="transparent",
+                                      attendees=[{"self": True, "responseStatus": "needsAction"}])],
+            "arbeit": [{"summary": "Messe", "start": {"date": "2026-11-11"}, "end": {"date": "2026-11-12"},
+                        "recurringEventId": "serie"}],
+            "versteckt": [timed("Geheim", "2026-11-10T08:00:00", "2026-11-10T08:30:00")],
+        })
+        first, second = gc.watched_events(service, 3)
+        self.assertEqual(first, {"id": gc.make_ref("ich@example.com", "e0"), "series": gc.make_ref("ich@example.com", "e0"),
+                                 "title": "Arzt", "start": "2026-11-10T16:00:00+01:00", "end": "2026-11-10T17:00:00+01:00",
+                                 "all_day": False, "location": "Praxis", "description": "Karte mitbringen",
+                                 "calendar": "ich@example.com", "response": "needsAction", "free": True})
+        self.assertEqual((second["all_day"], second["start"], second["calendar"], second["response"], second["free"]),
+                         (True, "2026-11-11", "Büro", "", False))
+        self.assertEqual(second["series"], gc.make_ref("arbeit", "serie"))
+
+    def test_period_is_limited(self):
+        service = FakeService()
+        gc.watched_events(service, 9999)
+        call = service.list_calls[0]
+        self.assertTrue(call["timeMin"].startswith(dt.date.today().isoformat()))
+        self.assertEqual(call["singleEvents"], True)
+
+
 class ListEventsTest(unittest.TestCase):
     def test_sorted_across_visible_calendars(self):
         service = FakeService([PRIMARY, WORK, HIDDEN], {

@@ -7,6 +7,7 @@ Außerdem wird onnxruntime vor PyQt5 geladen, wie in main.py (siehe backend/spee
 import os
 
 os.environ["PDA_ASSISTANT_BACKEND"] = "commands"   # vor dem ersten Import von backend.config
+os.environ["PDA_PROACTIVE_WATCH"] = "0"            # kein Wächter, der in Tests echte Postfächer abfragt
 
 from backend.speech import load_before_qt  # noqa: E402
 

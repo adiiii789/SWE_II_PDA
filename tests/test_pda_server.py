@@ -32,7 +32,8 @@ class PdaServerTest(unittest.TestCase):
                                        "delete_email", "list_calendar_events", "create_calendar_event",
                                        "update_calendar_event", "delete_calendar_event", "find_free_time",
                                        "respond_to_calendar_invitation", "list_tasks", "create_task", "update_task", "complete_task", "delete_task",
-                                       "move_task", "create_task_list"})
+                                       "move_task", "create_task_list",
+                                       "watch_new_emails", "watch_open_tasks", "watch_calendar_events"})
         self.assertNotIn("required", tools["list_tasks"].input_schema)
         for name in ("update_task", "complete_task", "delete_task", "move_task"):
             self.assertEqual(tools[name].input_schema["required"], ["task_id"])

@@ -125,6 +125,12 @@ class ForwardProactiveNoticesTest(unittest.TestCase):
         self.assertTrue(wait_until(lambda: self.opened == [True]))
         self.assertEqual(self.notices, [])
 
+    def test_display_setting_beats_app_default(self):
+        self.addCleanup(forward_proactive_notices(self.tray, self.popup, self.bus, open_popup=True))
+        self.bus.publish(PROACTIVE_NOTICE, {"title": "T", "text": "Hallo", "display": "notice"})
+        self.assertEqual(self.notices, [("T", "Hallo", config.PROACTIVE_NOTICE_MS)])
+        self.assertEqual(self.opened, [])
+
     def test_notice_becomes_tray_notification_when_popup_should_stay_closed(self):
         self.addCleanup(forward_proactive_notices(self.tray, self.popup, self.bus, open_popup=False))
         self.bus.publish(PROACTIVE_NOTICE, {"title": "T", "text": "Hallo"})

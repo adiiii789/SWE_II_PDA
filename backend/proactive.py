@@ -1,8 +1,8 @@
 """Proaktive Meldungen: Der PDA meldet sich von sich aus beim Nutzer.
 
 Ablauf:
-  Auslöser          heute: Makro Strg+Alt+P oder Tray-Menü (Vorführung, backend/desktop/)
-                    später z. B.: 7 Uhr Briefing, Termin in 30 Minuten, neue Mail
+  Auslöser          Makro Strg+Alt+P oder Tray-Menü (Vorführung, backend/desktop/);
+                    der Wächter (backend/watcher.py) bei Mails, Aufgaben und Terminen
     → api.proactive_message(name)
     → compose()     der Assistent formuliert die Meldung selbst (ProactiveAssistant.announce);
                     ohne Sprachmodell gilt der feste Ersatztext des Anlasses
@@ -86,12 +86,18 @@ def compose(assistant: Assistant, occasion: Occasion,
     return AssistantReply(text or occasion.fallback, view)
 
 
-def announce(message: dict[str, Any], occasion: Occasion, event_bus: EventBus) -> dict[str, Any]:
+def announce(message: dict[str, Any], occasion: Occasion, event_bus: EventBus,
+             display: str | None = None) -> dict[str, Any]:
     """Fertige Nachricht (presenter.present) im Chat und als Benachrichtigung zeigen.
+
+    display: "popup", "notice", "chat" (nur im Chat, kein Hinweis); None = Standard der App.
     Gibt die Chat-Nachricht zurück, wie sie ans Frontend ging."""
     message = {**message, "proactive": True, "title": occasion.title}
     event_bus.publish(ASSISTANT_MESSAGE, message)
-    event_bus.publish(PROACTIVE_NOTICE, {"title": occasion.title, "text": notice_text(message["text"])})
+    if display == "chat":
+        return message
+    notice = {"title": occasion.title, "text": notice_text(message["text"])}
+    event_bus.publish(PROACTIVE_NOTICE, notice if display is None else {**notice, "display": display})
     return message
 
 

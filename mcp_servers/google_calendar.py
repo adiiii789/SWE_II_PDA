@@ -253,6 +253,29 @@ def _midnight(day: dt.date) -> str:
     return dt.datetime.combine(day, dt.time.min).astimezone().isoformat(timespec="seconds")
 
 
+def watched_events(service: Any, days: int = 14) -> list[dict]:
+    """Termine ab heute als Daten für den Wächter (backend/watcher.py)."""
+    first = dt.date.today()
+    after_last = first + dt.timedelta(days=max(1, min(int(days), MAX_DAYS)))
+    found = []
+    for calendar in _visible_calendars(service):
+        events = _execute(service.events().list(calendarId=calendar["id"], timeMin=_midnight(first),
+                                                timeMax=_midnight(after_last), singleEvents=True,
+                                                orderBy="startTime", maxResults=PAGE_SIZE))
+        for event in events.get("items", []):
+            own = _own_attendee(event)
+            found.append({"id": make_ref(calendar["id"], event["id"]),
+                          "series": make_ref(calendar["id"], event.get("recurringEventId", event["id"])),
+                          "title": event.get("summary", ""),
+                          "start": event["start"].get("dateTime") or event["start"]["date"],
+                          "end": event["end"].get("dateTime") or event["end"]["date"],
+                          "all_day": "date" in event["start"], "location": event.get("location", ""),
+                          "description": _clean(event.get("description", "")), "calendar": _calendar_name(calendar),
+                          "response": own.get("responseStatus", "") if own else "",
+                          "free": event.get("transparency") == "transparent"})
+    return found
+
+
 # --- Freie Zeit --------------------------------------------------------------------------
 def find_free_time(service: Any, start_date: str = "", days: int = 1, minutes: int = 60, day_start: str = "08:00",
                    day_end: str = "20:00", limit: int = DEFAULT_LIMIT) -> str:

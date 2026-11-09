@@ -57,7 +57,7 @@ Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen P
 | Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – je ein `ToolProvider`, gebündelt per `CompositeToolProvider` | Ort, Konvention und Sammel-Provider |
 | MCP-Server als Werkzeuge | `MCPToolProvider` in `backend/integrations/mcp_client.py`, Liste in `mcp_servers.json` | fertig (stdio), eigener Server `mcp_servers/pda_server.py` |
 | Lokales Sprachmodell (Ollama) | `OllamaModel` in `backend/assistant/ollama.py`, `OllamaAssistant` in `ollama_assistant.py` | fertig, Modellwahl im Popup |
-| Autonom (z. B. Briefing ohne Eingabe) | `backend/proactive.py`: Anlass → Modell formuliert Meldung → Chat, Windows-Benachrichtigung, Vorlesen; `api.proactive_message(name)` | proaktive Meldung fertig (Popup öffnet sich von selbst), Test-Makro Strg+Alt+P / Tray-Menü; echte Auslöser offen |
+| Autonom (z. B. Briefing ohne Eingabe) | `backend/proactive.py`: Anlass → Modell formuliert Meldung → Chat, Windows-Benachrichtigung, Vorlesen; `api.proactive_message(name)` | proaktive Meldung fertig (Popup öffnet sich von selbst), Test-Makro Strg+Alt+P / Tray-Menü; Wächter für Mails, Aufgaben und Termine (`backend/watcher.py`) |
 | Kontextwissen, Präferenzen per UI | Speicher: `backend/preferences.py`; Einstellungen (Antworten, Werkzeuge): `backend/assistant/settings.py`, Formular `frontend/settings.js` | Antwort- und Werkzeug-Einstellungen fertig; Kontextwissen (Wohnort …) noch ohne UI |
 | Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` (faster-whisper, Piper bzw. Windows-Stimme) | fertig, Mikrofon-Knopf im Chat |
 | Kurze Antworten, Rückfragen | `Assistant.reply()`; der Assistent hält den Gesprächsverlauf | über das Protokoll möglich |
@@ -97,6 +97,8 @@ backend/                      BACKEND: läuft in Python
   events.py                   ← Ereignisse vom Backend ans Frontend (Push)
   presenter.py                Antwort des Assistenten → {"text", "html", "attachments"}; push() für autonome Nachrichten
   proactive.py                proaktive Meldungen: Anlässe, Meldung formulieren, an Chat + Benachrichtigung
+  watcher.py                  Wächter: prüft Mails, Aufgaben, Termine im Hintergrund und löst Meldungen aus
+  proactive_settings.py       Einstellungen des Wächters (Schema für den Bereich „Proaktive Meldungen“)
   attachments.py              Dateien im Chat (z. B. Mail-Anhänge): öffnen, speichern
   config.py                   alle Einstellungen
   views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
@@ -472,6 +474,24 @@ Windows seine Position nicht – dann öffnet sich das Popup unten rechts am Bil
 Chat und proaktive Meldung teilen sich den Assistenten; `api.py` schützt ihn mit einem Lock, weil
 der Auslöser nicht im Bridge-Thread läuft.
 
+**Wächter (meldet sich ohne Makro):**
+
+```
+application.py startet api._proactive_watcher() (Thread, außer bei PDA_PROACTIVE_WATCH=0)
+  → ProactiveWatcher.check()          liest jedes Mal die Einstellungen (proactive_settings.py)
+      Ruhezeit, Wochentag, Stundenlimit
+      watch_new_emails, watch_open_tasks, watch_calendar_events
+                                      interne MCP-Werkzeuge: JSON statt Text fürs Modell; das
+                                      Präfix watch_ versteckt sie vor Modell und Einstellungen
+      Mails: feste Regeln → OllamaAssistant.consult() ohne Werkzeuge und Verlauf
+             das Modell nennt nur UIDs, unbekannte werden verworfen
+      Findings ohne bereits gemeldete Schlüssel (PROACTIVE_STATE_FILE, nicht in preferences.json)
+  → api._deliver_proactive()          wie beim Makro, plus display/formulate/speak aus den Einstellungen
+```
+
+Der Mail-Stand (letzte UID, UIDVALIDITY) wird erst nach dem Senden gespeichert, eine fehlgeschlagene
+Meldung kommt also bei der nächsten Prüfung erneut.
+
 **Sicherheit:**
 
 - **Autoescaping:** Bei Templates maskiert Jinja2 alle Daten. Enthalten sie HTML-Code (z. B.
@@ -794,7 +814,7 @@ OllamaAssistant (erfüllt Assistant + ModelSelection)
   │    ├─ MCPToolProvider …      ──stdio──► weitere Server aus mcp_servers.json
   │    └─ Werkzeuge der Fähigkeiten (skills/, noch keine)
   └─ preferences: JsonPreferenceStore
-proaktiv: Auslöser (heute Makro, später z. B. 7 Uhr Briefing) → api.proactive_message → announce()
+proaktiv: Auslöser (Makro oder Wächter) → api._deliver_proactive → announce()
 ```
 
 Sind es für ein kleines Modell zu viele Werkzeuge, kann der Assistent später je Anfrage nur die
@@ -841,6 +861,7 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_popup_window` | Größe, Position, Schließen versteckt nur |
 | `test_tray_icon` | Links- und Rechtsklick, Menü, Benachrichtigung |
 | `test_application` | Zusammenbau, Klick öffnet Popup, proaktive Meldung öffnet es am Tray-Icon und es bleibt offen, `ProactiveTrigger` |
+| `test_watcher` | Uhrzeiten in Texten, Ruhezeit, Mail-Regeln und Modell-Bewertung, Erinnerungsfenster, jede Meldung nur einmal |
 | `test_hotkey` | Tastenkürzel lesen, Registrieren, echte `WM_HOTKEY`-Nachricht löst aus |
 | `test_foreground` | Fenster in den Vordergrund holen, Ablehnung wird protokolliert |
 | `test_assistant` | Befehle, Factory; jeder Befehl rendert mit dem echten Template |

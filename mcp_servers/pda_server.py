@@ -41,6 +41,7 @@ VS Code & Co. - Eintrag wie in mcp_servers.json, nur mit absolutem Pfad.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Annotated, Literal
 
@@ -384,6 +385,27 @@ def move_task(
 def create_task_list(title: Annotated[str, Field(description="Name of the new task list")]) -> str:
     """Creates a new task list in Google Tasks. Only when the user explicitly asks for it."""
     return _logged(_tasks_call(google_tasks.create_task_list, title))
+
+
+# --- Nur für den Wächter (backend/watcher.py) ------------------------------------------------
+# Das Präfix "watch_" versteckt sie vor dem Sprachmodell (backend/assistant/settings.py).
+@mcp.tool()
+def watch_new_emails(after_uid: int = 0, known_validity: str = "") -> str:
+    """Internal: new mails as JSON for the background watcher."""
+    return json.dumps(_mail_call(lambda: inbox.new_mails(inbox.ImapSettings.load(), after_uid, known_validity)),
+                      ensure_ascii=False)
+
+
+@mcp.tool()
+def watch_open_tasks() -> str:
+    """Internal: open tasks as JSON for the background watcher."""
+    return json.dumps(_tasks_call(google_tasks.watched_tasks), ensure_ascii=False)
+
+
+@mcp.tool()
+def watch_calendar_events(days: int = 14) -> str:
+    """Internal: upcoming events as JSON for the background watcher."""
+    return json.dumps(_calendar_call(google_calendar.watched_events, days), ensure_ascii=False)
 
 
 def _tasks_call(action, *arguments) -> str:

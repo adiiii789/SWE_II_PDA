@@ -57,6 +57,8 @@ MAX_READ_CHARS = 8_000          # längere Mails werden gekürzt (kleine Modelle
 ATTACHMENT_PART_CHARS = 7_000   # Anhangtext in Teilen dieser Größe (passt samt Rahmen in ein Tool-Ergebnis)
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 KEEP_ATTACHMENTS_DAYS = 7
+MAX_WATCHED_MAILS = 20          # so viele neue Mails prüft der Wächter höchstens auf einmal
+WATCHED_PREVIEW_CHARS = 800     # Textanfang, nach dem das Sprachmodell die Wichtigkeit beurteilt
 ATTACHMENT_DIR = Path(os.environ.get("PDA_ATTACHMENT_DIR")
                       or Path(os.environ.get("APPDATA", Path.home())) / "PersonalDigitalAgent" / "attachments")
 
@@ -219,6 +221,49 @@ def read_attachment(settings: ImapSettings, uid: str, index: int, part: int = 1,
     if part < len(parts):
         lines.append(f"[Weiter mit read_attachment(uid=\"{uid}\", index={index}, part={part + 1})]")
     return MailResult("\n".join(lines), (saved,))
+
+
+# --- Für den Wächter (backend/watcher.py) ----------------------------------------------
+
+def new_mails(settings: ImapSettings, after_uid: int = 0, known_validity: str = "", folder: str = "INBOX") -> dict:
+    """Mails nach after_uid als Daten; ändert nichts, sie bleiben ungelesen.
+
+    Ohne after_uid oder wenn der Server die UIDs neu vergeben hat, kommen keine Mails, nur der
+    neue Stand: Sonst gälte beim ersten Start das ganze Postfach als neu.
+    """
+    after_uid = int(after_uid)
+    with _connect(settings, folder) as imap:
+        _, values = imap.response("UIDVALIDITY")
+        validity = values[0].decode(errors="replace") if values and values[0] else ""
+        if known_validity and validity != known_validity:
+            after_uid = 0
+        baseline = not after_uid
+        typ, data = imap.uid("SEARCH", "UID", f"{after_uid + 1}:*")
+        _check(typ, data, "Suche")
+        # n:* liefert immer mindestens die letzte Mail, auch wenn die älter ist
+        uids = sorted(number for number in map(int, data[0].split()) if number > after_uid) if data and data[0] else []
+        latest = uids[-1] if uids else after_uid
+        fresh = [] if baseline else uids[-MAX_WATCHED_MAILS:]
+        items = []
+        if fresh:
+            typ, items = imap.uid("FETCH", ",".join(map(str, fresh)), "(UID FLAGS BODY.PEEK[])")
+            _check(typ, items, "Abruf")
+    mails = []
+    for item in items:
+        if isinstance(item, tuple):
+            uid, flags = _uid_and_flags(item[0])
+            message = email.message_from_bytes(item[1], policy=email.policy.default)
+            mails.append({"uid": uid, "sender": _clean(message["From"]), "subject": _subject(message),
+                          "date": _format_date(message["Date"]), "seen": "\\Seen" in flags, "bulk": _is_bulk(message),
+                          "preview": " ".join(file_text.mail_body_text(message).split())[:WATCHED_PREVIEW_CHARS]})
+    return {"validity": validity, "latest_uid": latest, "baseline": baseline, "mails": mails}
+
+
+def _is_bulk(message: Message) -> bool:
+    """Kennzeichen von Newslettern und automatischen Massenmails in den Kopfzeilen."""
+    automatic = _clean(message["Auto-Submitted"]).lower()
+    return bool(message["List-Unsubscribe"] or message["List-Id"] or (automatic and automatic != "no")
+                or _clean(message["Precedence"]).lower() in ("bulk", "list", "junk"))
 
 
 # --- Antworten und Entwürfe ------------------------------------------------------------

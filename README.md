@@ -165,11 +165,25 @@ Rechtsklick aufs Tray-Icon → „Proaktive Meldung testen“. Dann
 3. steht die Meldung im Chat, markiert mit 🔔, und oben eine Ansicht mit Zeitpunkt und Auslöser,
 4. wird sie vorgelesen, wenn die Sprachausgabe verfügbar ist.
 
-Man kann direkt im Chat antworten – das Modell kennt seine Meldung. Einstellungen:
+Man kann direkt im Chat antworten – das Modell kennt seine Meldung. Einstellungen fürs Makro:
 `PDA_PROACTIVE_HOTKEY` (z. B. `Ctrl+Shift+F9`, leer = aus), `PDA_PROACTIVE_SPEAK=0` (nicht vorlesen),
 `PDA_PROACTIVE_OPEN_POPUP=0` (statt des Popups nur eine Windows-Benachrichtigung; Klick öffnet es).
-Später lösen echte Anlässe (Briefing um 7 Uhr, Termin, neue Mail) dasselbe aus, siehe
-[backend/proactive.py](backend/proactive.py).
+
+Im Betrieb prüft ein **Wächter** im Hintergrund alle paar Minuten Postfach, Aufgaben und Kalender
+([backend/watcher.py](backend/watcher.py)). Eingestellt wird alles im Popup unter
+**⚙ Einstellungen → Proaktive Meldungen**:
+
+- **Allgemein:** Prüfabstand, Art der Meldung (Popup, Windows-Benachrichtigung, nur Chat), Vorlesen,
+  Formulierung, Ruhezeit, Wochentage, Höchstzahl pro Stunde.
+- **E-Mail:** Das Sprachmodell entscheidet, was wichtig ist, nach deinen Kriterien. Vorrang haben
+  eigene Regeln (Absender und Wörter für „immer“ und „nie“). Newsletter werden an ihren Kopfzeilen
+  erkannt. Mails bleiben ungelesen, beim ersten Start gilt das Postfach als gesehen.
+- **Aufgaben:** Eine Uhrzeit in Notiz oder Titel (`ca um 18 Uhr`, `18:30`, `um 9`, `8 Uhr abends`)
+  gilt am Fälligkeitstag als Termin. „halb 7“ oder „Viertel nach“ werden nicht erkannt.
+- **Kalender:** bis zu zwei Erinnerungen, ganztägige Termine, neue Einladungen, Filter nach Kalender
+  und Titel.
+
+`PDA_PROACTIVE_WATCH=0` schaltet den Wächter ganz ab.
 
 ## Testen
 

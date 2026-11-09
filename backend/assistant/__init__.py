@@ -17,7 +17,8 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from backend import config
-from backend.assistant.base import Assistant, AssistantReply, ModelSelection, ProactiveAssistant
+from backend.assistant.base import (Assistant, AssistantReply, ConsultingAssistant, ModelSelection,
+                                    ProactiveAssistant)
 from backend.assistant.commands import CommandAssistant
 
 
@@ -56,4 +57,5 @@ def create_assistant(backend: str = config.ASSISTANT_BACKEND) -> Assistant:
     return factory()
 
 
-__all__ = ["Assistant", "AssistantReply", "ModelSelection", "ProactiveAssistant", "create_assistant"]
+__all__ = ["Assistant", "AssistantReply", "ConsultingAssistant", "ModelSelection", "ProactiveAssistant",
+           "create_assistant"]

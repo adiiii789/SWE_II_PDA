@@ -18,6 +18,7 @@ Gespeichert wird im PreferenceStore (backend/preferences.py) unter ANSWER_KEY un
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -26,11 +27,17 @@ from backend.preferences import PreferenceStore
 
 ANSWER_KEY = "answer_settings"
 TOOLS_KEY = "tool_settings"
-SETTINGS_KEYS = (ANSWER_KEY, TOOLS_KEY)   # nicht als "Bekanntes über den Nutzer" ans Modell
+PROACTIVE_KEY = "proactive_settings"      # Schema: backend/proactive_settings.py
+SETTINGS_KEYS = (ANSWER_KEY, TOOLS_KEY, PROACTIVE_KEY)   # nicht als "Bekanntes über den Nutzer" ans Modell
 
 MAX_TEXT_CHARS = 1000                     # Freitext - schützt das Kontextfenster
+INTERNAL_TOOL_PREFIX = "watch_"           # nur für den Wächter (backend/watcher.py), nie fürs Sprachmodell
 
-Kind = Literal["choice", "multi", "bool", "number", "text"]
+Kind = Literal["choice", "multi", "bool", "number", "text", "time"]
+
+
+def is_internal_tool(name: str) -> bool:
+    return name.startswith(INTERNAL_TOOL_PREFIX)
 
 
 @dataclass(frozen=True)
@@ -86,6 +93,10 @@ class Setting:
             if not self.minimum <= value <= self.maximum:
                 raise ValueError(f"{self.label}: zwischen {self.minimum} und {self.maximum}")
             return int(value)
+        if self.kind == "time":
+            if not isinstance(value, str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", value):
+                raise ValueError(f"{self.label}: Uhrzeit wie 18:30 erwartet")
+            return value
         if not isinstance(value, str):
             raise ValueError(f"{self.label}: Text erwartet")
         return value.strip()[:MAX_TEXT_CHARS]

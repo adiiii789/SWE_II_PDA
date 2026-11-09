@@ -30,7 +30,7 @@ from backend.assistant.base import AssistantReply
 from backend.assistant.commands import COMMANDS
 from backend.assistant.llm import ChatMessage, ToolCall
 from backend.assistant.ollama import OllamaError, OllamaModel, cloud_name
-from backend.assistant.settings import CONFIRMED_TOOLS, SETTINGS_KEYS, AssistantSettings
+from backend.assistant.settings import CONFIRMED_TOOLS, SETTINGS_KEYS, AssistantSettings, is_internal_tool
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult
 from backend.preferences import PreferenceStore
 from backend.views import TemplateView
@@ -70,7 +70,7 @@ CLOUD_HINT = ("Cloud-Modelle laufen auf ollama.com statt auf deinem PC. Dafür e
 
 
 class OllamaAssistant:
-    """Erfüllt Assistant, ModelSelection und ProactiveAssistant (base.py)."""
+    """Erfüllt Assistant, ModelSelection, ProactiveAssistant und ConsultingAssistant (base.py)."""
 
     def __init__(self, model: OllamaModel, tools: ToolProvider, preferences: PreferenceStore,
                  instructions: str = "", max_tool_rounds: int = 5, max_history: int = 30,
@@ -145,9 +145,21 @@ class OllamaAssistant:
         self._trim_history()
         return text
 
+    def consult(self, prompt: str) -> str | None:
+        """Einmalige Frage ohne Werkzeuge und Verlauf (Wächter); None, wenn das Modell nicht antwortet."""
+        try:
+            if not self._ensure_model():
+                return None
+            response = self.model.chat([ChatMessage("user", prompt)], [])
+        except OllamaError as error:
+            log.warning("Sprachmodell nicht erreichbar: %s", error)
+            return None
+        return response.message.content.strip() or None
+
     def _run(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> str:
-        # Im Popup abgeschaltete Werkzeuge bekommt das Modell gar nicht erst zu sehen.
-        tools = [tool for tool in self.tools.list_tools() if self.settings.tool_enabled(tool.name)]
+        # Im Popup abgeschaltete und interne Werkzeuge bekommt das Modell gar nicht erst zu sehen.
+        tools = [tool for tool in self.tools.list_tools()
+                 if not is_internal_tool(tool.name) and self.settings.tool_enabled(tool.name)]
         system = self._system_message([tool.name for tool in tools])
         for round_ in range(self.max_tool_rounds + 1):
             # In der letzten Runde keine Werkzeuge mehr anbieten: Das Modell muss antworten.
@@ -165,6 +177,8 @@ class OllamaAssistant:
 
     def _call_tool(self, call: ToolCall) -> ToolResult:
         log.info("Werkzeug %s(%s)", call.name, call.arguments)
+        if is_internal_tool(call.name):
+            return ToolResult(f"Unbekanntes Werkzeug: {call.name!r}", is_error=True)
         if not self.settings.tool_enabled(call.name):
             return ToolResult(f"Das Werkzeug {call.name} hat der Nutzer in den Einstellungen abgeschaltet.",
                               is_error=True)

@@ -2,7 +2,7 @@
 import datetime
 import unittest
 
-from backend.assistant import Assistant, ModelSelection, ProactiveAssistant
+from backend.assistant import Assistant, ConsultingAssistant, ModelSelection, ProactiveAssistant
 from backend.assistant.llm import ChatMessage, ModelResponse, ToolCall
 from backend.assistant.ollama import ModelInfo, OllamaError
 from backend.assistant.ollama_assistant import MODEL_PREFERENCE, PROACTIVE_TRIGGER, OllamaAssistant
@@ -80,6 +80,38 @@ FIXED_NOW = datetime.datetime(2026, 10, 14, 9, 30)
 def make(model, tools=None, preferences=None, **kwargs):
     return OllamaAssistant(model, tools or EchoTools(), preferences or MemoryPreferences(),
                            clock=lambda: FIXED_NOW, **kwargs)
+
+
+class WatcherSupportTest(unittest.TestCase):
+    def test_consult_has_no_history_or_tools_and_leaves_no_trace(self):
+        model = FakeModel(text("  Nein  "))
+        assistant = make(model)
+        assistant.history.append(ChatMessage("user", "privat"))
+        self.assertIsInstance(assistant, ConsultingAssistant)
+        self.assertEqual(assistant.consult("Wichtig?"), "Nein")
+        self.assertEqual(model.calls, [([ChatMessage("user", "Wichtig?")], [])])
+        self.assertEqual(len(assistant.history), 1)
+
+    def test_consult_without_model(self):
+        self.assertIsNone(make(FakeModel(OllamaError("weg"))).consult("Frage"))
+        self.assertIsNone(make(FakeModel(installed=())).consult("Frage"))
+        self.assertIsNone(make(FakeModel(text("   "))).consult("Frage"))
+
+    def test_internal_tools_stay_hidden_and_cannot_be_called(self):
+        class Tools(EchoTools):
+            def list_tools(self):
+                return [*super().list_tools(), ToolSpec("watch_new_emails", "intern", {"type": "object"})]
+
+        tools = Tools()
+        model = FakeModel(calls(ToolCall("watch_new_emails", {})), text("Fertig"))
+        make(model, tools).reply("Hi")
+        self.assertEqual([tool.name for tool in model.calls[0][1]], ["echo"])
+        self.assertEqual(tools.calls, [])
+
+    def test_proactive_settings_are_not_personal_facts(self):
+        model = FakeModel(text("Hallo"))
+        make(model, preferences=MemoryPreferences(proactive_settings={"mail": {"criteria": "GEHEIMES_KRITERIUM"}})).reply("Hi")
+        self.assertNotIn("GEHEIMES_KRITERIUM", model.calls[0][0][0].content)
 
 
 class ReplyTest(unittest.TestCase):
