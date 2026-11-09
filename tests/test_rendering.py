@@ -18,7 +18,7 @@ class DefaultTemplateTest(unittest.TestCase):
 
     def test_start_view_contains_shared_theme(self):
         html = self.renderer.render(START_VIEW)
-        self.assertIn("<h2>Personal Digital Agent</h2>", html)
+        self.assertIn("<h2>EVE</h2>", html)
         self.assertIn("--background", html)   # theme.css ist eingebettet
 
     def test_title_only_has_no_text_and_no_table(self):

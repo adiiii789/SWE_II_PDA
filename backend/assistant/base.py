@@ -1,7 +1,7 @@
 """Schnittstelle zwischen Chat (Frontend) und Assistent.
 
 Jeder Assistent - der heutige CommandAssistant ebenso wie ein späterer
-Ollama/MCP-Assistent - implementiert das Protokoll Assistant.
+Gemini/MCP-Assistent - implementiert das Protokoll Assistant.
 """
 from __future__ import annotations
 

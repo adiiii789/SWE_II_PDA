@@ -58,12 +58,13 @@ def start_view() -> str:
 
 
 def list_models() -> dict[str, Any]:
-    """Wählbare Sprachmodelle: {"models": [{"name", "tools", "cloud"}], "current": str | None}.
+    """Wählbare Sprachmodelle: {"models": [{"name", "tools", "cloud", optional "id"}], "current": str | None}.
     Ohne Sprachmodell (CommandAssistant) ist die Liste leer."""
     assistant = _assistant()
     if not isinstance(assistant, ModelSelection):
         return {"models": [], "current": None}
-    return {"models": assistant.available_models(), "current": assistant.current_model()}
+    with _assistant_lock:
+        return {"models": assistant.available_models(), "current": assistant.current_model()}
 
 
 def select_model(name: str) -> str:
@@ -71,7 +72,8 @@ def select_model(name: str) -> str:
     assistant = _assistant()
     if not isinstance(assistant, ModelSelection):
         raise ValueError("Dieser Assistent nutzt kein Sprachmodell")
-    assistant.select_model(name)
+    with _assistant_lock:
+        assistant.select_model(name)
     return name
 
 
@@ -143,7 +145,7 @@ def enlarge_popup(enlarged: bool) -> bool:
 
 
 def proactive_message(occasion: str = proactive.DEMO) -> dict[str, Any]:
-    """Der PDA meldet sich von sich aus (Anlass aus backend/proactive.py, z. B. "demo").
+    """EVE meldet sich von sich aus (Anlass aus backend/proactive.py, z. B. "demo").
 
     Die Meldung erscheint als Push im Chat und als Windows-Benachrichtigung und wird
     vorgelesen (config.PROACTIVE_SPEAK). Gibt die Chat-Nachricht zurück. Darf aus jedem

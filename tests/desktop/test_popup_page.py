@@ -65,9 +65,40 @@ class PopupPageTest(unittest.TestCase):
         return run_js(self.page, MESSAGES)[-1]
 
     def test_starts_with_start_view_and_greeting(self):
-        self.assertIn("Personal Digital Agent", self.initial_html)
+        self.assertIn("<h2>EVE</h2>", self.initial_html)
+        self.assertIn("<p>Enhanced Virtual Entity</p>", self.initial_html)
         self.assertEqual(len(self.initial_messages), 1)
         self.assertIn("hilfe", self.initial_messages[0])
+
+    def test_model_menu_groups_and_switches_providers(self):
+        class Models:
+            selected = "gemini/gemini-test"
+
+            def available_models(self):
+                return [{"id": "gemini/gemini-test", "name": "gemini-test", "cloud": True, "tools": True},
+                        {"id": "ollama/lokal:latest", "name": "lokal:latest", "cloud": False, "tools": False}]
+
+            def current_model(self):
+                return self.selected
+
+            def select_model(self, name):
+                self.selected = name
+
+        assistant = Models()
+        with mock.patch.object(api, "_assistant", return_value=assistant):
+            run_js(self.page, "loadModels(); true")
+            self.assertTrue(wait_until(lambda: run_js(self.page, "modelSelect.value") == "gemini/gemini-test"))
+            self.assertEqual(run_js(self.page, "Array.from(modelSelect.children).map(group => group.label)"),
+                             ["Lokal (Ollama)", "Cloud (Gemini)"])
+            run_js(self.page, """
+                modelSelect.value = 'ollama/lokal:latest';
+                modelSelect.dispatchEvent(new Event('change'));
+            """)
+            self.assertTrue(wait_until(lambda: assistant.selected == "ollama/lokal:latest"
+                                       and run_js(self.page, "!modelSelect.disabled")))
+            self.assertEqual(run_js(self.page, "modelSelect.value"), "ollama/lokal:latest")
+        run_js(self.page, "loadModels(); true")
+        self.assertTrue(wait_until(lambda: run_js(self.page, "modelSelect.hidden")))
 
     def test_chat_command_switches_iframe_view(self):
         answer = self._send("system")
@@ -96,7 +127,7 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(wait_until(lambda: "<h2>Briefing</h2>" in run_js(self.page, IFRAME_HTML)))
 
     def test_proactive_message_is_marked_in_chat(self):
-        # Der PDA meldet sich von selbst (Test-Makro) - ohne Sprachmodell mit dem Ersatztext.
+        # EVE meldet sich von selbst (Test-Makro) - ohne Sprachmodell mit dem Ersatztext.
         demo = proactive.OCCASIONS[proactive.DEMO]
         count = len(run_js(self.page, MESSAGES))
         with mock.patch.object(api.config, "PROACTIVE_SPEAK", False):

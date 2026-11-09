@@ -1,8 +1,8 @@
-"""Fenster in den Vordergrund holen, auch ohne vorherige Aktion des Nutzers (Windows).
+"""Fenster unter macOS und Windows in den Vordergrund holen.
 
 Windows gibt einem Programm nur dann den Fokus, wenn der Nutzer gerade mit ihm gearbeitet hat
 (Foreground-Lock). Öffnet sich das Popup von selbst (proaktive Meldung), würde SetForegroundWindow
-scheitern - und ein Qt.Popup ohne Fokus schließt sich sofort wieder.
+scheitern.
 
 Ausweg: Den eigenen Thread kurz an den Eingabe-Thread des aktuellen Vordergrundfensters hängen
 (AttachThreadInput). Dann gilt das Programm für Windows als beteiligt und darf den Fokus übernehmen.
@@ -29,8 +29,10 @@ def _user32():
 
 
 def bring_to_front(window_id: int) -> bool:
-    """Fenster (HWND, z. B. int(widget.winId())) zum Vordergrundfenster machen. False außerhalb
-    von Windows oder wenn Windows es trotzdem ablehnt."""
+    """App unter macOS aktivieren oder das Fenster (HWND) unter Windows nach vorn holen."""
+    if sys.platform == "darwin":
+        from backend.desktop.macos import activate_application
+        return activate_application()
     if sys.platform != "win32":
         return False
     user32 = _user32()

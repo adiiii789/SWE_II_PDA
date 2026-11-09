@@ -1,4 +1,4 @@
-"""Prüft, dass die Schnittstellen für Ollama (LanguageModel) und MCP (ToolProvider)
+"""Prüft, dass die Schnittstellen für Gemini (LanguageModel) und MCP (ToolProvider)
 von einfachen Test-Implementierungen erfüllt werden können."""
 import unittest
 

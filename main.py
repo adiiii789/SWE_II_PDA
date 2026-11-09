@@ -1,4 +1,4 @@
-"""Einstiegspunkt des Personal Digital Agent (PDA)."""
+"""Einstiegspunkt von EVE."""
 from __future__ import annotations
 
 import ctypes
@@ -20,6 +20,8 @@ def configure_qt() -> None:
     """Einstellungen, die vor dem Erzeugen der QApplication gesetzt sein müssen."""
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    if sys.platform == "darwin":
+        QApplication.setAttribute(Qt.AA_DontUseNativeMenuBar, True)
     if sys.platform == "win32":  # eigenes Taskleisten-Icon statt python.exe
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(config.APP_USER_MODEL_ID)
 
@@ -28,6 +30,11 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     configure_qt()
     qt_app = QApplication(sys.argv)
+    qt_app.setApplicationName(config.APP_NAME)
+    qt_app.setApplicationDisplayName(config.APP_NAME)
+    if sys.platform == "darwin":
+        from backend.desktop.macos import configure_application
+        configure_application()
     application = Application(qt_app)  # noqa: F841  # Referenz halten, solange die App läuft
     return qt_app.exec_()
 

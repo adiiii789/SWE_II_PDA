@@ -1,7 +1,7 @@
 """Schnittstelle zu Werkzeugen, die das Sprachmodell nutzen kann.
 
 ToolSpec entspricht einem MCP-Tool (name, description, inputSchema) und lässt
-sich direkt in das "tools"-Format von Ollama übersetzen.
+sich direkt in das Funktionsformat von Gemini übersetzen.
 
 Ein ToolProvider ist entweder eine eigene Integration in backend/integrations/
 (z. B. Google Calendar, OpenWeather) oder ein MCP-Client, der die Tools eines

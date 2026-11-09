@@ -25,7 +25,11 @@ VS Code & Co. - Eintrag wie in mcp_servers.json, nur mit absolutem Pfad.
 from __future__ import annotations
 
 import logging
+import sys
+from pathlib import Path
 from typing import Annotated
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError

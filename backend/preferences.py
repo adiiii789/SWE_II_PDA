@@ -5,7 +5,7 @@ Lieblingsmusik, Uhrzeit des Morning-Briefings.
 
 Aufbau:
   - Speicherung als JSON-Datei: JsonPreferenceStore (config.PREFERENCES_FILE).
-    Heute steht dort z. B. das gewählte Ollama-Modell ("ollama_model").
+    Heute steht dort z. B. das gewählte Gemini-Modell ("gemini_model").
   - Bearbeitung im Popup (⚙ Einstellungen): Antwort- und Werkzeug-Einstellungen,
     Schema und Wirkung in backend/assistant/settings.py, Funktionen in backend/api.py
   - Zugriff der Assistenten über einen PreferenceStore, der ihnen beim
