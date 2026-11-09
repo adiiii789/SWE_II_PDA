@@ -2,6 +2,7 @@
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -40,8 +41,8 @@ class SendTest(unittest.TestCase):
     def setUp(self):
         self.settings = mailer.MailSettings.load(ENV, NO_FILE)
 
-    def _send(self, to="", subject="Hallo", body="Text", port=None):
-        settings = self.settings if port is None else mailer.MailSettings(**{**self.settings.__dict__, "port": port})
+    def _send(self, to="", subject="Hallo", body="Text", **settings_overrides):
+        settings = replace(self.settings, **settings_overrides)
         with mock.patch("smtplib.SMTP") as smtp, mock.patch("smtplib.SMTP_SSL") as smtp_ssl:
             result = mailer.send_email(settings, to, subject, body)
         return result, smtp.return_value.__enter__.return_value, smtp_ssl.return_value.__enter__.return_value
@@ -55,6 +56,27 @@ class SendTest(unittest.TestCase):
         self.assertEqual((message["From"], message["To"], message["Subject"]),
                          ("ich@example.com", "max@example.com", "Hallo"))
         self.assertIn("Ich komme später.", message.get_content())
+
+    def test_replaces_only_legacy_signatures_in_outgoing_body(self):
+        for ending, expected in (
+            ("Mit freundlichen Grüßen PDA", "Mit freundlichen Grüßen EVE"),
+            ("Mit freundlichen Grüßen,\n\nPDA", "Mit freundlichen Grüßen,\n\nEVE"),
+            ("Best regards,\nPersonal Digital Agent (PDA)", "Best regards,\nEVE"),
+            ("-- \nPDA", "-- \nEVE"),
+            ("Mit freundlichen Grüßen\nLuca", "Mit freundlichen Grüßen\nLuca"),
+            ("> Mit freundlichen Grüßen\n> PDA", "> Mit freundlichen Grüßen\n> PDA"),
+        ):
+            with self.subTest(ending=ending):
+                body = "Hier steht PDA als Zitat.\n\n"
+                _, smtp, _ = self._send(body=body + ending)
+                self.assertEqual(smtp.send_message.call_args.args[0].get_content(), body + expected + "\n")
+
+    def test_replaces_legacy_from_display_name_without_changing_address(self):
+        for sender, expected in (("PDA", "EVE"), ("Luca", "Luca")):
+            with self.subTest(sender=sender):
+                _, smtp, _ = self._send(sender=f"{sender} <ich@example.com>")
+                address = smtp.send_message.call_args.args[0]["From"].addresses[0]
+                self.assertEqual((address.display_name, address.addr_spec), (expected, "ich@example.com"))
 
     def test_ascii_hostname_for_ehlo(self):
         # Rechnernamen mit Umlaut (z. B. "Gergö-PC") dürfen nicht im EHLO landen.
