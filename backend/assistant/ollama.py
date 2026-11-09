@@ -21,24 +21,16 @@ import logging
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any
 
-from backend.assistant.llm import ChatMessage, ModelResponse, ToolCall
+from backend.assistant.llm import ChatMessage, LanguageModelError, ModelInfo as ModelInfo, ModelResponse, ToolCall
 from backend.assistant.tools import ToolSpec
 
 log = logging.getLogger(__name__)
 
 
-class OllamaError(RuntimeError):
+class OllamaError(LanguageModelError):
     """Ollama ist nicht erreichbar oder hat mit einem Fehler geantwortet."""
-
-
-@dataclass(frozen=True)
-class ModelInfo:
-    name: str
-    supports_tools: bool
-    cloud: bool = False
 
 
 class OllamaClient:

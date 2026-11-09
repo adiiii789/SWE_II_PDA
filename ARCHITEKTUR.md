@@ -34,7 +34,7 @@ von sich aus Nachrichten an das Frontend schicken.
 
 ## Projektziel und Erweiterungspunkte
 
-Ziel ist **ein** durchgehender persönlicher Assistent mit lokalem Sprachmodell (Ollama). Er
+Ziel ist **ein** durchgehender persönlicher Assistent mit einem Sprachmodell (standardmäßig Gemini). Er
 deckt drei Aufgabenbereiche ab, im Code **Fähigkeiten** (Skills) genannt:
 
 | Fähigkeit | Wofür | Integrationen |
@@ -48,7 +48,7 @@ Person. Google Calendar brauchen alle drei Bereiche, und Anfragen mischen sie of
 los, und schreib Max, dass ich später komme“). Das Sprachmodell wählt per Tool-Calling selbst
 die passenden Werkzeuge, ein Umschalter oder Router zwischen Assistenten ist nicht nötig.
 
-Der Assistent mit Ollama und MCP-Werkzeugen läuft; die Fähigkeiten selbst und eigene
+Der Assistent mit Gemini oder Ollama und MCP-Werkzeugen läuft; die Fähigkeiten selbst und eigene
 Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen Platz:
 
 | Anforderung | Wo im Code | Stand |
@@ -56,7 +56,7 @@ Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen P
 | Fähigkeiten (morning, travel, organization) | `backend/assistant/skills/` – je ein `Skill` mit Integrationen und Anweisungen | `Skill`-Typ und Liste `SKILLS`, noch leer |
 | Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – je ein `ToolProvider`, gebündelt per `CompositeToolProvider` | Ort, Konvention und Sammel-Provider |
 | MCP-Server als Werkzeuge | `MCPToolProvider` in `backend/integrations/mcp_client.py`, Liste in `mcp_servers.json` | fertig (stdio), eigener Server `mcp_servers/pda_server.py` |
-| Lokales Sprachmodell (Ollama) | `OllamaModel` in `backend/assistant/ollama.py`, `OllamaAssistant` in `ollama_assistant.py` | fertig, Modellwahl im Popup |
+| Sprachmodell | `GeminiModel` (Standard), `OllamaModel` (optional) und gemeinsamer `ModelAssistant` | Modellwahl im Popup |
 | Autonom (z. B. Briefing ohne Eingabe) | `backend/proactive.py`: Anlass → Modell formuliert Meldung → Chat, Systembenachrichtigung, Vorlesen; `api.proactive_message(name)` | proaktive Meldung fertig (Popup öffnet sich von selbst), Test-Makro Strg+Alt+P / Tray-Menü; echte Auslöser offen |
 | Kontextwissen, Präferenzen per UI | Speicher: `backend/preferences.py`; Einstellungen (Antworten, Werkzeuge): `backend/assistant/settings.py`, Formular `frontend/settings.js` | Antwort- und Werkzeug-Einstellungen fertig; Kontextwissen (Wohnort …) noch ohne UI |
 | Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` (faster-whisper, Piper bzw. macOS-/Windows-Stimme) | fertig, Mikrofon-Knopf im Chat |
@@ -107,7 +107,9 @@ backend/                      BACKEND: läuft in Python
     commands.py               CommandAssistant (feste Befehle, auch im Assistenten gültig)
     llm.py                    LanguageModel-Protokoll
     ollama.py                 OllamaModel: LanguageModel über die HTTP-API von Ollama
-    ollama_assistant.py       OllamaAssistant: Verlauf + Tool-Calling-Schleife
+    gemini.py                 GeminiModel: LanguageModel über die Gemini API
+    model_assistant.py        ModelAssistant: Verlauf und Werkzeugaufrufe
+    *_assistant.py            Anbieterspezifische Modellwahl und Präferenzen
     tools.py                  ToolProvider-Protokoll + CompositeToolProvider
     settings.py               Einstellungen aus dem Popup: Schema, Prüfen, Anweisungen fürs Modell
     skills/                   Fähigkeiten des Assistenten (Skill-Typ, noch keine)
@@ -381,7 +383,7 @@ sequenceDiagram
     API->>A: reply(message) mit dem kompletten Text
     alt fester Befehl (hilfe, uhrzeit, system, start, neu)
         A->>A: direkt beantworten
-    else OllamaAssistant
+    else ModelAssistant
         A->>A: Sprachmodell versteht den Text und<br/>ruft per Tool-Calling MCP-Werkzeuge auf
     end
     A-->>API: AssistantReply(text, view)
@@ -399,7 +401,7 @@ sequenceDiagram
 Die Schritte 1–7 (hin) und 14–19 (zurück) sind reiner Transport: Der Text kommt **unverändert**
 im Assistenten an, und die Antwort geht unverändert zurück. Was mit dem Text passiert, entscheidet
 allein der Assistent (Schritt 8 bzw. 9). Feste Befehle werden exakt verglichen. Alles andere
-bekommt der `OllamaAssistant`: Das Modell versteht den Text und wählt selbst die passenden
+bekommt der `ModelAssistant`: Das Modell versteht den Text und wählt selbst die passenden
 Werkzeuge. Eine Antwort des Modells dauert je nach Modell und Rechner einige Sekunden; solange
 zeigt der Chat „denkt nach …“.
 
@@ -558,7 +560,7 @@ Fehlermeldung kommt im Frontend als JavaScript-Fehler an.
 `CommandAssistant` nutzt ein Wörterbuch `COMMANDS` aus Befehl → (Beschreibung, Funktion). Es
 gibt `hilfe`, `uhrzeit`, `system`, `start` und `neu`. `hilfe` erzeugt seine Tabelle direkt aus
 `COMMANDS` und ist dadurch immer aktuell. Die Wochentage stehen fest auf Deutsch, damit die
-Ausgabe nicht von der Spracheinstellung des Systems abhängt. Der `OllamaAssistant` beantwortet
+Ausgabe nicht von der Spracheinstellung des Systems abhängt. Der `ModelAssistant` beantwortet
 diese Befehle ebenfalls sofort, ohne das Modell zu fragen; `neu` leert dort zusätzlich den
 Gesprächsverlauf.
 
@@ -585,12 +587,17 @@ Umsetzung in `ollama.py` (nur Standardbibliothek, `urllib`):
 - `installed()` (`GET /api/tags`) und `available_models()` (zusätzlich `POST /api/show` →
   `capabilities` enthält `"tools"`?) liefern die Modelle für die Auswahl im Popup.
 
-### Der Assistent – [ollama_assistant.py](backend/assistant/ollama_assistant.py)
+Umsetzung in `gemini.py`: HTTPS-Anfragen an Googles `generateContent` mit dem Schlüssel
+im HTTP-Header. Die `model`-Nachricht wird im Original weitergegeben, damit Gemini in
+Folgerunden die Signaturen zu seinen Werkzeugaufrufen wiederfindet. Die Werkzeugergebnisse
+werden über die zugehörigen Aufruf-IDs zugeordnet.
+
+### Der Assistent – [model_assistant.py](backend/assistant/model_assistant.py)
 
 ```
 reply(message):
   1. fester Befehl (hilfe, uhrzeit …)? → sofort beantworten
-  2. Modell bestimmen: config.OLLAMA_MODEL, sonst gespeicherte Wahl, sonst erstes installiertes
+  2. Modell bestimmen: gespeicherte Wahl oder Vorgabe des Anbieters
   3. Nachricht an den Verlauf anhängen
   4. model.chat([Systemanweisung, *Verlauf], alle Werkzeuge)
   5. wants_tools? → für jeden ToolCall tools.call_tool(...)
@@ -619,12 +626,12 @@ reply(message):
   - Assistent und Popup nutzen denselben Store (`preferences.default_store()`), sonst würde einer
     die Änderungen des anderen überschreiben.
 - **Fehler von Werkzeugen** (auch erfundene Werkzeugnamen) gehen als `"Fehler: …"` an das Modell
-  zurück, damit es reagieren kann. **Fehler von Ollama** (läuft nicht, Modell fehlt) werden zur
+  zurück, damit es reagieren kann. **Fehler des Modellanbieters** werden zur
   Antwort im Chat; die misslungene Runde verschwindet wieder aus dem Verlauf.
 - Der **Verlauf** wird auf `ASSISTANT_MAX_HISTORY` Nachrichten gekürzt, immer an einer
   Nutzernachricht, damit keine `tool`-Nachricht ohne ihren Aufruf übrig bleibt.
 - **Modellwahl** (`ModelSelection` aus `base.py`): `available_models`, `current_model`,
-  `select_model`. Die Wahl landet als `ollama_model` im `JsonPreferenceStore`
+  `select_model`. Die Wahl landet je Anbieter als `gemini_model` oder `ollama_model` im `JsonPreferenceStore`
   (`preferences.json` im gemeinsamen Datenordner).
 
 ### Werkzeuge und Integrationen – [tools.py](backend/assistant/tools.py)
@@ -654,9 +661,9 @@ reply(message):
 ### Auswahl des Assistenten – [\_\_init\_\_.py](backend/assistant/__init__.py)
 
 `create_assistant()` liest `ASSISTANT_BACKEND` aus [config.py](backend/config.py) (Standard
-`"ollama"`, per Umgebungsvariable `PDA_ASSISTANT_BACKEND=commands` umschaltbar) und erzeugt den
-passenden Assistenten aus `_BACKENDS` (Factory). Für `"ollama"` setzt `_ollama_assistant()` alles
-zusammen: `OllamaModel`, die MCP-Server aus `mcp_servers.json` plus die Werkzeuge aller
+`"gemini"`, per Umgebungsvariable `PDA_ASSISTANT_BACKEND` auf `ollama` oder `commands`
+umschaltbar) und erzeugt den passenden Assistenten aus `_BACKENDS`. Gemini und Ollama
+nutzen jeweils ihr Modell, die MCP-Server aus `mcp_servers.json` und die Werkzeuge aller
 Fähigkeiten in einem `CompositeToolProvider`, die Anweisungen der Fähigkeiten und den
 `JsonPreferenceStore`. [api.py](backend/api.py) hält mit `@cache` genau **einen** Assistenten für
 die ganze Laufzeit, sodass er sich den Gesprächsverlauf merkt.
@@ -739,7 +746,7 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   Dateinamen aus der Mail werden bereinigt (keine Pfadanteile, keine unter Windows verbotenen Namen).
 - **Dateien im Chat:** `MCPToolProvider` macht aus jedem `resource_link` ein `Attachment`
   (`ToolResult.attachments`); das Modell sieht nur `[Datei im Chat angehängt: name]`. Der
-  `OllamaAssistant` sammelt die Anhänge einer Runde in `AssistantReply.attachments`. `present()`
+  `ModelAssistant` sammelt die Anhänge einer Runde in `AssistantReply.attachments`. `present()`
   meldet sie beim `AttachmentStore` ([backend/attachments.py](backend/attachments.py)) an: Der nimmt
   nur Dateien aus `config.ATTACHMENT_DIR` an (ein anderer MCP-Server kann so keine beliebigen
   Dateien anbieten) und gibt dem Frontend statt des Pfads eine zufällige ID. Im Chat erscheint
@@ -756,8 +763,9 @@ einen `DuplicateToolError`.
 ### Gesamtbild
 
 ```
-OllamaAssistant (erfüllt Assistant + ModelSelection)
-  ├─ model: OllamaModel ──HTTP──► Ollama (lokal)
+ModelAssistant (erfüllt Assistant + ModelSelection)
+  ├─ model: GeminiModel ──HTTPS──► Google Gemini API
+  │         optional: OllamaModel ──HTTP──► Ollama
   ├─ tools: CompositeToolProvider
   │    ├─ MCPToolProvider "pda"  ──stdio──► mcp_servers/pda_server.py (SDK) ──SMTP/IMAP──► Mail
   │    ├─ MCPToolProvider …      ──stdio──► weitere Server aus mcp_servers.json
@@ -776,7 +784,10 @@ Beispiel-Implementierungen, dass die Schnittstellen erfüllbar sind und zusammen
 
 ## Cloud-Betrieb und Dienststart
 
-`PDA_OLLAMA_CLOUD_ONLY` ist standardmäßig aktiv. In diesem Modus werden lokale Modelle
+Gemini ist der Standard. Der Schlüssel kommt aus `GEMINI_API_KEY` oder `gemini-api-key.txt`
+im App-Datenordner. Die Einrichtung steht in der [README](README.md#sprachmodell).
+
+Im optionalen Ollama-Betrieb ist `PDA_OLLAMA_CLOUD_ONLY` standardmäßig aktiv. In diesem Modus werden lokale Modelle
 herausgefiltert und Chat-Aufrufe mit lokalen Modellnamen abgelehnt. Der erste Start wählt
 gegebenenfalls ein Cloud-Modell aus dem öffentlichen Katalog; eine gespeicherte Wahl hat Vorrang.
 Mit `PDA_OLLAMA_CLOUD_ONLY=0` ist auch der bisherige lokale Betrieb wieder möglich.
@@ -933,7 +944,7 @@ Die Qt-Tests öffnen kurz echte Fenster, und während eines Laufs taucht kurz ei
 | eigenes HTML anzeigen | `HtmlView("<...>")` bzw. `await render_view({html: "<...>"})` |
 | neues Template | `frontend/templates/<name>.html.j2` anlegen (Vorlage: `default.html.j2`, erwartete Daten oben als Kommentar), dann per `template: "<name>"` ansprechen |
 | anderes Ollama-Modell | `ollama pull <modell>`, Programm neu starten, im Popup auswählen |
-| Verhalten des Modells ändern | `BASE_INSTRUCTIONS` in `backend/assistant/ollama_assistant.py`, Optionen (`temperature`, `num_ctx`) in `config.OLLAMA_OPTIONS` |
+| Verhalten des Modells ändern | `BASE_INSTRUCTIONS` in `backend/assistant/model_assistant.py` |
 | fertigen MCP-Server nutzen | Eintrag in `mcp_servers.json` (Format wie Claude Desktop) |
 | eigenes Werkzeug | Funktion mit `@mcp.tool()` in `mcp_servers/pda_server.py` (Docstring = Beschreibung fürs Modell) |
 | eigener weiterer MCP-Server | Python-Skript mit dem MCP-SDK nach dem Muster von `pda_server.py`, in `mcp_servers.json` eintragen |

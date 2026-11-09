@@ -17,9 +17,12 @@ APP_USER_MODEL_ID = "swe2.personaldigitalagent.1.0"
 IS_MAC = sys.platform == "darwin"
 TRAY_ICON = ROOT_DIR / "assets" / "tray-macos.svg" if IS_MAC else ROOT_DIR / "TrayIcon.ico"
 
-# "ollama" (lokales Sprachmodell + MCP-Werkzeuge) oder "commands" (nur feste Befehle).
+# "gemini" (Google), "ollama" (optional) oder "commands" (nur feste Befehle).
 # Siehe backend/assistant/__init__.py (_BACKENDS). Die Tests setzen "commands" (tests/conftest.py).
-ASSISTANT_BACKEND = os.environ.get("PDA_ASSISTANT_BACKEND", "ollama")
+ASSISTANT_BACKEND = os.environ.get("PDA_ASSISTANT_BACKEND", "gemini")
+
+GEMINI_MODEL = os.environ.get("PDA_GEMINI_MODEL", "").strip()
+GEMINI_TIMEOUT_S = 120
 
 # Ollama (backend/assistant/ollama.py)
 OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -41,6 +44,7 @@ MCP_SERVERS_FILE = ROOT_DIR / "mcp_servers.json"
 # Präferenzen (backend/preferences.py) - außerhalb des Programmordners, damit sie Updates überstehen
 APP_DATA_DIR = app_data_dir()
 PREFERENCES_FILE = APP_DATA_DIR / "preferences.json"
+GEMINI_KEY_FILE = APP_DATA_DIR / "gemini-api-key.txt"
 
 # Dateien im Chat (backend/attachments.py). Nur Dateien in ATTACHMENT_DIR lassen sich öffnen;
 # derselbe Ordner, in den mcp_servers/inbox.py Mail-Anhänge ablegt.

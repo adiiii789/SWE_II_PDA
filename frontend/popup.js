@@ -250,10 +250,10 @@ async function loadSpeechSupport() {
   recordButton.hidden = !speech.input;
 }
 
-// Ollama-Modelle in die Auswahl laden, getrennt nach lokal und Cloud (leer = Assistent ohne Sprachmodell).
+// Sprachmodelle in die Auswahl laden, getrennt nach lokal und Cloud.
 const MODEL_GROUPS = [
   {label: "Lokal (auf diesem PC)", cloud: false},
-  {label: "Cloud (ollama.com)", cloud: true},
+  {label: "Cloud", cloud: true},
 ];
 
 async function loadModels() {
@@ -276,7 +276,7 @@ async function loadModels() {
     }
     modelSelect.hidden = models.length === 0;
   } catch (error) {
-    modelSelect.hidden = true;   // z. B. Ollama läuft nicht - der Chat meldet das bei der ersten Nachricht
+    modelSelect.hidden = true;   // Verbindungsfehler meldet der Chat bei der ersten Nachricht.
   }
 }
 

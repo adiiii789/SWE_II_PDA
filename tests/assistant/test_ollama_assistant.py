@@ -336,7 +336,7 @@ class AnnounceTest(unittest.TestCase):
 
     def test_ollama_error(self):
         assistant = make(FakeModel(OllamaError("Ollama läuft nicht")))
-        with self.assertLogs("backend.assistant.ollama_assistant", "WARNING"):
+        with self.assertLogs("backend.assistant.model_assistant", "WARNING"):
             self.assertIsNone(assistant.announce("Sag Hallo"))
         self.assertEqual(assistant.history, [])
 

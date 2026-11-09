@@ -63,7 +63,8 @@ def list_models() -> dict[str, Any]:
     assistant = _assistant()
     if not isinstance(assistant, ModelSelection):
         return {"models": [], "current": None}
-    return {"models": assistant.available_models(), "current": assistant.current_model()}
+    with _assistant_lock:
+        return {"models": assistant.available_models(), "current": assistant.current_model()}
 
 
 def select_model(name: str) -> str:
@@ -71,7 +72,8 @@ def select_model(name: str) -> str:
     assistant = _assistant()
     if not isinstance(assistant, ModelSelection):
         raise ValueError("Dieser Assistent nutzt kein Sprachmodell")
-    assistant.select_model(name)
+    with _assistant_lock:
+        assistant.select_model(name)
     return name
 
 

@@ -4,10 +4,10 @@ Desktop-Anwendung für macOS und Windows: Ein Klick auf das Symbol öffnet ein P
 **Anzeigebereich** (oben) und einem **Chat mit einem Assistenten** (unten). Rechtsklick öffnet
 das Kontextmenü mit „Beenden“.
 
-Das Projekt ist die **Grundlage** für einen persönlichen Assistenten mit lokalem
-Sprachmodell (Ollama). Er hat drei **Fähigkeiten**: Morning-Briefing, Weg zum nächsten Termin
+Das Projekt ist die **Grundlage** für einen persönlichen Assistenten mit Gemini als
+Sprachmodell. Er hat drei **Fähigkeiten**: Morning-Briefing, Weg zum nächsten Termin
 (Travel) und Organisation von Nachrichten und Terminen (im Projektplan „Assistant²“). Der
-Assistent läuft mit einem lokalen Modell aus Ollama und nutzt Werkzeuge von **MCP-Servern**
+Assistent nutzt Werkzeuge von **MCP-Servern**
 (eingetragen in [mcp_servers.json](mcp_servers.json)). Die Fähigkeiten selbst sind noch nicht
 umgesetzt. Feste Befehle wie `hilfe`, `uhrzeit`, `system`, `start` und `neu` funktionieren
 weiterhin ohne Modell.
@@ -51,16 +51,34 @@ Als Projektinterpreter die lokale Umgebung auswählen: `.venv/bin/python` am Mac
 
 ### Sprachmodell
 
-Standardmäßig werden ausschließlich Cloud-Modelle angeboten. [Ollama](https://ollama.com)
-installieren und einmal mit `ollama signin` anmelden. Das Programm startet den lokalen
-Ollama-Zugang bei Bedarf automatisch; ein bereits laufender Dienst wird weiterverwendet.
-Es wird kein lokales Modell heruntergeladen. Die Antworten selbst entstehen in der Cloud.
-Beim ersten Start wird ein verfügbares Cloud-Modell mit Werkzeugunterstützung ausgewählt;
-anschließend bleibt die eigene Modellauswahl gespeichert. Der Anbieter benötigt dafür ein
-entsprechendes Cloud-Kontingent bzw. Guthaben.
+Standardmäßig verwendet der Assistent **Gemini 3.5 Flash-Lite** über die Google Gemini API.
+Erstelle in [Google AI Studio](https://aistudio.google.com/api-keys) einen API-Schlüssel.
+Speichere ihn als einzige Zeile in `gemini-api-key.txt` im App-Datenordner, außerhalb des Git-Projekts.
+Die Datei ist Klartext und sollte nur für dein Benutzerkonto lesbar sein.
 
-Lokale Modelle können später mit `PDA_OLLAMA_CLOUD_ONLY=0` wieder zugelassen werden.
-Ohne nutzbares Cloud-Kontingent funktionieren weiterhin die festen Befehle.
+- macOS: `~/Library/Application Support/PersonalDigitalAgent/gemini-api-key.txt`
+- Windows: `%APPDATA%\PersonalDigitalAgent\gemini-api-key.txt`
+
+Auf macOS kannst du den Schlüssel im Terminal verdeckt einfügen und mit Enter speichern:
+
+```zsh
+(
+  umask 077
+  dir="$HOME/Library/Application Support/PersonalDigitalAgent"
+  mkdir -p "$dir" || exit
+  read -rs "key?Gemini-API-Schlüssel: "
+  printf '\n'
+  if [[ -n "$key" ]]; then
+    printf '%s\n' "$key" > "$dir/gemini-api-key.txt"
+    chmod 600 "$dir/gemini-api-key.txt"
+  fi
+)
+```
+
+Alternativ liest das Programm die Umgebungsvariable `GEMINI_API_KEY`. Sie hat Vorrang
+vor der Datei. Nach dem Wechsel auf Gemini die Anwendung neu starten. Im Popup kannst du
+zwischen Flash-Lite, Flash und 3.8 Flash wechseln. Die Auswahl bleibt gespeichert.
+Welche Modelle dein Konto nutzen kann, hängt von den [Kontingenten deines Projekts](https://ai.google.dev/gemini-api/docs/rate-limits) ab.
 
 Nur Befehle verwenden:
 
@@ -118,7 +136,7 @@ Gestaltungsgrundlagen: [Materialien](https://developer.apple.com/design/human-in
 Rechts neben dem Eingabefeld startet 🎤 die Spracheingabe, ein zweiter Klick sendet die Nachricht,
 **Escape** bricht ab. Antworten auf gesprochene Nachrichten werden vorgelesen (Escape stoppt das
 Vorlesen). Aufnahme, Spracherkennung und Sprachausgabe laufen lokal; der transkribierte Nachrichtentext
-geht bei Verwendung eines Cloud-Modells zur Beantwortung an Ollama:
+geht bei Verwendung von Gemini zur Beantwortung an Google:
 
 - Spracherkennung: [faster-whisper](https://github.com/SYSTRAN/faster-whisper), Modell `small`
   (≈ 480 MB)
@@ -168,20 +186,17 @@ Unterstützt werden Server über **stdio** (Unterprozess). `"python"` startet da
 dem das Programm läuft; `"disabled": true` schaltet einen Eintrag ab. Nach Änderungen das
 Programm neu starten.
 
-### Sprachmodell: lokal oder Ollama-Cloud
+### Modellauswahl und optionaler Ollama-Betrieb
 
-Der Assistent verwendet standardmäßig **Cloud-Modelle** über den lokalen Ollama-Zugang.
-Es werden keine lokalen Modellgewichte geladen:
+Der Chatbefehl `modelle` zeigt die Auswahl, `modell gemini-3.5-flash` wechselt das Modell.
+`PDA_GEMINI_MODEL` kann eine weitere Gemini-Modell-ID zur Auswahl hinzufügen und legt die
+Vorgabe fest, solange noch kein Modell gespeichert ist.
+Bei Gemini gehen Gesprächskontext und benötigte Werkzeugergebnisse an Google.
 
-1. Bei ollama.com anmelden und einmal im Terminal `ollama signin` ausführen.
-2. Im Chat `modelle` eingeben. Die Liste zeigt die verfügbaren Cloud-Modelle.
-3. Mit `modell gemma4:31b-cloud` wechseln. Die Wahl bleibt gespeichert.
-
-Welche Modelle genutzt werden können, hängt vom aktuellen Konto und Kontingent ab.
-HTTP 402 bedeutet, dass Ollama Guthaben oder einen passenden Tarif verlangt; HTTP 429 bedeutet,
-dass ein Nutzungslimit erreicht wurde.
-Für lokale Modelle später `PDA_OLLAMA_CLOUD_ONLY=0` setzen; mit zusätzlich `PDA_OLLAMA_CLOUD=0`
-werden die Cloud-Modelle ausgeblendet.
+Für Ollama die App mit `PDA_ASSISTANT_BACKEND=ollama` starten. Sie startet den lokalen
+Ollama-Dienst bei Bedarf. Für die Ollama-Cloud ist `ollama signin` erforderlich.
+Mit `PDA_OLLAMA_CLOUD_ONLY=0` sind lokale Modelle wählbar und mit zusätzlich
+`PDA_OLLAMA_CLOUD=0` werden Cloud-Modelle ausgeblendet.
 
 ### Einstellungen (Präferenzen)
 
@@ -241,7 +256,7 @@ Für die eigentliche Projektarbeit braucht ihr nur diese Stellen:
 | Funktion, die das Frontend aufrufen kann | [backend/api.py](backend/api.py) |
 | eigenes Werkzeug (MCP) | [mcp_servers/pda_server.py](mcp_servers/pda_server.py) – Funktion mit `@mcp.tool()` |
 | fremder MCP-Server | [mcp_servers.json](mcp_servers.json) |
-| Verhalten des Assistenten (Anweisungen, Tool-Schleife) | [backend/assistant/ollama_assistant.py](backend/assistant/ollama_assistant.py) |
+| Verhalten des Assistenten (Anweisungen, Tool-Schleife) | [backend/assistant/model_assistant.py](backend/assistant/model_assistant.py) |
 | Sprache (Erkennung, Vorlesen) | [backend/speech.py](backend/speech.py) |
 
 Alles andere ist **Infrastruktur** und muss für neue Funktionen nicht angefasst werden:
@@ -290,5 +305,5 @@ return AssistantReply(
 
 [ARCHITEKTUR.md](ARCHITEKTUR.md) erklärt den Aufbau ausführlich. Dort stehen der
 Programmablauf, die Brücke zwischen JavaScript und Python, der Weg einer Chat-Nachricht,
-Templates und Sicherheit, die Schnittstellen für Ollama und Integrationen (inkl. Tool-Calling
+Templates und Sicherheit, die Schnittstellen für Sprachmodelle und Integrationen (inkl. Tool-Calling
 und MCP), die Tests und bekannte Fallstricke.
