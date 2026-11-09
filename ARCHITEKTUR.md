@@ -77,7 +77,7 @@ mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von
   pda_server.py               Server mit offiziellem SDK: Uhrzeit, Rechnen, E-Mail senden und lesen
   basic_tools.py              Uhrzeit und Rechnen (ohne Abhängigkeiten)
   mailer.py                   E-Mail per SMTP, nur an freigegebene Empfänger
-  inbox.py                    E-Mail und Anhänge lesen per IMAP, nur lesend
+  inbox.py                    E-Mail und Anhänge lesen und ordnen per IMAP, Antworten, Entwürfe
   file_text.py                Text aus PDF, Word, Excel, PowerPoint, HTML, Textdateien
   google_calendar.py          Google Kalender: Termine lesen, anlegen, ändern, löschen, Anmeldung per OAuth
   google_tasks.py             Google Tasks: Aufgaben lesen, anlegen, ändern, löschen, gleiche Anmeldung
@@ -723,11 +723,19 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
 - **E-Mail lesen** (`list_emails`, `read_email`, Logik in [inbox.py](mcp_servers/inbox.py)): Abruf
   per IMAP mit denselben Zugangsdaten (IMAP-Server aus dem SMTP-Server abgeleitet, abweichend über
   `PDA_IMAP_*`). Der Ordner wird read-only geöffnet und mit `BODY.PEEK` gelesen, Mails bleiben also
-  ungelesen; Löschen oder Verschieben gibt es nicht. `list_emails` liefert eine Übersicht mit UIDs
+  ungelesen. `list_emails` liefert eine Übersicht mit UIDs
   (höchstens 25), `read_email` den Text einer Mail (HTML wird zu Text, gekürzt auf 8000 Zeichen,
   dazu die Liste der Anhänge). Weil der Mailtext von Fremden stammt, ist er als Daten markiert und
   die Werkzeugbeschreibung verbietet, Anweisungen daraus zu folgen. Verlassen darf man sich darauf
   nicht – die eigentliche Sicherung bleibt die Freigabeliste von `send_email`.
+- **E-Mail beantworten und ordnen** (`reply_email`, `save_email_draft`, `organize_email`,
+  `delete_email`): Antworten bleiben per `In-Reply-To` und `References` im Verlauf und gehen wie
+  jede Mail nur an freigegebene Empfänger. Entwürfe dürfen an jede Adresse gerichtet sein, weil sie
+  das Postfach erst verlassen, wenn der Nutzer sie selbst abschickt. Nur diese Werkzeuge öffnen den
+  Ordner schreibend. `delete_email` verschiebt in den Papierkorb und löscht nie endgültig. Sonderordner
+  werden über ihre IMAP-Kennzeichnung gefunden, sonst über übliche Namen. Dateianhänge kommen nur
+  aus Downloads, Dokumente, Desktop, Bilder, OneDrive und der Anhang-Ablage: So kann eingeschleuster
+  Text etwa die Google-Anmeldung nicht verschicken lassen.
 - **Anhänge** (`read_attachment`, Text aus [file_text.py](mcp_servers/file_text.py)): `read_email`
   legt alle Anhänge (bis 25 MB) in `%APPDATA%/PersonalDigitalAgent/attachments/<Ordner>-<UID>/`
   ab und gibt sie zusätzlich als MCP-`resource_link` (file://-URI) zurück; Ablagen älter als 7 Tage
@@ -844,7 +852,7 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_mcp_client` | **Integration:** `MCPToolProvider` gegen den echten Demo-Server und Sonderfälle (Absturz, Timeout, ping, Seiten) |
 | `test_pda_server` | **Integration:** `MCPToolProvider` gegen den SDK-Server (übersprungen ohne `mcp`) |
 | `test_mailer` | Mail-Einstellungen, Freigabeliste, Versand (SMTP gemockt) |
-| `test_inbox` | Mails lesen: Einstellungen, Übersicht, Suche, HTML, Kürzen, read-only, Anhänge ablegen und in Teilen lesen, Dateinamen (IMAP nachgebaut) |
+| `test_inbox` | Mails lesen: Einstellungen, Übersicht, Suche, HTML, Kürzen, read-only, Anhänge ablegen und in Teilen lesen, Dateinamen; Antworten, Entwürfe, Ordnen, Papierkorb, erlaubte Dateianhänge (IMAP nachgebaut) |
 | `test_google_calendar` | Termine lesen, erstellen, ändern, löschen, Serien, Überschneidungen, freie Zeit, Einladungen, Zeiten, Markierungen, Fehler, Anmeldung (Google nachgebaut) |
 | `test_google_tasks` | Aufgaben lesen, erstellen, ändern, erledigen, löschen, verschieben, Unteraufgaben, Fälligkeit, Markierungen, gemeinsame Anmeldung (Google nachgebaut) |
 | `test_file_text` | Text aus PDF, Word, PowerPoint, Excel, HTML, Mails, Textdateien; defekte Dateien, ZIP-Bomben (Testdateien im Test erzeugt) |

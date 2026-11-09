@@ -133,6 +133,20 @@ class SendTest(unittest.TestCase):
         self.assertEqual(message["To"], "Mama <mama@example.com>")
         self.assertEqual(result, "E-Mail an Mama <mama@example.com> gesendet (Betreff: Hi)")
 
+    def test_attachments(self):
+        files = (mailer.OutgoingFile("plan.pdf", b"%PDF", "application/pdf"),)
+        with mock.patch("smtplib.SMTP") as smtp:
+            result = mailer.send_email(self.settings, "", "Hi", "Text", files)
+        message = smtp.return_value.__enter__.return_value.send_message.call_args.args[0]
+        part = next(message.iter_attachments())
+        self.assertEqual((part.get_filename(), part.get_content()), ("plan.pdf", b"%PDF"))
+        self.assertIn("1 Anhang", result)
+
+    def test_header_injection_is_refused(self):
+        with mock.patch("smtplib.SMTP") as smtp, self.assertRaisesRegex(mailer.MailError, "Ungültige"):
+            mailer.send_email(self.settings, "", "Hi\nBcc: fremd@evil.example", "Text")
+        smtp.assert_not_called()
+
     def test_smtp_error(self):
         with mock.patch("smtplib.SMTP", side_effect=OSError("Verbindung abgelehnt")):
             with self.assertRaisesRegex(mailer.MailError, "Versand fehlgeschlagen: Verbindung abgelehnt"):

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import os
 import smtplib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from email.headerregistry import Address
 from email.message import EmailMessage
@@ -35,6 +35,14 @@ MAX_BODY_CHARS = 20_000
 
 class MailError(ValueError):
     """Mail nicht konfiguriert, Empfänger nicht erlaubt oder Versand fehlgeschlagen."""
+
+
+@dataclass(frozen=True)
+class OutgoingFile:
+    """Eine Datei, die an eine Mail angehängt wird (Prüfung und Laden: inbox.outgoing_files)."""
+    name: str
+    data: bytes
+    mime_type: str
 
 
 @dataclass(frozen=True)
@@ -134,19 +142,35 @@ def _words(name: str) -> frozenset[str]:
     return frozenset(name.replace(",", " ").casefold().split())
 
 
-def send_email(settings: MailSettings, to: str, subject: str, body: str) -> str:
-    """Mail senden. to = Adresse oder Name eines Kontakts, leer = Standardempfänger."""
-    contact = find_contact(settings, to)
+def compose(sender: str, to: Address | str, subject: str, body: str, files: Sequence[OutgoingFile] = (),
+            replying_to: Mapping[str, str] | None = None) -> EmailMessage:
+    """Fertige Mail. replying_to: Kopfzeilen, die sie im Verlauf der beantworteten Mail einordnen."""
     if not subject.strip() or not body.strip():
         raise MailError("Betreff und Text dürfen nicht leer sein")
     if len(body) > MAX_BODY_CHARS:
         raise MailError(f"Text zu lang (höchstens {MAX_BODY_CHARS} Zeichen)")
-
     message = EmailMessage()
-    message["From"] = settings.sender
-    message["To"] = contact.header()
-    message["Subject"] = subject.strip()
+    try:
+        message["From"] = sender
+        message["To"] = to
+        message["Subject"] = subject.strip()
+        for name, value in (replying_to or {}).items():
+            if value:
+                message[name] = value
+    except (ValueError, IndexError):        # z. B. Zeilenumbruch in einer Kopfzeile
+        raise MailError(f"Ungültige Empfänger- oder Betreffangabe: {to!s}") from None
     message.set_content(body)
+    for file in files:
+        maintype, _, subtype = file.mime_type.partition("/")
+        message.add_attachment(file.data, maintype=maintype, subtype=subtype, filename=file.name)
+    return message
+
+
+def send_email(settings: MailSettings, to: str, subject: str, body: str, files: Sequence[OutgoingFile] = (),
+               replying_to: Mapping[str, str] | None = None) -> str:
+    """Mail senden. to = Adresse oder Name eines Kontakts, leer = Standardempfänger."""
+    contact = find_contact(settings, to)
+    message = compose(settings.sender, contact.header(), subject, body, files, replying_to)
 
     # smtplib stellt sich sonst mit dem Rechnernamen vor (EHLO). Enthält der Umlaute
     # (z. B. "Gergö-PC"), scheitert das, weil SMTP-Befehle nur ASCII erlauben.
@@ -163,4 +187,5 @@ def send_email(settings: MailSettings, to: str, subject: str, body: str) -> str:
                 smtp.send_message(message)
     except (smtplib.SMTPException, OSError) as error:
         raise MailError(f"Versand fehlgeschlagen: {error}") from None
-    return f"E-Mail an {contact} gesendet (Betreff: {subject.strip()})"
+    attached = f", {len(files)} Anhang/Anhänge" if files else ""
+    return f"E-Mail an {contact} gesendet (Betreff: {subject.strip()}{attached})"

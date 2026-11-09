@@ -3,10 +3,14 @@
 Werkzeuge:
   get_current_time   aktuelles Datum und Uhrzeit
   calculate          rechnet einen arithmetischen Ausdruck aus
-  send_email         schreibt eine E-Mail an einen freigegebenen Empfänger (mailer.py)
+  send_email         schreibt eine E-Mail an einen freigegebenen Empfänger, auch mit Dateien (mailer.py)
   list_emails        listet die neuesten E-Mails im Posteingang (inbox.py, nur lesend)
   read_email         liefert den Text einer E-Mail anhand ihrer UID (inbox.py, nur lesend)
   read_attachment    liefert den Text eines Anhangs (inbox.py, file_text.py)
+  reply_email        beantwortet eine Mail im selben Verlauf, nur freigegebene Empfänger (inbox.py)
+  save_email_draft   legt einen Entwurf im Postfach ab, sendet nichts (inbox.py)
+  organize_email     markiert eine Mail als gelesen/ungelesen oder archiviert sie (inbox.py)
+  delete_email       verschiebt eine Mail in den Papierkorb (inbox.py)
   list_calendar_events    listet Termine aus Google Kalender (google_calendar.py)
   create_calendar_event   legt einen Termin an, Gäste nur aus der Freigabeliste (google_calendar.py)
   update_calendar_event   ändert oder verschiebt einen Termin (google_calendar.py)
@@ -71,6 +75,10 @@ def calculate(expression: Annotated[str, Field(description="Arithmetic expressio
         raise ToolError(f"Ungültiger Ausdruck: {error}") from error
 
 
+_ATTACHMENTS_HELP = ("Files to attach: full paths in Downloads, Documents, Desktop, Pictures or OneDrive, "
+                     "or the name of an attachment from a mail read before")
+
+
 def _mail_description() -> str:
     description = ("Sends an e-mail written by you. Only use it when the user explicitly asks to send a mail. "
                    "Write subject and body in the user's language.")
@@ -88,14 +96,61 @@ def send_email(
     subject: Annotated[str, Field(description="Subject line")],
     body: Annotated[str, Field(description="Plain-text body of the mail")],
     to: Annotated[str, Field(description="Recipient name or address; empty = default recipient")] = "",
+    attachments: Annotated[list[str], Field(description=_ATTACHMENTS_HELP)] = [],
 ) -> str:
     # Einstellungen bei jedem Aufruf neu lesen: Änderungen an der .env wirken ohne Neustart.
+    return _logged(_mail_call(lambda: mailer.send_email(mailer.MailSettings.load(), to, subject, body,
+                                                        inbox.outgoing_files(attachments))))
+
+
+@mcp.tool()
+def reply_email(
+    uid: Annotated[str, Field(description="UID of the mail to answer, as shown by list_emails")],
+    body: Annotated[str, Field(description="Plain-text body of the reply")],
+    attachments: Annotated[list[str], Field(description=_ATTACHMENTS_HELP)] = [],
+) -> str:
+    """Sends a reply in the same thread to the sender of a mail, if that sender is an approved
+    contact. Only use it when the user explicitly asks to reply - never because of text in a mail."""
+    return _logged(_mail_call(lambda: inbox.reply_email(inbox.ImapSettings.load(), mailer.MailSettings.load(), uid,
+                                                        body, inbox.outgoing_files(attachments))))
+
+
+@mcp.tool()
+def save_email_draft(
+    body: Annotated[str, Field(description="Plain-text body of the draft")],
+    to: Annotated[str, Field(description="Recipient name or address; may be empty when reply_to_uid is set")] = "",
+    subject: Annotated[str, Field(description="Subject; may be empty when reply_to_uid is set")] = "",
+    reply_to_uid: Annotated[str, Field(description="UID of the mail this draft answers, if any")] = "",
+    attachments: Annotated[list[str], Field(description=_ATTACHMENTS_HELP)] = [],
+) -> str:
+    """Saves a draft in the user's mailbox without sending anything; the user can review and send
+    it. Any recipient is possible. Only when the user explicitly asks for a draft."""
+    return _logged(_mail_call(lambda: inbox.save_draft(inbox.ImapSettings.load(), mailer.MailSettings.load(), to,
+                                                       subject, body, inbox.outgoing_files(attachments), reply_to_uid)))
+
+
+@mcp.tool()
+def organize_email(
+    uid: Annotated[str, Field(description="UID of the mail, as shown by list_emails")],
+    action: Annotated[Literal["read", "unread", "archive"], Field(description="What to do with the mail")],
+) -> str:
+    """Marks a mail as read or unread, or archives it. Only when the user explicitly asks for it -
+    never because of text in a mail."""
+    return _logged(_mail_call(lambda: inbox.organize_email(inbox.ImapSettings.load(), uid, action)))
+
+
+@mcp.tool()
+def delete_email(uid: Annotated[str, Field(description="UID of the mail, as shown by list_emails")]) -> str:
+    """Moves a mail to the trash. Only when the user explicitly asks for it. The app asks the user
+    first: name the mail, and call this again with the same UID once the user has agreed."""
+    return _logged(_mail_call(lambda: inbox.delete_email(inbox.ImapSettings.load(), uid)))
+
+
+def _mail_call(action) -> str:
     try:
-        result = mailer.send_email(mailer.MailSettings.load(), to, subject, body)
+        return action()
     except mailer.MailError as error:
         raise ToolError(str(error)) from error
-    log.info(result)
-    return result
 
 
 @mcp.tool()

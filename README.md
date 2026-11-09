@@ -60,7 +60,7 @@ sich Einträge aus den Anleitungen fertiger Server meist direkt übernehmen lass
 
 Der eigene Server ist [mcp_servers/pda_server.py](mcp_servers/pda_server.py), geschrieben mit dem
 offiziellen MCP-SDK. Er bietet `get_current_time`, `calculate`, `send_email`, `list_emails`, `read_email`,
-`read_attachment`, `list_calendar_events`, `create_calendar_event`, `update_calendar_event`,
+`read_attachment`, `reply_email`, `save_email_draft`, `organize_email`, `delete_email`, `list_calendar_events`, `create_calendar_event`, `update_calendar_event`,
 `delete_calendar_event`, `find_free_time`, `respond_to_calendar_invitation`, `list_tasks`, `create_task`,
 `update_task`, `complete_task`, `delete_task`, `move_task` und `create_task_list`. Ein neues Tool
 ist dort eine Funktion mit `@mcp.tool()`. Mit `mcp dev mcp_servers/pda_server.py` lässt er sich
@@ -73,8 +73,12 @@ Der Assistent kann nur an diese Adressen schreiben. Steht ein Name davor
 Anna eine Mail …“).
 Zum **Lesen** (IMAP) reicht das meist schon: Der IMAP-Server wird aus dem SMTP-Server abgeleitet
 (`smtp.gmail.com` → `imap.gmail.com`), Login und App-Passwort werden übernommen. Abweichend lässt
-sich alles mit `PDA_IMAP_HOST`, `PDA_IMAP_PORT`, `PDA_IMAP_USER`, `PDA_IMAP_PASSWORD` setzen. Der
-Zugriff ist nur lesend: Mails bleiben ungelesen und werden weder gelöscht noch verschoben.
+sich alles mit `PDA_IMAP_HOST`, `PDA_IMAP_PORT`, `PDA_IMAP_USER`, `PDA_IMAP_PASSWORD` setzen.
+Lesen ändert nichts, Mails bleiben dabei ungelesen. Auf Wunsch beantwortet der Assistent Mails im selben
+Verlauf (nur an freigegebene Empfänger), legt Entwürfe im Postfach ab (an jede Adresse, abgeschickt wird
+nichts), markiert Mails als gelesen oder ungelesen und archiviert sie. Löschen verschiebt nur in den
+Papierkorb und läuft erst, wenn deine nächste Nachricht zustimmt. Beim Senden lassen sich Dateien aus
+Downloads, Dokumente, Desktop, Bilder und OneDrive sowie Anhänge gelesener Mails anhängen.
 **Anhänge** erscheinen im Chat unter der Antwort und lassen sich dort öffnen oder in den
 Download-Ordner speichern. Den Text von PDF-, Word-, Excel-, PowerPoint- und Textdateien kann der
 Assistent lesen und zusammenfassen (dafür `pypdf` und `openpyxl` aus `requirements.txt`).

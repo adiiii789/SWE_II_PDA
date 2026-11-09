@@ -28,7 +28,8 @@ class PdaServerTest(unittest.TestCase):
     def test_tools_with_schema_from_type_annotations(self):
         tools = {spec.name: spec for spec in self.provider.list_tools()}
         self.assertEqual(set(tools), {"get_current_time", "calculate", "send_email", "list_emails", "read_email",
-                                       "read_attachment", "list_calendar_events", "create_calendar_event",
+                                       "read_attachment", "reply_email", "save_email_draft", "organize_email",
+                                       "delete_email", "list_calendar_events", "create_calendar_event",
                                        "update_calendar_event", "delete_calendar_event", "find_free_time",
                                        "respond_to_calendar_invitation", "list_tasks", "create_task", "update_task", "complete_task", "delete_task",
                                        "move_task", "create_task_list"})
@@ -65,7 +66,10 @@ class PdaServerTest(unittest.TestCase):
         self.assertIn("nicht eingerichtet", result.content)
 
     def test_read_tools_report_missing_settings(self):
-        for name, arguments in (("list_emails", {}), ("read_email", {"uid": "1"}), ("read_attachment", {"uid": "1"})):
+        for name, arguments in (("list_emails", {}), ("read_email", {"uid": "1"}), ("read_attachment", {"uid": "1"}),
+                                ("reply_email", {"uid": "1", "body": "Hi"}), ("delete_email", {"uid": "1"}),
+                                ("save_email_draft", {"body": "Hi", "to": "a@b.example", "subject": "S"}),
+                                ("organize_email", {"uid": "1", "action": "archive"})):
             result = self.provider.call_tool(name, arguments)
             self.assertTrue(result.is_error)
             self.assertIn("Mail-Abruf ist nicht eingerichtet", result.content)
