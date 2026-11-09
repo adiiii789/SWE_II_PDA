@@ -79,7 +79,7 @@ mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von
   mailer.py                   E-Mail per SMTP, nur an freigegebene Empfänger
   inbox.py                    E-Mail und Anhänge lesen per IMAP, nur lesend
   file_text.py                Text aus PDF, Word, Excel, PowerPoint, HTML, Textdateien
-  google_calendar.py          Google Kalender: Termine lesen und anlegen, Anmeldung per OAuth
+  google_calendar.py          Google Kalender: Termine lesen, anlegen, ändern, löschen, Anmeldung per OAuth
   google_tasks.py             Google Tasks: Aufgaben lesen, anlegen, ändern, löschen, gleiche Anmeldung
   .env.example                Vorlage für die Mail-Einstellungen (.env wird nicht eingecheckt)
   demo_server.py              Server ohne SDK: zeigt das Protokoll, Gegenpart in den Tests
@@ -745,14 +745,18 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   jede Datei mit „Öffnen“ (`api.open_attachment`, Standardprogramm) und „Speichern“
   (`api.save_attachment`, Kopie in den Download-Ordner, nichts wird überschrieben). Ausführbare
   Dateien und Office-Dateien mit Makros (`.exe`, `.js`, `.docm` …) lassen sich nur speichern.
-- **Google Kalender** (`list_calendar_events`, `create_calendar_event`, Logik in
+- **Google Kalender** (`list_calendar_events`, `create_calendar_event`, `update_calendar_event`,
+  `delete_calendar_event`, `find_free_time`, `respond_to_calendar_invitation`, Logik in
   [google_calendar.py](mcp_servers/google_calendar.py)): Zugriff über die Calendar API mit OAuth
   (Desktop-App). Die einmalige Anmeldung läuft im Terminal, weil der MCP-Server als Unterprozess
   keinen Dialog öffnen kann; Client-Datei und Token liegen in `%APPDATA%/PersonalDigitalAgent/google/`.
-  Gelesen wird aus allen eingeblendeten Kalendern, angelegt nur im Hauptkalender. Das Werkzeug kennt
-  bewusst keine Gäste: So kann eingeschleuster Text keine Einladungen an Fremde auslösen. Gelesene
-  Termine sind als Daten markiert, weil Einladungen von Fremden stammen. Die Rückfrage vor dem
-  Erstellen ist eine Einstellung im Popup und nur eine Anweisung ans Modell.
+  Gelesen wird aus allen eingeblendeten Kalendern. Gäste lässt `pda_server.py` nur aus der
+  Freigabeliste der Mails zu: So kann eingeschleuster Text keine Einladungen an Fremde auslösen.
+  Überschneidet sich ein neuer Termin, wird er erst mit `allow_conflict` angelegt. Bei Serien liefert
+  die Übersicht einzelne Vorkommen, `series=true` meint die ganze Serie; deren Uhrzeit bleibt
+  unveränderbar, weil das den Beginn der Serie verschieben würde. Gelesene Termine sind als Daten
+  markiert, weil Einladungen von Fremden stammen. Die Rückfrage vor dem Erstellen ist eine
+  Einstellung im Popup und nur eine Anweisung ans Modell.
 - **Google Tasks** (`list_tasks`, `create_task`, `update_task`, `complete_task`, `delete_task`,
   `move_task`, `create_task_list`, Logik in [google_tasks.py](mcp_servers/google_tasks.py)): nutzt
   Anmeldung und Fehlerbehandlung von `google_calendar.py`, es gibt also nur einen Login und ein
@@ -841,7 +845,7 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_pda_server` | **Integration:** `MCPToolProvider` gegen den SDK-Server (übersprungen ohne `mcp`) |
 | `test_mailer` | Mail-Einstellungen, Freigabeliste, Versand (SMTP gemockt) |
 | `test_inbox` | Mails lesen: Einstellungen, Übersicht, Suche, HTML, Kürzen, read-only, Anhänge ablegen und in Teilen lesen, Dateinamen (IMAP nachgebaut) |
-| `test_google_calendar` | Termine lesen und erstellen, Zeiten, Markierungen, Fehler, Anmeldung (Google nachgebaut) |
+| `test_google_calendar` | Termine lesen, erstellen, ändern, löschen, Serien, Überschneidungen, freie Zeit, Einladungen, Zeiten, Markierungen, Fehler, Anmeldung (Google nachgebaut) |
 | `test_google_tasks` | Aufgaben lesen, erstellen, ändern, erledigen, löschen, verschieben, Unteraufgaben, Fälligkeit, Markierungen, gemeinsame Anmeldung (Google nachgebaut) |
 | `test_file_text` | Text aus PDF, Word, PowerPoint, Excel, HTML, Mails, Textdateien; defekte Dateien, ZIP-Bomben (Testdateien im Test erzeugt) |
 | `test_attachments` | `AttachmentStore`: nur Dateien aus dem Anhang-Ordner, keine ausführbaren öffnen, Speichern ohne Überschreiben |

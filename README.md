@@ -60,7 +60,8 @@ sich Einträge aus den Anleitungen fertiger Server meist direkt übernehmen lass
 
 Der eigene Server ist [mcp_servers/pda_server.py](mcp_servers/pda_server.py), geschrieben mit dem
 offiziellen MCP-SDK. Er bietet `get_current_time`, `calculate`, `send_email`, `list_emails`, `read_email`,
-`read_attachment`, `list_calendar_events`, `create_calendar_event`, `list_tasks`, `create_task`,
+`read_attachment`, `list_calendar_events`, `create_calendar_event`, `update_calendar_event`,
+`delete_calendar_event`, `find_free_time`, `respond_to_calendar_invitation`, `list_tasks`, `create_task`,
 `update_task`, `complete_task`, `delete_task`, `move_task` und `create_task_list`. Ein neues Tool
 ist dort eine Funktion mit `@mcp.tool()`. Mit `mcp dev mcp_servers/pda_server.py` lässt er sich
 ohne Assistent im Browser ausprobieren.
@@ -78,8 +79,10 @@ Zugriff ist nur lesend: Mails bleiben ungelesen und werden weder gelöscht noch 
 Download-Ordner speichern. Den Text von PDF-, Word-, Excel-, PowerPoint- und Textdateien kann der
 Assistent lesen und zusammenfassen (dafür `pypdf` und `openpyxl` aus `requirements.txt`).
 
-**Google Kalender:** Der Assistent liest Termine aller eingeblendeten Kalender und legt auf Wunsch
-neue im Hauptkalender an, ohne Gäste einzuladen. Einmalig einzurichten:
+**Google Kalender:** Der Assistent liest Termine aller eingeblendeten Kalender, legt neue an (auch in
+anderen Kalendern, als Serie und mit Erinnerungen), findet freie Zeit und warnt vor Überschneidungen.
+Einladen kann er nur Kontakte aus `PDA_MAIL_RECIPIENTS`. Ändern, Löschen und Antworten auf Einladungen
+führt er nur aus, wenn deine nächste Nachricht zustimmt. Einmalig einzurichten:
 
 1. In der [Google Cloud Console](https://console.cloud.google.com/) ein Projekt anlegen und die
    **Google Calendar API** und die **Google Tasks API** aktivieren.
