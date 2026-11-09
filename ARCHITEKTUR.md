@@ -79,6 +79,7 @@ mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von
   mailer.py                   E-Mail per SMTP, nur an freigegebene Empfänger
   inbox.py                    E-Mail und Anhänge lesen per IMAP, nur lesend
   file_text.py                Text aus PDF, Word, Excel, PowerPoint, HTML, Textdateien
+  google_calendar.py          Google Kalender: Termine lesen und anlegen, Anmeldung per OAuth
   .env.example                Vorlage für die Mail-Einstellungen (.env wird nicht eingecheckt)
   demo_server.py              Server ohne SDK: zeigt das Protokoll, Gegenpart in den Tests
 
@@ -743,6 +744,14 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   jede Datei mit „Öffnen“ (`api.open_attachment`, Standardprogramm) und „Speichern“
   (`api.save_attachment`, Kopie in den Download-Ordner, nichts wird überschrieben). Ausführbare
   Dateien und Office-Dateien mit Makros (`.exe`, `.js`, `.docm` …) lassen sich nur speichern.
+- **Google Kalender** (`list_calendar_events`, `create_calendar_event`, Logik in
+  [google_calendar.py](mcp_servers/google_calendar.py)): Zugriff über die Calendar API mit OAuth
+  (Desktop-App). Die einmalige Anmeldung läuft im Terminal, weil der MCP-Server als Unterprozess
+  keinen Dialog öffnen kann; Client-Datei und Token liegen in `%APPDATA%/PersonalDigitalAgent/google/`.
+  Gelesen wird aus allen eingeblendeten Kalendern, angelegt nur im Hauptkalender. Das Werkzeug kennt
+  bewusst keine Gäste: So kann eingeschleuster Text keine Einladungen an Fremde auslösen. Gelesene
+  Termine sind als Daten markiert, weil Einladungen von Fremden stammen. Die Rückfrage vor dem
+  Erstellen ist eine Einstellung im Popup und nur eine Anweisung ans Modell.
 - [mcp_servers/demo_server.py](mcp_servers/demo_server.py) bietet dieselben Rechen- und
   Uhrzeit-Werkzeuge ohne SDK. Er zeigt, wie wenig das Protokoll verlangt, ist in
   `mcp_servers.json` abgeschaltet und dient als Gegenpart in den Tests.
@@ -819,6 +828,7 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_pda_server` | **Integration:** `MCPToolProvider` gegen den SDK-Server (übersprungen ohne `mcp`) |
 | `test_mailer` | Mail-Einstellungen, Freigabeliste, Versand (SMTP gemockt) |
 | `test_inbox` | Mails lesen: Einstellungen, Übersicht, Suche, HTML, Kürzen, read-only, Anhänge ablegen und in Teilen lesen, Dateinamen (IMAP nachgebaut) |
+| `test_google_calendar` | Termine lesen und erstellen, Zeiten, Markierungen, Fehler, Anmeldung (Google nachgebaut) |
 | `test_file_text` | Text aus PDF, Word, PowerPoint, Excel, HTML, Mails, Textdateien; defekte Dateien, ZIP-Bomben (Testdateien im Test erzeugt) |
 | `test_attachments` | `AttachmentStore`: nur Dateien aus dem Anhang-Ordner, keine ausführbaren öffnen, Speichern ohne Überschreiben |
 | `test_demo_mcp_server`, `test_preferences` | Demo-Server direkt, `JsonPreferenceStore` |

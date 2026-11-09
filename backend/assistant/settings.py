@@ -212,9 +212,17 @@ MAIL_SETTINGS: tuple[Setting, ...] = (
             instruction="Zeig vor dem Senden einer Mail den Entwurf und sende erst nach Bestätigung des Nutzers."),
 )
 
+CALENDAR_SETTINGS: tuple[Setting, ...] = (
+    Setting("confirm_create", "Vor dem Erstellen nachfragen", "bool", True,
+            instruction="Nenne vor dem Erstellen eines Termins Titel, Datum und Uhrzeit "
+                        "und erstelle ihn erst nach Bestätigung des Nutzers."),
+)
+
 TOOL_GROUPS: tuple[ToolGroup, ...] = (
     ToolGroup("mail", "E-Mail", ("list_emails", "read_email", "read_attachment", "send_email"),
               "Mails lesen, Anhänge öffnen und Mails senden", MAIL_SETTINGS),
+    ToolGroup("calendar", "Google Kalender", ("list_calendar_events", "create_calendar_event"),
+              "Termine lesen und neue Termine erstellen", CALENDAR_SETTINGS),
     ToolGroup("basics", "Uhrzeit und Rechnen", ("get_current_time", "calculate"),
               "Aktuelle Uhrzeit, Rechenaufgaben"),
 )

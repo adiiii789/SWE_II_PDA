@@ -18,6 +18,7 @@ class PdaServerTest(unittest.TestCase):
         # Mail-Einstellungen leeren, damit der Test nie wirklich etwas versendet oder abruft.
         env = {key: "" for key in ("PDA_SMTP_HOST", "PDA_SMTP_USER", "PDA_SMTP_PASSWORD", "PDA_MAIL_RECIPIENTS",
                                    "PDA_IMAP_HOST", "PDA_IMAP_USER", "PDA_IMAP_PASSWORD")}
+        env["PDA_GOOGLE_DIR"] = str(config.ROOT_DIR / "tests" / "gibt-es-nicht")   # nie der echte Kalender
         cls.provider = MCPToolProvider("pda", "python", [PDA_SERVER], env=env, cwd=config.ROOT_DIR, timeout=30)
 
     @classmethod
@@ -27,7 +28,10 @@ class PdaServerTest(unittest.TestCase):
     def test_tools_with_schema_from_type_annotations(self):
         tools = {spec.name: spec for spec in self.provider.list_tools()}
         self.assertEqual(set(tools), {"get_current_time", "calculate", "send_email", "list_emails", "read_email",
-                                       "read_attachment"})
+                                       "read_attachment", "list_calendar_events", "create_calendar_event"})
+        self.assertNotIn("required", tools["list_calendar_events"].input_schema)
+        self.assertEqual(set(tools["create_calendar_event"].input_schema["required"]), {"title", "start"})
+        self.assertNotIn("attendees", tools["create_calendar_event"].input_schema["properties"])
         schema = tools["send_email"].input_schema
         self.assertEqual(set(schema["required"]), {"subject", "body"})
         self.assertIn("to", schema["properties"])
@@ -54,6 +58,13 @@ class PdaServerTest(unittest.TestCase):
             result = self.provider.call_tool(name, arguments)
             self.assertTrue(result.is_error)
             self.assertIn("Mail-Abruf ist nicht eingerichtet", result.content)
+
+    def test_calendar_tools_report_missing_login(self):
+        for name, arguments in (("list_calendar_events", {}),
+                                ("create_calendar_event", {"title": "X", "start": "2026-11-10"})):
+            result = self.provider.call_tool(name, arguments)
+            self.assertTrue(result.is_error)
+            self.assertIn("Google Kalender ist nicht eingerichtet", result.content)
 
 
 if __name__ == "__main__":

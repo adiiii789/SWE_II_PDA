@@ -256,7 +256,7 @@ class SettingsPanelTest(unittest.TestCase):
         self.js("document.querySelector('#settings-tabs [data-tab=tools]').click()")
         self.assertEqual(self.js(visible), ["tools"])
         groups = self.js("Array.from(document.querySelectorAll('.settings-group')).map(g => g.dataset.group)")
-        self.assertEqual(groups[:2], ["mail", "basics"])
+        self.assertEqual(groups[:3], ["mail", "calendar", "basics"])
         mail_keys = self.js("Array.from(document.querySelectorAll('[data-group=mail] .setting')).map(r => r.dataset.key)")
         self.assertIn("fields", mail_keys)
         self.assertIn("max", mail_keys)

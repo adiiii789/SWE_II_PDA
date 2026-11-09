@@ -4,7 +4,10 @@ Jinja2==3.1.6
 mcp>=2.3,<3           # MCP-SDK für mcp_servers/pda_server.py (MCPServer)
 pypdf>=6.0,<7         # Text aus PDF-Anhängen (mcp_servers/file_text.py)
 openpyxl>=3.1,<4      # Text aus Excel-Anhängen (mcp_servers/file_text.py)
-sounddevice>=0.5,<1   # Mikrofon und Lautsprecher (backend/speech.py)
+google-api-python-client>=2.185,<3   # Google Kalender (mcp_servers/google_calendar.py)
+google-auth-httplib2>=0.2,<1          # Zeitlimit für Anfragen an Google
+google-auth-oauthlib>=1.2,<2          # Google-Anmeldung im Browser
+sounddevice>=0.5,<1  # Mikrofon und Lautsprecher (backend/speech.py)
 numpy>=2,<3           # Audio-Daten (backend/speech.py)
 faster-whisper>=1.2,<2  # Spracherkennung, lokal (Modell wird beim ersten Gebrauch geladen)
 piper-tts>=1.3,<2     # Sprachausgabe, lokal (Stimme wird beim ersten Gebrauch geladen; GPL-3.0)

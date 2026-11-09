@@ -184,7 +184,7 @@ class FormTest(unittest.TestCase):
         form = AssistantSettings(MemoryStore()).form(TOOLS)
         self.assertEqual([field["key"] for field in form["answer"]["fields"]], [s.key for s in ANSWER_SETTINGS])
         groups = {group["id"]: group for group in form["tools"]}
-        self.assertEqual(list(groups), ["mail", "basics", "tool:get_weather"])
+        self.assertEqual(list(groups), ["mail", "calendar", "basics", "tool:get_weather"])
         self.assertTrue(groups["mail"]["available"])
         self.assertIn("max", [field["key"] for field in groups["mail"]["fields"]])
         weather = groups["tool:get_weather"]

@@ -59,8 +59,8 @@ sich Einträge aus den Anleitungen fertiger Server meist direkt übernehmen lass
 ```
 
 Der eigene Server ist [mcp_servers/pda_server.py](mcp_servers/pda_server.py), geschrieben mit dem
-offiziellen MCP-SDK. Er bietet `get_current_time`, `calculate`, `send_email`, `list_emails`, `read_email` und
-`read_attachment`. Ein neues Tool
+offiziellen MCP-SDK. Er bietet `get_current_time`, `calculate`, `send_email`, `list_emails`, `read_email`,
+`read_attachment`, `list_calendar_events` und `create_calendar_event`. Ein neues Tool
 ist dort eine Funktion mit `@mcp.tool()`. Mit `mcp dev mcp_servers/pda_server.py` lässt er sich
 ohne Assistent im Browser ausprobieren.
 
@@ -76,6 +76,31 @@ Zugriff ist nur lesend: Mails bleiben ungelesen und werden weder gelöscht noch 
 **Anhänge** erscheinen im Chat unter der Antwort und lassen sich dort öffnen oder in den
 Download-Ordner speichern. Den Text von PDF-, Word-, Excel-, PowerPoint- und Textdateien kann der
 Assistent lesen und zusammenfassen (dafür `pypdf` und `openpyxl` aus `requirements.txt`).
+
+**Google Kalender:** Der Assistent liest Termine aller eingeblendeten Kalender und legt auf Wunsch
+neue im Hauptkalender an, ohne Gäste einzuladen. Einmalig einzurichten:
+
+1. In der [Google Cloud Console](https://console.cloud.google.com/) ein Projekt anlegen und die
+   **Google Calendar API** aktivieren.
+2. Unter *Google Auth Platform* den Zustimmungsbildschirm einrichten (App-Name, Kontakt-Mails) und
+   unter *Datenzugriff* die Bereiche `calendar.events` und `calendar.readonly` hinzufügen.
+3. Unter *Zielgruppe* **Extern** und **Testen** einstellen und bei *Testnutzer* die eigene
+   Gmail-Adresse eintragen. Ohne diesen Eintrag lehnt Google die Anmeldung ab (`403 access_denied`).
+4. Unter *Clients* einen OAuth-Client vom Typ **Desktop-App** anlegen und die JSON-Datei herunterladen.
+5. Im Projektordner `python mcp_servers/google_calendar.py "<Pfad zur JSON-Datei>"` ausführen.
+6. Im Browser mit der Gmail-Adresse anmelden und beide Kalender-Berechtigungen erlauben. Die Warnung
+   vor einer nicht überprüften App überspringt man mit *Erweitert* → *Weiter zu …*. Im Terminal steht
+   danach `Google Kalender ist eingerichtet`, die heruntergeladene JSON-Datei kann weg.
+7. Den PDA komplett beenden und neu starten. Test: „Was steht diese Woche an?“
+
+**Alle 7 Tage neu anmelden:** Im Status „Testen“ läuft die Anmeldung nach 7 Tagen ab, der Assistent
+meldet das im Chat. Dann reicht `python mcp_servers/google_calendar.py` (ohne Pfad) und die Anmeldung
+im Browser. Dauerhaft geht es nur, wenn die App veröffentlicht ist: Dafür verlangt Google unter
+*Branding* eine Startseiten-URL und eine URL zur Datenschutzerklärung.
+
+Zugangsdaten und Anmeldung liegen in `%APPDATA%/PersonalDigitalAgent/google/`, nicht im Repo.
+Beim Erstellen fragt der Assistent standardmäßig nach. Das lässt sich im Popup unter ⚙ Einstellungen →
+Werkzeuge → Google Kalender abschalten.
 
 Unterstützt werden Server über **stdio** (Unterprozess). `"python"` startet dasselbe Python, mit
 dem das Programm läuft; `"disabled": true` schaltet einen Eintrag ab. Nach Änderungen das
