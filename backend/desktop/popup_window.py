@@ -5,12 +5,14 @@ from collections.abc import Callable
 import sys
 import time
 
-from PyQt5.QtCore import QEvent, QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt, pyqtSignal
-from PyQt5.QtGui import QCursor, QGuiApplication
+from PyQt5.QtCore import (QEvent, QEasingCurve, QPoint, QParallelAnimationGroup, QPropertyAnimation,
+                          QRect, QRectF, Qt, QTimer, pyqtSignal)
+from PyQt5.QtGui import QCursor, QGuiApplication, QPainterPath, QRegion
 from PyQt5.QtWidgets import QApplication, QVBoxLayout, QWidget
 
 from backend import config
 from backend.desktop.foreground import bring_to_front
+from backend.desktop.motion import reduce_motion
 
 
 def popup_geometry(anchor: QPoint, available: QRect, width: int, height: int, from_top: bool) -> QRect:
@@ -37,15 +39,17 @@ class PopupWindow(QWidget):
         self._last_anchor: QPoint | None = None
         self._last_hidden_at = float("-inf")
         self._outside_click_monitor = None
+        self._closing = False
+        self._native_rounded = False
         self.anchor: Callable[[], QPoint] = lambda: (self._screen().availableGeometry().topRight()
                                                     if sys.platform == "darwin"
                                                     else self._screen().availableGeometry().bottomRight())
         self.enlarge_requested.connect(self.set_enlarged)
         self.show_requested.connect(self._on_show_requested)
-        self.hide_requested.connect(self.hide)
+        self.hide_requested.connect(self.dismiss)
         self.setObjectName("popupRoot")
-        # Qt.Popup verliert unter Cocoa bei programmatischer Aktivierung sofort wieder den Fokus.
-        self.setWindowFlags((Qt.Tool if sys.platform == "darwin" else Qt.Popup) | Qt.FramelessWindowHint)
+        # Tool-Fenster erlauben eine Schließanimation, bevor die Fläche versteckt wird.
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
         if sys.platform == "darwin":
             self.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
             QApplication.instance().installEventFilter(self)
@@ -61,14 +65,30 @@ class PopupWindow(QWidget):
         self._animation = QPropertyAnimation(self, b"geometry")
         self._animation.setDuration(config.POPUP_ANIMATION_MS)
         self._animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._opacity_animation = QPropertyAnimation(self, b"windowOpacity")
+        self._opacity_animation.setDuration(config.POPUP_ANIMATION_MS)
+        self._opacity_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._open_animation = QParallelAnimationGroup(self)
+        self._open_animation.addAnimation(self._animation)
+        self._open_animation.addAnimation(self._opacity_animation)
+        self._close_geometry = QPropertyAnimation(self, b"geometry")
+        self._close_opacity = QPropertyAnimation(self, b"windowOpacity")
+        self._close_animation = QParallelAnimationGroup(self)
+        for animation in (self._close_geometry, self._close_opacity):
+            animation.setDuration(config.POPUP_CLOSE_ANIMATION_MS)
+            animation.setEasingCurve(QEasingCurve.InCubic)
+            self._close_animation.addAnimation(animation)
+        self._close_animation.finished.connect(self._finish_dismiss)
 
     def show_at_cursor(self) -> None:
         """Popup so öffnen, dass seine untere rechte Ecke am Mauszeiger liegt."""
         self.show_at(QCursor.pos())
 
     def toggle_at_anchor(self) -> None:
-        if self.isVisible():
-            self.hide()
+        if self.isVisible() and not self._closing:
+            self.dismiss()
+        elif self._closing:
+            self.show_at(self.anchor(), take_focus=True)
         elif sys.platform != "darwin" or time.monotonic() - self._last_hidden_at > 0.2:
             # Qt versteckt ein Popup beim erneuten Klick auf die Menüleiste schon vor dem Klicksignal.
             self.show_at(self.anchor(), take_focus=sys.platform == "darwin")
@@ -89,22 +109,54 @@ class PopupWindow(QWidget):
             self._outside_click_monitor = OutsideClickMonitor(self.hide_requested.emit)
 
     def _on_show_requested(self) -> None:
-        if not self.isVisible():   # ist es schon offen, steht die Meldung ohnehin im Chat
+        if not self.isVisible() or self._closing:
             self.show_at(self.anchor(), take_focus=True)
 
     def _show_with_corner(self, corner: QPoint) -> None:
         self._last_anchor = QPoint(corner)
-        self._animation.stop()
+        was_visible = self.isVisible()
+        previous_opacity = self.windowOpacity()
+        self._open_animation.stop()
+        self._close_animation.stop()
+        self._closing = False
         width, height = self._target_size()
         end = popup_geometry(corner, self._screen().availableGeometry(), width, height, sys.platform == "darwin")
         self.setFixedSize(end.size())
-        start = (end.translated(0, -min(24, config.POPUP_SLIDE_IN_OFFSET_PX)) if sys.platform == "darwin"
-                 else end.translated(width, height + config.POPUP_SLIDE_IN_OFFSET_PX))
+        direction = -1 if sys.platform == "darwin" else 1
+        start = self.geometry() if was_visible else end.translated(0, direction * config.POPUP_SLIDE_IN_OFFSET_PX)
+        duration = 0 if reduce_motion() else config.POPUP_ANIMATION_MS
+        self._animation.setDuration(duration)
+        self._opacity_animation.setDuration(duration)
+        self._opacity_animation.setStartValue(previous_opacity if was_visible else 0.0)
+        self._opacity_animation.setEndValue(1.0)
         self.setGeometry(start)
         self._animation.setStartValue(start)
         self._animation.setEndValue(end)
-        self._animation.start()
+        self.setWindowOpacity(previous_opacity if was_visible else 0.0)
         self.show()
+        self._apply_rounding()
+        self._open_animation.start()
+
+    def dismiss(self) -> None:
+        """Kurz in Richtung des Symbols ausblenden; Chat und Web-Seite bleiben erhalten."""
+        if not self.isVisible() or self._closing:
+            return
+        self._open_animation.stop()
+        if reduce_motion():
+            self.hide()
+            return
+        self._closing = True
+        start = self.geometry()
+        direction = -1 if sys.platform == "darwin" else 1
+        self._close_geometry.setStartValue(start)
+        self._close_geometry.setEndValue(start.translated(0, direction * 8))
+        self._close_opacity.setStartValue(self.windowOpacity())
+        self._close_opacity.setEndValue(0.0)
+        self._close_animation.start()
+
+    def _finish_dismiss(self) -> None:
+        if self._closing:
+            self.hide()
 
     @property
     def enlarged(self) -> bool:
@@ -115,7 +167,10 @@ class PopupWindow(QWidget):
         self._enlarged = enlarged
         if not self.isVisible():
             return   # gilt beim nächsten show_at_cursor
-        self._animation.stop()
+        self._open_animation.stop()
+        self._close_animation.stop()
+        self._closing = False
+        self.setWindowOpacity(1.0)
         width, height = self._target_size()
         from_top = sys.platform == "darwin"
         corner = (self._last_anchor or self.anchor()) if from_top else self.geometry().bottomRight() + QPoint(1, 1)
@@ -132,17 +187,49 @@ class PopupWindow(QWidget):
         return QGuiApplication.screenAt(self._last_anchor or QCursor.pos()) or QGuiApplication.primaryScreen()
 
     def hideEvent(self, event) -> None:  # noqa: N802
-        self._animation.stop()
+        self._open_animation.stop()
+        self._close_animation.stop()
+        self._closing = False
         self._last_hidden_at = time.monotonic()
         if self._outside_click_monitor is not None:
             self._outside_click_monitor.close()
             self._outside_click_monitor = None
         super().hideEvent(event)
 
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        self._apply_rounding()
+        super().resizeEvent(event)
+
+    def _apply_rounding(self) -> None:
+        if sys.platform == "darwin":
+            from backend.desktop.macos import round_window
+            self._native_rounded = round_window(int(self.winId()), config.POPUP_CORNER_RADIUS_PX)
+            if self._native_rounded:
+                self.clearMask()
+                return
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(self.rect()), config.POPUP_CORNER_RADIUS_PX, config.POPUP_CORNER_RADIUS_PX)
+        self.setMask(QRegion(path.toFillPolygon().toPolygon()))
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        if sys.platform != "darwin" and event.type() == QEvent.ActivationChange:
+            QTimer.singleShot(0, self._dismiss_if_inactive)
+        super().changeEvent(event)
+
+    def _dismiss_if_inactive(self) -> None:
+        app = QApplication.instance()
+        active = app.activeWindow()
+        if app.activePopupWidget() is not None or (active is not None and self.isAncestorOf(active)):
+            return
+        if self.isVisible() and not self.isActiveWindow():
+            self.dismiss()
+
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
         if self.isVisible() and event.type() == QEvent.MouseButtonPress:
+            if QApplication.activePopupWidget() is not None:
+                return super().eventFilter(watched, event)
             if not self.geometry().contains(event.globalPos()):
-                self.hide()
+                self.dismiss()
         return super().eventFilter(watched, event)
 
     def release_desktop_resources(self) -> None:
@@ -156,4 +243,4 @@ class PopupWindow(QWidget):
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt-API)
         # Nur verstecken: Inhalt und Zustand der Seite bleiben erhalten.
         event.ignore()
-        self.hide()
+        self.dismiss()

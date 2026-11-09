@@ -75,6 +75,44 @@ set PDA_ASSISTANT_BACKEND=commands
 .venv\Scripts\python main.py
 ```
 
+### Design auswählen
+
+Der **Design**-Button oben rechts zeigt zwei Gruppen mit Vorschauen. Standard ist
+**Apple · Automatisch**: Die Oberfläche folgt dem hellen oder dunklen Erscheinungsbild des
+Betriebssystems. **Apple Hell** und **Apple Dunkel** lassen sich auch dauerhaft auswählen.
+Systemschrift, klare Abstufungen von Text und Flächen, ruhige Inhaltskarten und dezente
+Materialien für die Bedienebene orientieren sich an Apples Gestaltungsempfehlungen.
+
+Die weiteren Designs greifen vier unterschiedliche Stilrichtungen auf:
+
+- **Neumorphismus:** weiche, plastische Reliefs und eingedrückte Eingabefelder.
+- **OLED:** echter schwarzer Hintergrund mit gezielten neongrünen Akzenten.
+- **Pixel Art:** lokal eingebundene Pixelschrift, harte Kanten und versetzte Schatten.
+- **Maximalismus:** Gelb, Magenta und Cyan, kräftige Konturen und Collage-Elemente.
+
+Die Auswahl wirkt sofort auf Chat, Einstellungen und die eingebauten Ansichten und bleibt
+beim Neustarten erhalten. Gespeichert wird ausschließlich die Designkennung lokal im
+WebEngine-Profil unter `pda.appearance.v2`; Gesprächsinhalte werden dort nicht gespeichert.
+Beim Update auf diese Auswahl wird einmalig Apple · Automatisch als Standard verwendet.
+Die Auswahl ist mit Pfeiltasten bedienbar; Escape schließt sie. Eigene HTML-Ansichten behalten
+ihre Gestaltung. Die Pixelschrift liegt samt Lizenz im Projekt; es gibt keine externen
+Schriftaufrufe zur Laufzeit.
+
+Auch die tatsächliche Fensterfläche hat abgerundete Ecken. Beim Öffnen gleitet sie kurz
+vom Symbol aus hinein und blendet ein; beim Schließen läuft die Bewegung in Gegenrichtung.
+Erneutes Öffnen kann die Schließanimation unterbrechen. Der Chat bleibt dabei erhalten.
+Die Betriebssystemoption „Bewegung reduzieren“ wird berücksichtigt; optional lässt sich die
+Animation mit `PDA_REDUCE_MOTION=1` abschalten. Chat und Fenster lassen sich weiterhin separat
+vergrößern; die Aufteilung zwischen Überblick und Chat lässt sich ziehen oder per Pfeiltaste ändern.
+
+Das Robotersymbol orientiert sich an der Projektvorlage: unter macOS als automatisch
+angepasste monochrome Menüleistenversion, unter Windows als farbiges Symbol in mehreren Größen.
+
+Gestaltungsgrundlagen: [Materialien](https://developer.apple.com/design/human-interface-guidelines/materials),
+[Typografie](https://developer.apple.com/design/human-interface-guidelines/typography),
+[Dunkelmodus](https://developer.apple.com/design/human-interface-guidelines/dark-mode) und
+[Bewegung](https://developer.apple.com/design/human-interface-guidelines/motion).
+
 ### Sprache
 
 Rechts neben dem Eingabefeld startet 🎤 die Spracheingabe, ein zweiter Klick sendet die Nachricht,

@@ -30,7 +30,8 @@ View = Union[TemplateView, HtmlView]
 
 START_VIEW = TemplateView("default", {
     "title": "Personal Digital Agent",
-    "text": "Frag den Assistenten unten nach Daten – sie werden hier angezeigt.",
+    "text": "Fragen, Nachrichten und die kleinen Dinge dazwischen. Was steht heute bei dir an?",
+    "welcome": True,
 })
 
 

@@ -16,6 +16,10 @@ from backend.desktop.popup_window import PopupWindow, popup_geometry
 class PopupWindowTest(unittest.TestCase):
     def setUp(self):
         qt_app()
+        # Interaktive Klicks des Nutzers sind keine Auslöser dieses Animationstests.
+        monitor = mock.patch("backend.desktop.macos.OutsideClickMonitor")
+        monitor.start()
+        self.addCleanup(monitor.stop)
         self.content = QLabel("Inhalt")
         self.popup = PopupWindow(self.content)
 
@@ -95,7 +99,52 @@ class PopupWindowTest(unittest.TestCase):
         event = QCloseEvent()
         self.popup.closeEvent(event)
         self.assertFalse(event.isAccepted())
-        self.assertFalse(self.popup.isVisible())
+        self.assertTrue(wait_until(lambda: not self.popup.isVisible(), 1))
+
+    def test_open_and_close_finish_without_destroying_content(self):
+        with mock.patch.object(popup_window, "reduce_motion", return_value=False):
+            self.popup.show_at(QPoint(900, 100))
+            self.assertTrue(wait_until(lambda: self.popup.windowOpacity() > .99
+                                       and self.popup.geometry() == self.popup._animation.endValue()))
+            self.assertEqual(self.popup.geometry(), self.popup._animation.endValue())
+            self.popup.dismiss()
+            self.assertTrue(self.popup._closing)
+            self.assertTrue(self.popup.isVisible())
+            self.assertTrue(wait_until(lambda: not self.popup.isVisible()))
+            self.assertIs(self.popup.content, self.content)
+            self.assertEqual(self.content.text(), "Inhalt")
+
+    def test_reopening_during_close_cancels_the_pending_hide(self):
+        with mock.patch.object(popup_window, "reduce_motion", return_value=False):
+            self.popup.show_at(QPoint(900, 100))
+            self.assertTrue(wait_until(lambda: self.popup.windowOpacity() > .99))
+            self.popup.dismiss()
+            self.popup.toggle_at_anchor()
+            self.assertFalse(self.popup._closing)
+            self.assertTrue(wait_until(lambda: self.popup.windowOpacity() > .99))
+            wait_until(lambda: False, .25)
+            self.assertTrue(self.popup.isVisible())
+
+    def test_reduce_motion_omits_movement_and_closes_immediately(self):
+        with mock.patch.object(popup_window, "reduce_motion", return_value=True):
+            self.popup.show_at(QPoint(900, 100))
+            self.assertEqual(self.popup.windowOpacity(), 1.0)
+            self.assertEqual(self.popup.geometry(), self.popup._animation.endValue())
+            self.popup.dismiss()
+            self.assertFalse(self.popup.isVisible())
+
+    def test_real_window_has_rounded_corners(self):
+        self.popup.show()
+        qt_app().processEvents()
+        if sys.platform == "darwin":
+            import objc
+            view = objc.objc_object(c_void_p=int(self.popup.winId()))
+            self.assertTrue(self.popup._native_rounded)
+            self.assertEqual(view.window().contentView().layer().cornerRadius(), config.POPUP_CORNER_RADIUS_PX)
+            self.assertFalse(view.window().isOpaque())
+        else:
+            self.assertFalse(self.popup.mask().contains(QPoint(0, 0)))
+            self.assertTrue(self.popup.mask().contains(self.popup.rect().center()))
 
 
 if __name__ == "__main__":

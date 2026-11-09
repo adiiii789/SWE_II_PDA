@@ -1,0 +1,134 @@
+/* Material, Form und Typografie unterscheiden die Designs zusätzlich zur Farbpalette. */
+.design-section-label { grid-column: 1 / -1; color: var(--text-muted); font-size: 8px; letter-spacing: 1.1px; font-weight: 650; padding: 3px 1px 0; }
+.design-section-label:not(:first-child) { margin-top: 7px; }
+.design-preview { height: 46px; }
+.preview-card { height: 12px; margin-bottom: 4px; }
+.preview-bar { margin-bottom: 5px; }
+.preview-bubble { height: 8px; }
+.design-option-name { font-family: var(--font); padding-top: 8px; }
+.design-option-description { line-height: 1.4; }
+.design-heading h2, #settings-header h2, .welcome h1 { font-family: var(--display-font); }
+#design-panel { animation: design-reveal .18s ease-out; }
+@keyframes design-reveal { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+/* Apple: Inhaltsflächen bleiben ruhig; die Bedienebene erhält ein dezentes Material. */
+:root[data-theme^="apple-"] .header-actions { padding: 3px; border: 1px solid var(--chrome-edge); border-radius: 24px; background: var(--chrome); box-shadow: 0 1px 0 var(--border), 0 3px 10px rgba(0,0,0,.035); -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2); }
+:root[data-theme^="apple-"] .header-actions .quiet-button { border-color: transparent; border-radius: 18px; }
+:root[data-theme^="apple-"] .header-actions .icon-button { border-radius: 50%; }
+:root[data-theme^="apple-"] .header-actions > * + * { margin-left: 0; }
+:root[data-theme^="apple-"] .brand-mark { border-radius: 12px; box-shadow: inset 0 1px 0 var(--chrome-edge); }
+:root[data-theme^="apple-"] .message { font-size: 13px; line-height: 1.6; }
+:root[data-theme^="apple-"] .eyebrow, :root[data-theme^="apple-"] .section-label { letter-spacing: 1.2px; }
+:root[data-theme^="apple-"] #design-panel { background: var(--chrome); -webkit-backdrop-filter: blur(28px) saturate(1.25); backdrop-filter: blur(28px) saturate(1.25); border-color: var(--chrome-edge); }
+:root[data-theme^="apple-"] .design-option { background: var(--surface); }
+:root[data-theme^="apple-"] .design-option[aria-checked="true"] { background: var(--accent-soft); }
+:root[data-theme^="apple-"] #settings-tabs { border: 1px solid var(--border); }
+:root[data-theme^="apple-"] #send-button { border-radius: 50%; }
+:root[data-theme^="apple-"] .welcome h1 { font-weight: 600; letter-spacing: -.9px; }
+:root[data-theme="apple-dark"] #settings-tabs button.active { box-shadow: 0 1px 5px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06); }
+/* Neumorphismus: gleichfarbige Flächen mit heller und dunkler Reliefkante. */
+:root[data-theme="neumorphic"] .brand-mark,
+:root[data-theme="neumorphic"] .message.assistant,
+:root[data-theme="neumorphic"] .quiet-button,
+:root[data-theme="neumorphic"] #suggestion-chips button,
+:root[data-theme="neumorphic"] .settings-group { border-color: transparent; box-shadow: var(--card-shadow); }
+:root[data-theme="neumorphic"] #view-frame { border-color: transparent; }
+:root[data-theme="neumorphic"] #chat-history { padding-left: 8px; padding-top: 10px; }
+:root[data-theme="neumorphic"] .composer-input { border: 1px solid rgba(255,255,255,.36); background: var(--background); box-shadow: inset 4px 4px 9px #c8cdd7, inset -4px -4px 9px #ffffff; border-radius: 18px; }
+:root[data-theme="neumorphic"] #send-button { box-shadow: 3px 3px 7px #c5cbd5, -3px -3px 7px #ffffff; }
+:root[data-theme="neumorphic"] #settings-tabs { box-shadow: inset 3px 3px 7px #c7cdd7, inset -3px -3px 7px #ffffff; }
+:root[data-theme="neumorphic"] #settings-tabs button.active { box-shadow: 3px 3px 7px #c7cdd7, -3px -3px 7px #ffffff; background: var(--background); }
+:root[data-theme="neumorphic"] .setting select,
+:root[data-theme="neumorphic"] .setting textarea { background: var(--background); box-shadow: inset 2px 2px 5px #ccd1da, inset -2px -2px 5px #ffffff; }
+:root[data-theme="neumorphic"] #design-panel { border-color: rgba(255,255,255,.5); }
+:root[data-theme="neumorphic"] .design-option[aria-checked="true"] { box-shadow: inset 2px 2px 6px #c5cbd5, inset -2px -2px 6px #ffffff; border-color: var(--accent); }
+/* OLED: echtes Schwarz bleibt großflächig erhalten; nur wenige Akzente leuchten. */
+:root[data-theme="oled"] .welcome-emphasis { color: var(--accent); text-shadow: 0 0 18px rgba(103,255,18,.18); }
+:root[data-theme="oled"] #send-button { box-shadow: 0 0 14px rgba(103,255,18,.19); }
+:root[data-theme="oled"] .brand-mark { color: var(--accent); background: #040a02; }
+:root[data-theme="oled"] .brand-dot { text-shadow: 0 0 10px rgba(103,255,18,.5); }
+:root[data-theme="oled"] #design-panel { border: 1px solid #345424; }
+:root[data-theme="oled"] .composer-input { background: #020402; border-radius: 9px; }
+:root[data-theme="oled"] .message.assistant { background: #000000; }
+/* Pixel Art: lokale Bitmap-Schrift, harte Kanten, versetzte Schatten und Primärfarben. */
+:root[data-theme="pixel"] .brand strong { font-family: var(--display-font); font-size: 16px; letter-spacing: -1px; }
+:root[data-theme="pixel"] .eyebrow,
+:root[data-theme="pixel"] .section-label,
+:root[data-theme="pixel"] .welcome-eyebrow,
+:root[data-theme="pixel"] .quiet-button,
+:root[data-theme="pixel"] #suggestion-chips button { font-family: var(--display-font); font-size: 8px; letter-spacing: 0; line-height: 1.8; }
+:root[data-theme="pixel"] .brand-mark { border-radius: 0; border: 2px solid var(--border); color: #ffe45c; box-shadow: 3px 3px 0 #050513; }
+:root[data-theme="pixel"] #view-frame { border: 2px solid var(--border); }
+:root[data-theme="pixel"] .welcome h1 { max-width: none; font-size: 16px; line-height: 1.8; font-weight: 400; letter-spacing: -.7px; color: #ffffff; text-shadow: 2px 2px #df4058; margin-top: 2px; }
+:root[data-theme="pixel"] .welcome-eyebrow { color: #ffe45c; }
+:root[data-theme="pixel"] .welcome-eyebrow:before { content: "★ "; }
+:root[data-theme="pixel"] .welcome-eyebrow:after { content: " ★"; }
+:root[data-theme="pixel"] .welcome-emphasis { color: #ffe45c; text-shadow: 2px 2px #8b5425; }
+:root[data-theme="pixel"] .welcome-note { color: #74e4a0; font-size: 10px; }
+:root[data-theme="pixel"] .welcome-note:before { border-radius: 0; background: #74e4a0; }
+:root[data-theme="pixel"] .message { border-radius: 0; font-size: 12px; line-height: 1.8; }
+:root[data-theme="pixel"] .message.assistant { border: 2px solid var(--border); box-shadow: 3px 3px 0 #050513; }
+:root[data-theme="pixel"] .message.user { border: 2px solid #7395ff; box-shadow: 3px 3px 0 #050513; }
+:root[data-theme="pixel"] .composer-input,
+:root[data-theme="pixel"] #send-button,
+:root[data-theme="pixel"] #settings-tabs,
+:root[data-theme="pixel"] #settings-tabs button,
+:root[data-theme="pixel"] .setting select,
+:root[data-theme="pixel"] .setting textarea,
+:root[data-theme="pixel"] .settings-group,
+:root[data-theme="pixel"] .icon-button,
+:root[data-theme="pixel"] .attachment { border-radius: 0; }
+:root[data-theme="pixel"] .composer-input { border: 2px solid var(--border-strong); box-shadow: 4px 4px 0 #050513; }
+:root[data-theme="pixel"] #send-button { box-shadow: 2px 2px 0 #050513; }
+:root[data-theme="pixel"] .design-heading h2,
+:root[data-theme="pixel"] #settings-header h2 { font-size: 12px; line-height: 1.8; font-weight: 400; letter-spacing: -.5px; }
+:root[data-theme="pixel"] #design-panel { border: 2px solid var(--accent); }
+:root[data-theme="pixel"] #settings-tabs button.active { background: #253c9a; }
+:root[data-theme="pixel"] .pending:before { border-radius: 0; }
+/* Maximalismus: kräftige Farbblöcke, Collagewinkel und grafische schwarze Kanten. */
+:root[data-theme="maximalist"] .brand strong { font-family: var(--display-font); font-size: 23px; font-weight: 900; text-shadow: 2px 2px #ff3bd4; }
+:root[data-theme="maximalist"] .brand-dot { color: #131313; }
+:root[data-theme="maximalist"] .brand-mark { border: 2px solid #131313; border-radius: 2px; background: #00ebed; color: #131313; box-shadow: 3px 3px 0 #131313; transform: rotate(-4deg); }
+:root[data-theme="maximalist"] .welcome { position: relative; }
+:root[data-theme="maximalist"] body { background: #fff500; }
+:root[data-theme="maximalist"] body.welcome-view { background: #ff3bd4; }
+:root[data-theme="maximalist"] .welcome h1 { font-weight: 900; letter-spacing: -1.1px; text-transform: uppercase; font-size: 27px; line-height: 1.12; }
+:root[data-theme="maximalist"] .welcome-emphasis { text-shadow: 2px 2px #00ebed; }
+:root[data-theme="maximalist"] .welcome-eyebrow { align-self: flex-start; color: #131313; background: #00ebed; border: 2px solid #131313; padding: 4px 7px; font-weight: 800; letter-spacing: 1px; transform: rotate(-2deg); margin-left: 1px; }
+:root[data-theme="maximalist"] .welcome-note { color: #131313; font-weight: 600; }
+:root[data-theme="maximalist"] #view-frame { border: 3px solid #131313; transform: rotate(-.5deg); }
+:root[data-theme="maximalist"] .message.assistant { background: #5cf0eb; border: 2px solid #131313; box-shadow: 3px 3px 0 #131313; }
+:root[data-theme="maximalist"] .message.user { border: 2px solid #131313; box-shadow: 3px 3px 0 #131313; }
+:root[data-theme="maximalist"] .composer-input { border-radius: 1px; border: 3px solid #131313; background: #fffde0; box-shadow: 4px 4px 0 #131313; }
+:root[data-theme="maximalist"] #send-button { border-radius: 0; background: #67ff12; border: 2px solid #131313; color: #131313; }
+:root[data-theme="maximalist"] #design-panel { border: 3px solid #131313; }
+:root[data-theme="maximalist"] .quiet-button,
+:root[data-theme="maximalist"] #suggestion-chips button { background: #00ebed; border: 2px solid #131313; box-shadow: 2px 2px 0 #131313; color: #131313; font-weight: 700; }
+:root[data-theme="maximalist"] #suggestion-chips button:nth-child(2) { background: #67ff12; transform: rotate(1deg); }
+:root[data-theme="maximalist"] .settings-group,
+:root[data-theme="maximalist"] #settings-tabs { border-radius: 1px; border: 2px solid #131313; }
+:root[data-theme="maximalist"] #settings-tabs { background: #00ebed; }
+:root[data-theme="maximalist"] #settings-tabs button.active { background: #ff8ade; border-radius: 0; }
+:root[data-theme="maximalist"] .design-option { border: 2px solid #131313; }
+:root[data-theme="maximalist"] .design-option[aria-checked="true"] { background: #67ff12; box-shadow: 3px 3px 0 #131313; }
+/* Die Vorschauen zeigen die Material- und Formunterschiede bereits vor der Auswahl. */
+.design-option[data-design="neumorphic"] .preview-card { box-shadow: 3px 3px 5px #c6cbd5, -3px -3px 5px #ffffff; }
+.design-option[data-design="neumorphic"] .preview-bubble { box-shadow: inset 1px 1px 3px rgba(0,0,0,.2); }
+.design-option[data-design="oled"] .preview-bubble { box-shadow: 0 0 7px rgba(103,255,18,.5); }
+.design-option[data-design="pixel"] .design-preview,
+.design-option[data-design="pixel"] .preview-card,
+.design-option[data-design="pixel"] .preview-bubble { border-radius: 0; }
+.design-option[data-design="pixel"] .design-preview { border: 2px solid #626799; }
+.design-option[data-design="pixel"] .preview-card { box-shadow: 2px 2px 0 #050513; }
+.design-option[data-design="maximalist"] .design-preview { border: 2px solid #131313; border-radius: 1px; }
+.design-option[data-design="maximalist"] .preview-card { border-radius: 0; transform: rotate(-2deg); box-shadow: 2px 2px 0 #131313; }
+.design-option[data-design="maximalist"] .preview-bubble { border-radius: 0; box-shadow: 2px 2px 0 #131313; }
+@media (max-width: 380px) { :root[data-theme="pixel"] .welcome h1 { font-size: 8px; line-height: 2.2; letter-spacing: 0; } :root[data-theme="pixel"] .brand-caption { font-size: 9px; } :root[data-theme="maximalist"] .welcome h1 { font-size: 23px; } }
+@media (max-height: 240px) { :root[data-theme="pixel"] .welcome h1 { font-size: 16px; line-height: 1.6; } :root[data-theme="maximalist"] .welcome h1 { font-size: 24px; } }
+@media (max-width: 380px) and (max-height: 240px) { :root[data-theme="pixel"] .welcome h1 { font-size: 8px; line-height: 2.2; } }
+@media (prefers-reduced-transparency: reduce) { :root[data-theme^="apple-"] #design-panel, :root[data-theme^="apple-"] .header-actions { background: var(--surface-raised); -webkit-backdrop-filter: none; backdrop-filter: none; } }
+@media (prefers-contrast: more) { :root[data-theme^="apple-"] { --border: var(--border-strong); } }
+@media (prefers-reduced-motion: reduce) { #design-panel { animation: none; } }
+
+.brand-mark img { width: 29px; height: 29px; display: block; }
+:root[data-theme="pixel"] .brand-mark img { image-rendering: pixelated; }
+@media (max-width: 380px) { #suggestion-chips { display: none; } }

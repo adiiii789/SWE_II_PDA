@@ -260,9 +260,9 @@ erzeugen, weil die Tests schon eine eigene `QApplication` haben.
 
 **[backend/desktop/popup_window.py](backend/desktop/popup_window.py)**
 
-- Unter Windows wird `Qt.Popup | Qt.FramelessWindowHint` verwendet. Auf dem Mac wird ein
-  rahmenloses `Qt.Tool` mit einem Mausklick-Monitor verwendet, damit auch proaktiv geöffnete
-  Fenster den Fokus behalten. Klicks außerhalb verstecken das Fenster auf beiden Systemen.
+- Auf beiden Plattformen wird ein rahmenloses `Qt.Tool` verwendet. Auf dem Mac meldet ein
+  Mausklick-Monitor Klicks außerhalb, unter Windows wird Fokusverlust ausgewertet. So lässt sich
+  das Fenster vor dem Verstecken animiert schließen und proaktiv geöffnet aktiv halten.
 - `toggle_at_anchor()` öffnet oder schließt an der tatsächlichen Symbolposition. Die Größe
   wird aus `POPUP_SIZE_RATIO` berechnet. `popup_geometry()` begrenzt Position und Größe auf
   den verfügbaren Bildschirm. Auf dem Mac gleitet das Popup unter der Menüleiste hinein,
@@ -963,3 +963,52 @@ const sum = await add(2, 3);
 
 Funktionen mit `_` am Anfang bleiben privat. Argumente und Rückgabewerte müssen JSON-tauglich
 sein (Text, Zahlen, Listen, Dicts).
+
+
+## Gestaltung und Designauswahl
+
+`frontend/theme.css` definiert semantische Farbvariablen für Apple Hell, Apple Dunkel,
+Neumorphismus, OLED, Pixel Art und Maximalismus. `design-styles.css` ergänzt unterschiedliche
+Materialien, Formen, Schriftwahl und Schatten. Apple-Materialien werden innerhalb der Web-Oberfläche
+visuell nachgebildet; es handelt sich nicht um native SwiftUI-Liquid-Glass-Komponenten.
+Inhalte bleiben ruhig; die funktionale Bedienebene wird mit dezenten Materialeffekten hervorgehoben.
+
+`appearance.js` initialisiert die Auswahl bereits im Dokumentkopf. Standard ist `system`,
+der ausschließlich zwischen `apple-light` und `apple-dark` umschaltet. Die Version-2-Präferenz
+setzt beim ersten Start der neuen Auswahl Apple Automatisch; anschließend wird die explizite Wahl
+unter `pda.appearance.v2` im lokalen WebEngine-Profil beibehalten. Nur bekannte Kennungen sind erlaubt.
+
+Isolierte Templates betten die Gestaltung, die lokale Pixelschrift und `theme-frame.js` ein.
+Der Elternframe übermittelt nur die aktive Palette. Die Ansicht akzeptiert Nachrichten
+nur vom Elternfenster und nur für bekannte Designnamen. Die iframe-Sandbox bleibt ohne
+`allow-same-origin`. Designwechsel laden den Inhalt nicht neu. Eigene HtmlViews behalten ihre Styles.
+Press Start 2P wird als lokale Datenschrift eingebettet, damit auch isolierte Ansichten ohne
+externe Verbindung funktionieren. Lizenz und Herkunft liegen neben der Schrift unter `frontend/fonts/`.
+
+Die Roboterzeichnung liegt als skalierbares Farbsymbol unter `frontend/icons/agent.svg`.
+`TrayIcon.ico` enthält sieben PNG-Größen für Windows. `assets/tray-macos.svg` verwendet die
+vereinfachte Silhouette mit transparent ausgesparten Augen; `QIcon.setIsMask(True)` passt
+sie an die Menüleistenfarbe an. Der Roboter erscheint ebenfalls in der Kopfzeile.
+
+## Fensterform und Bewegung
+
+Das rahmenlose Tool-Fenster hat keinen zusätzlichen Außenrand. Auf dem Mac setzt
+`macos.round_window` auf der echten Cocoa-Inhaltsfläche einen geglätteten Eckenradius,
+aktiviert die Beschneidung der Ebene und den Fensterschatten. Unter Windows wird die Form
+als gerundete Qt-Fenstermaske bei Größenänderungen aktualisiert. Der Radius ist konfigurierbar.
+
+Zwei parallele Qt-Animationsgruppen bewegen die Fenstergeometrie und Fensterdeckkraft:
+220 ms beim Öffnen, 140 ms beim Schließen. Die Bewegung verläuft in Richtung der Symbolposition;
+beim Wiederöffnen während des Schließens wird die ausstehende Versteckaktion abgebrochen.
+`dismiss()` animiert das Verstecken, während `hide()` für sofortiges Aufräumen verfügbar bleibt.
+Die Web-Seite und der Chat werden beim Schließen nicht zerstört.
+
+`desktop/motion.py` liest die Bewegungseinstellung aus Cocoa bzw. Windows. Die Umgebungsvariable
+`PDA_REDUCE_MOTION` kann sie übersteuern. Bei reduzierter Bewegung werden sowohl Geometrie- als
+auch Deckkraftanimation ausgelassen. Unter Windows wird beim Fokusverlust geschlossen, wobei
+eigene Popup-Menüs und untergeordnete Fenster ausgenommen sind; auf dem Mac meldet der bestehende
+Mausmonitor Klicks in andere Anwendungen.
+
+Die Tests prüfen Designwahl, Pixelschrift, Wiederherstellung nach Neuladen, Tastaturbedienung,
+Sandbox, echte Mac-Fensterrundungen, Öffnen/Schließen, Abbrechen einer Schließanimation und
+reduzierte Bewegung. Native Windows-Tests müssen auf Windows ausgeführt werden.

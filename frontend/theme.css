@@ -1,19 +1,83 @@
-/* Gemeinsame Farben für Popup und Templates (templates/base.html.j2 bettet diese Datei ein). */
-:root {
-  --background: #2E2E2E;   /* identisch mit POPUP_BACKGROUND in backend/config.py */
-  --surface: #383838;
-  --text: #F1F1F1;
-  --text-muted: #AAAAAA;
-  --control: #3E3E3E;
-  --control-hover: #4E4E4E;
-  --border: #555555;
-  --accent: #3A4A6A;
+/* Gemeinsame semantische Farben; Apple Hell ist die Grundgestaltung. */
+:root, :root[data-theme="apple-light"] {
+  color-scheme: light;
+  --background: #f5f5f7; --surface: #ffffff; --surface-raised: #ffffff; --surface-soft: #eeeef2;
+  --text: #1d1d1f; --text-muted: #65656d; --text-faint: #73737b;
+  --control: #e9e9ee; --control-hover: #dfdfe6;
+  --border: rgba(35,35,45,.10); --border-strong: rgba(35,35,45,.22);
+  --accent: #0067d9; --accent-ink: #ffffff; --accent-soft: rgba(0,103,217,.09);
+  --user-bubble: #0067d9; --user-text: #ffffff; --link: #0067d9;
+  --danger: #b62d3a; --danger-soft: #fff0f1; --warning: #875c12;
+  --shadow: 0 20px 55px rgba(20,25,40,.17), 0 3px 12px rgba(20,25,40,.06);
+  --card-shadow: 0 2px 9px rgba(20,25,40,.035);
+  --hero-glow: rgba(98,149,233,.06); --chrome: rgba(255,255,255,.72); --chrome-edge: rgba(255,255,255,.95);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --display-font: var(--font);
+  --radius: 18px; --radius-small: 11px; --bubble-radius: 15px;
 }
-
-html, body {
-  margin: 0;
-  background: var(--background);
-  color: var(--text);
-  font-family: system-ui, "Segoe UI", sans-serif;
-  font-size: 13px;
+:root[data-theme="apple-dark"] {
+  color-scheme: dark;
+  --background: #161618; --surface: #222225; --surface-raised: #303034; --surface-soft: #1c1c1f;
+  --text: #f5f5f7; --text-muted: #b0b0b9; --text-faint: #9797a2;
+  --control: #303034; --control-hover: #3b3b40;
+  --border: rgba(245,245,255,.10); --border-strong: rgba(245,245,255,.23);
+  --accent: #82b7ff; --accent-ink: #092340; --accent-soft: rgba(130,183,255,.12);
+  --user-bubble: #0968d5; --user-text: #ffffff; --link: #82b7ff;
+  --danger: #ffadac; --danger-soft: #3b2025; --warning: #ecc079;
+  --shadow: 0 20px 55px rgba(0,0,0,.5), 0 3px 12px rgba(0,0,0,.2);
+  --card-shadow: 0 2px 10px rgba(0,0,0,.10); --hero-glow: rgba(100,143,209,.06);
+  --chrome: rgba(54,54,60,.76); --chrome-edge: rgba(255,255,255,.13);
 }
+:root[data-theme="neumorphic"] {
+  color-scheme: light;
+  --background: #e6e8ed; --surface: #e6e8ed; --surface-raised: #e9ebef; --surface-soft: #e3e6ec;
+  --text: #343e51; --text-muted: #5b667a; --text-faint: #657086;
+  --control: #e6e8ed; --control-hover: #e1e4eb;
+  --border: rgba(255,255,255,.2); --border-strong: #b7beca;
+  --accent: #47638c; --accent-ink: #ffffff; --accent-soft: rgba(71,99,140,.09);
+  --user-bubble: #47638c; --user-text: #ffffff; --link: #36557f;
+  --danger: #a52f3b; --danger-soft: #f2dce0; --warning: #79551a;
+  --card-shadow: 7px 7px 15px #c6cbd5, -7px -7px 15px #ffffff;
+  --shadow: 12px 12px 28px #bfc5d0, -10px -10px 28px #ffffff; --hero-glow: transparent;
+  --radius: 20px; --radius-small: 12px; --bubble-radius: 17px;
+}
+:root[data-theme="oled"] {
+  color-scheme: dark;
+  --background: #000000; --surface: #050805; --surface-raised: #0a100a; --surface-soft: #020402;
+  --text: #f0f8ed; --text-muted: #a4b39e; --text-faint: #90a18a;
+  --control: #101810; --control-hover: #1b2a16;
+  --border: #20311b; --border-strong: #4d6c40;
+  --accent: #67ff12; --accent-ink: #082000; --accent-soft: rgba(103,255,18,.08);
+  --user-bubble: #153a0a; --user-text: #e7ffd8; --link: #8fff5c;
+  --danger: #ffaaaa; --danger-soft: #2b1111; --warning: #f4da79;
+  --card-shadow: none; --shadow: 0 16px 50px #000000; --hero-glow: transparent;
+  --radius: 10px; --radius-small: 7px; --bubble-radius: 10px;
+}
+:root[data-theme="pixel"] {
+  color-scheme: dark;
+  --background: #101026; --surface: #191a3c; --surface-raised: #22254a; --surface-soft: #13142f;
+  --text: #f5f3ff; --text-muted: #b8bbdd; --text-faint: #afb2d1;
+  --control: #29315a; --control-hover: #36416e;
+  --border: #626799; --border-strong: #9ea7db;
+  --accent: #ffe45c; --accent-ink: #191528; --accent-soft: rgba(255,228,92,.12);
+  --user-bubble: #253c9a; --user-text: #ffffff; --link: #8bd9ff;
+  --danger: #ffaaaa; --danger-soft: #441d37; --warning: #ffe45c;
+  --card-shadow: 4px 4px 0 #050513; --shadow: 7px 7px 0 #050513; --hero-glow: transparent;
+  --font: "SFMono-Regular", Consolas, "Liberation Mono", monospace; --display-font: "PDA Pixel", monospace;
+  --radius: 0px; --radius-small: 0px; --bubble-radius: 0px;
+}
+:root[data-theme="maximalist"] {
+  color-scheme: light;
+  --background: #fff500; --surface: #fffbc3; --surface-raised: #fffde0; --surface-soft: #fff893;
+  --text: #131313; --text-muted: #3a361c; --text-faint: #474124;
+  --control: #00ebed; --control-hover: #51f6f5;
+  --border: #161616; --border-strong: #161616;
+  --accent: #ff3bd4; --accent-ink: #131313; --accent-soft: #ffb0eb;
+  --user-bubble: #ff8ade; --user-text: #131313; --link: #542199;
+  --danger: #9f1427; --danger-soft: #ffbec4; --warning: #533300;
+  --card-shadow: 5px 5px 0 #171717; --shadow: 7px 7px 0 #171717; --hero-glow: transparent;
+  --font: Arial, sans-serif; --display-font: "Arial Black", Arial, sans-serif;
+  --radius: 2px; --radius-small: 1px; --bubble-radius: 1px;
+}
+html, body { margin: 0; background: var(--background); color: var(--text); font-family: var(--font); font-size: 13px; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+::selection { background: var(--accent); color: var(--accent-ink); }

@@ -307,5 +307,86 @@ class SettingsPanelTest(unittest.TestCase):
         self.assertEqual(self.store.values, {})   # Schließen ohne Speichern
 
 
+class AppearancePanelTest(unittest.TestCase):
+    """Echte Web-Oberfläche: Auswahl, Speicherung, Tastatur und Sandbox bleiben funktionsfähig."""
+
+    @classmethod
+    def setUpClass(cls):
+        PopupPageTest.setUpClass.__func__(cls)
+        if not wait_until(lambda: run_js(cls.page, "document.querySelectorAll('[data-design]').length === 7")):
+            raise TimeoutError('Designauswahl nicht initialisiert')
+
+    @classmethod
+    def tearDownClass(cls):
+        PopupPageTest.tearDownClass.__func__(cls)
+
+    def setUp(self):
+        self.original = run_js(self.page, 'PDAAppearance.selected')
+        run_js(self.page, 'PDAAppearance.close(false)')
+        self.addCleanup(run_js, self.page, "PDAAppearance.select(%r); PDAAppearance.close(false)" % self.original)
+
+    def js(self, script):
+        return run_js(self.page, script)
+
+    def test_all_designs_change_the_interface_without_losing_messages(self):
+        before = self.js(MESSAGES)
+        self.js("document.getElementById('design-button').click()")
+        self.assertFalse(self.js("document.getElementById('design-panel').hidden"))
+        self.assertEqual(self.js("Array.from(document.querySelectorAll('[data-design]')).map(b=>b.dataset.design)"),
+                         ['system', 'apple-light', 'apple-dark', 'neumorphic', 'oled', 'pixel', 'maximalist'])
+        colors = []
+        for design in ('apple-light', 'apple-dark', 'neumorphic', 'oled', 'pixel', 'maximalist'):
+            self.js("document.querySelector('[data-design=%s]').click()" % design)
+            self.assertEqual(self.js('document.documentElement.dataset.theme'), design)
+            self.assertTrue(self.js("document.querySelector('[data-design=%s]').getAttribute('aria-checked') === 'true'" % design))
+            colors.append(self.js("getComputedStyle(document.body).backgroundColor"))
+        self.assertEqual(len(set(colors)), 6)
+        self.assertEqual(self.js(MESSAGES), before)
+        self.assertEqual(self.js(IFRAME_SANDBOX), 'allow-scripts')
+
+    def test_selection_survives_page_reload(self):
+        self.js("PDAAppearance.select('pixel')")
+        loaded = []
+        self.popup.content.loadFinished.connect(loaded.append)
+        try:
+            self.popup.content.reload()
+            self.assertTrue(wait_until(lambda: bool(loaded)))
+            self.assertTrue(wait_until(lambda: self.js("PDAAppearance.selected === 'pixel' && document.querySelectorAll('[data-design]').length === 7")))
+        finally:
+            self.popup.content.loadFinished.disconnect(loaded.append)
+        self.assertEqual(self.js('document.documentElement.dataset.theme'), 'pixel')
+
+    def test_keyboard_selection_and_escape_return_focus(self):
+        self.js("PDAAppearance.select('apple-light'); document.getElementById('design-button').click()")
+        self.js("document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowRight', bubbles:true}))")
+        self.assertEqual(self.js('PDAAppearance.selected'), 'apple-dark')
+        self.js(ESCAPE)
+        self.assertTrue(self.js("document.getElementById('design-panel').hidden"))
+        self.assertEqual(self.js('document.activeElement.id'), 'design-button')
+
+    def test_settings_close_the_design_picker(self):
+        self.js("document.getElementById('design-button').click(); document.getElementById('settings-button').click()")
+        self.assertTrue(self.js("document.getElementById('design-panel').hidden"))
+        self.assertFalse(self.js("document.getElementById('settings-panel').hidden"))
+        self.js('closeSettings()')
+
+    def test_invalid_design_does_not_change_the_saved_choice(self):
+        self.js("PDAAppearance.select('apple-light')")
+        self.assertTrue(self.js("(() => {try { PDAAppearance.select('../invalid'); return false; } catch (_) { return true; }})()"))
+        self.assertEqual(self.js('PDAAppearance.selected'), 'apple-light')
+        self.assertEqual(self.js("localStorage.getItem('pda.appearance.v2')"), 'apple-light')
+
+    def test_automatic_appearance_uses_apple_light_or_dark(self):
+        self.js("PDAAppearance.select('system')")
+        expected = self.js("matchMedia('(prefers-color-scheme: dark)').matches ? 'apple-dark' : 'apple-light'")
+        self.assertEqual(self.js('PDAAppearance.theme'), expected)
+        self.assertEqual(self.js("document.querySelector('[data-design=system]').getAttribute('aria-checked')"), 'true')
+
+    def test_pixel_font_is_bundled_and_loaded(self):
+        self.js("PDAAppearance.select('pixel')")
+        self.assertTrue(wait_until(lambda: self.js("Array.from(document.fonts).some(f => f.family.includes('PDA Pixel') && f.status === 'loaded')")))
+        self.assertIn('PDA Pixel', self.js("getComputedStyle(document.querySelector('.brand strong')).fontFamily"))
+
+
 if __name__ == "__main__":
     unittest.main()

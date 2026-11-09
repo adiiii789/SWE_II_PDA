@@ -156,6 +156,7 @@ function setSettingsStatus(text, isError = false) {
 }
 
 async function openSettings() {
+  PDAAppearance.close(false);
   settingsPanel.hidden = false;
   settingsButton.classList.add("active");
   setSettingsStatus("lädt …");

@@ -1,17 +1,19 @@
-/* Layout der Ansicht im iframe (wird in die Templates eingebettet). */
-body {
-  padding: 16px;
-  box-sizing: border-box;
-}
+/* Ruhige Kartenansichten; die Farben kommen von der gemeinsamen Designpalette. */
+html, body { min-height: 100%; height: 100%; background: var(--surface); }
+body { padding: 23px; box-sizing: border-box; background: radial-gradient(ellipse at top right, var(--hero-glow), transparent 70%), var(--surface); }
+h2 { margin: 0 0 12px; font-size: 23px; line-height: 1.25; letter-spacing: -.7px; font-weight: 600; }
+p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.75; max-width: 46em; }
+p + table { margin-top: 18px; }
+table { width: 100%; border-collapse: collapse; font-size: 11px; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); line-height: 1.6; vertical-align: top; overflow-wrap: anywhere; }
+th { color: var(--text-muted); font-weight: 500; font-size: 10px; }
+tbody tr:last-child td { border-bottom: 0; }
+.welcome { min-height: 100%; }
+.welcome-eyebrow { font-size: 9px; color: var(--accent); font-weight: 650; letter-spacing: 2px; margin-bottom: 14px; }
+.welcome h1 { max-width: 12em; font-size: 28px; line-height: 1.18; letter-spacing: -1.1px; font-weight: 600; margin: 0 0 12px; }
+.welcome-note { display: flex; align-items: center; color: var(--text-faint); font-size: 9px; letter-spacing: .25px; margin-top: 18px; }
+.welcome-note:before { content: ""; width: 5px; height: 5px; background: var(--accent); border-radius: 50%; display: inline-block; margin-right: 7px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+@media (max-height: 240px) { body { padding: 17px 20px; } .welcome-eyebrow { margin-bottom: 10px; } .welcome h1 { font-size: 24px; } p { font-size: 11px; line-height: 1.6; } .welcome-note { display: none; } }
 
-h2 { margin: 0 0 12px; font-size: 18px; }
-p  { margin: 0; color: var(--text-muted); }
-
-p + table { margin-top: 12px; }
-table { width: 100%; border-collapse: collapse; }
-th, td {
-  text-align: left;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-}
-th { color: var(--text-muted); font-weight: 600; }
+@media (max-height: 170px) { body { padding: 12px 18px; } .welcome-eyebrow { font-size: 8px; margin-bottom: 8px; } .welcome h1 { font-size: 22px; margin-bottom: 8px; } p { font-size: 10.5px; line-height: 1.5; } }

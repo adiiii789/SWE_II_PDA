@@ -17,6 +17,25 @@ def activate_application() -> bool:
     return True
 
 
+def round_window(view_id: int, radius: float) -> bool:
+    """Cocoa schneidet die tatsächliche Fensterfläche mit geglätteten Rundungen zu."""
+    import objc
+    from AppKit import NSColor
+
+    view = objc.objc_object(c_void_p=view_id)
+    window = view.window()
+    if window is None:
+        return False
+    window.setOpaque_(False)
+    window.setBackgroundColor_(NSColor.clearColor())
+    window.setHasShadow_(True)
+    content = window.contentView()
+    content.setWantsLayer_(True)
+    content.layer().setCornerRadius_(radius)
+    content.layer().setMasksToBounds_(True)
+    return True
+
+
 class OutsideClickMonitor:
     """Mausklicks in anderen Anwendungen schließen das Menüleistenfenster."""
 

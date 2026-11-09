@@ -12,6 +12,8 @@ const splitter = document.getElementById("splitter");
 const chatMaxButton = document.getElementById("chat-max-button");
 const enlargeButton = document.getElementById("enlarge-button");
 const scrollDownButton = document.getElementById("scroll-down-button");
+const sendButton = document.getElementById("send-button");
+const suggestionChips = document.getElementById("suggestion-chips");
 
 // Sprache (backend/speech.py): was verfügbar ist, kommt von speech_support().
 let speech = {input: false, output: false};
@@ -148,12 +150,16 @@ function markProactive(message, title) {
 
 // spoken: Nachricht kam per Spracheingabe - dann wird die Antwort vorgelesen.
 async function submitText(text, spoken = false) {
+  if (replyPending) return;
+  suggestionChips.hidden = true;
   addMessage(text, "user");
   const pending = document.createElement("div");
   pending.className = "pending";
-  pending.textContent = "denkt nach …";
+  pending.textContent = "Antwort wird vorbereitet …";
   appendToChat(pending, true);
   replyPending = true;
+  sendButton.disabled = true;
+  chatHistory.setAttribute("aria-busy", "true");
   updateRecordButton();
   try {
     const reply = await chat(text);
@@ -164,6 +170,9 @@ async function submitText(text, spoken = false) {
   } finally {
     pending.remove();
     replyPending = false;
+    sendButton.disabled = false;
+    chatHistory.setAttribute("aria-busy", "false");
+    if (text.trim().toLowerCase() === "neu") suggestionChips.hidden = false;
     updateRecordButton();
   }
 }
@@ -171,13 +180,14 @@ async function submitText(text, spoken = false) {
 async function sendMessage(event) {
   event.preventDefault();
   const text = messageInput.value.trim();
-  if (!text) return;
+  if (!text || replyPending) return;
   messageInput.value = "";
   await submitText(text);
 }
 
 function updateRecordButton() {
   recordButton.classList.toggle("recording", recordState === "recording");
+  recordButton.classList.toggle("transcribing", recordState === "transcribing");
   recordButton.disabled = recordState === "transcribing" || (replyPending && recordState === "idle");
   recordButton.textContent = {idle: "🎤", recording: "⏹", transcribing: "…"}[recordState];
   recordButton.title = {
@@ -185,6 +195,7 @@ function updateRecordButton() {
     recording: "Klicken zum Senden, Escape zum Abbrechen",
     transcribing: "wird erkannt …",
   }[recordState];
+  recordButton.setAttribute("aria-label", recordButton.title);
 }
 
 function setRecordState(state) {
@@ -309,11 +320,13 @@ function onSplitterUp() {
 function updateLayoutButtons() {
   document.body.classList.toggle("chat-maximized", chatMaximized);
   chatMaxButton.classList.toggle("active", chatMaximized);
-  chatMaxButton.textContent = chatMaximized ? "⇕ Ansicht zeigen" : "⇕ Chat groß";
   chatMaxButton.title = chatMaximized ? "Ansicht wieder einblenden" : "Ansicht ausblenden, Chat über die ganze Höhe";
+  chatMaxButton.setAttribute("aria-label", chatMaxButton.title);
+  chatMaxButton.setAttribute("aria-pressed", String(chatMaximized));
   enlargeButton.classList.toggle("active", popupEnlarged);
-  enlargeButton.textContent = popupEnlarged ? "⤡ Fenster klein" : "⤢ Fenster groß";
   enlargeButton.title = popupEnlarged ? "Fenster auf Normalgröße" : "Fenster vergrößern";
+  enlargeButton.setAttribute("aria-label", enlargeButton.title);
+  enlargeButton.setAttribute("aria-pressed", String(popupEnlarged));
 }
 
 function toggleChatMaximized() {
@@ -351,6 +364,18 @@ splitter.addEventListener("pointermove", onSplitterMove);
 splitter.addEventListener("pointerup", onSplitterUp);
 splitter.addEventListener("lostpointercapture", onSplitterUp);
 splitter.addEventListener("dblclick", () => setSplit(null));
+splitter.addEventListener("keydown", event => {
+  if (!["ArrowUp", "ArrowDown", "Home"].includes(event.key)) return;
+  event.preventDefault();
+  if (event.key === "Home") return setSplit(null);
+  const top = viewFrame.getBoundingClientRect().top;
+  const total = chatPanel.getBoundingClientRect().bottom - top;
+  const height = viewFrame.getBoundingClientRect().height + (event.key === "ArrowUp" ? -20 : 20);
+  setSplit(Math.max(VIEW_MIN_PX, Math.min(height, total - CHAT_MIN_PX)) / total);
+});
+for (const button of suggestionChips.querySelectorAll("[data-command]")) {
+  button.addEventListener("click", () => submitText(button.dataset.command));
+}
 chatMaxButton.addEventListener("click", toggleChatMaximized);
 enlargeButton.addEventListener("click", toggleEnlarged);
 document.addEventListener("keydown", onKeyDown);

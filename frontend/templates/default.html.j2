@@ -14,9 +14,28 @@
   <style>
 {% include "theme.css" %}
 {% include "view.css" %}
+{% include "fonts/press-start-2p/font.css" %}
+{% include "design-styles.css" %}
+{% if welcome | default(false) %}{% include "robot-scene.css" %}{% endif %}
   </style>
 </head>
-<body>
+<body{% if welcome | default(false) %} class="welcome-view"{% endif %}>
+  {% if welcome | default(false) %}
+  <section class="welcome">
+    <div class="welcome-copy">
+      <span class="welcome-eyebrow">ALLES AN EINEM ORT</span>
+      <div class="sr-only"><h2>{{ title }}</h2></div>
+      <h1>Mehr Überblick.<br><span class="welcome-emphasis">Mehr Raum für dich.</span></h1>
+      <p>{{ text }}</p>
+      <span class="welcome-note">Dein Alltag, ein bisschen leichter.</span>
+    </div>
+    <div class="robot-stage" aria-hidden="true">
+      <div class="robot-shadow"></div>
+      <div class="robot-fallback">{% include "icons/agent.svg" %}</div>
+      <canvas class="robot-canvas"></canvas>
+    </div>
+  </section>
+  {% else %}
   <h2>{{ title }}</h2>
 
   {% if text is defined and text %}
@@ -36,6 +55,14 @@
       {% endfor %}
     </tbody>
   </table>
+  {% endif %}
+  {% endif %}
+  <script>{% include "theme-frame.js" %}</script>
+  {% if welcome | default(false) %}
+  <script>
+{% include "robot-model.js" %}
+{% include "robot-scene.js" %}
+  </script>
   {% endif %}
 </body>
 </html>

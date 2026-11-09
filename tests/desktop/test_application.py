@@ -2,6 +2,7 @@ import threading
 import sys
 import time
 import unittest
+from unittest import mock
 
 from PyQt5.QtCore import QObject, QRect, QUrl, pyqtSignal
 
@@ -40,6 +41,10 @@ class CreatePopupTest(unittest.TestCase):
 class ApplicationTest(unittest.TestCase):
     def setUp(self):
         self.qt_app = qt_app()
+        # Reale Nutzerklicks außerhalb des Testfensters dürfen den Fokus-Test nicht schließen.
+        monitor = mock.patch("backend.desktop.macos.OutsideClickMonitor")
+        monitor.start()
+        self.addCleanup(monitor.stop)
         self.application = Application(self.qt_app)
         self.addCleanup(self.application.shutdown)
 
