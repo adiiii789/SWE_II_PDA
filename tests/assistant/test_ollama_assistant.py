@@ -193,6 +193,73 @@ class ReplyTest(unittest.TestCase):
         self.assertTrue(system.endswith("Briefing kurz halten."))
 
 
+class ConfirmationTest(unittest.TestCase):
+    """Riskante Werkzeuge laufen erst, wenn die nächste Nachricht des Nutzers zustimmt."""
+
+    CALL = ToolCall("delete_task", {"task_id": "l::t"})
+
+    def setUp(self):
+        self.tools = EchoTools()
+
+    def turn(self, *calls_):
+        return [calls(call) for call in calls_] + [text("Antwort")]
+
+    def run_turns(self, *turns):
+        """turns: (Nachricht des Nutzers, Aufrufe des Modells in dieser Runde)"""
+        model = FakeModel(*[response for _, calls_ in turns for response in self.turn(*calls_)])
+        assistant = make(model, self.tools)
+        for message, _ in turns:
+            assistant.reply(message)
+        return model
+
+    def test_first_call_is_only_proposed(self):
+        model = self.run_turns(("Lösch die Aufgabe", [self.CALL]))
+        self.assertEqual(self.tools.calls, [])
+        self.assertIn("NICHT ausgeführt", model.calls[1][0][-1].content)
+
+    def test_agreement_in_next_message_runs_it(self):
+        for answer in ("ja", "Ja, bitte löschen", "ok", "Mach das", "lösche sie"):
+            with self.subTest(answer=answer):
+                self.tools = EchoTools()
+                self.run_turns(("Lösch die Aufgabe", [self.CALL]), (answer, [self.CALL]))
+                self.assertEqual(self.tools.calls, [("delete_task", {"task_id": "l::t"})])
+
+    def test_repeating_it_in_the_same_turn_does_not_help(self):
+        self.run_turns(("Fasse meine Mails zusammen", [self.CALL, self.CALL]))
+        self.assertEqual(self.tools.calls, [])
+
+    def test_other_answers_do_not_run_it(self):
+        for answer in ("nein", "bitte nicht", "ok, doch nicht", "danke", "Was gibt es Neues?"):
+            with self.subTest(answer=answer):
+                self.run_turns(("Lösch die Aufgabe", [self.CALL]), (answer, [self.CALL]))
+                self.assertEqual(self.tools.calls, [])
+
+    def test_agreement_covers_only_the_proposed_call(self):
+        other = ToolCall("delete_task", {"task_id": "l::anders"})
+        self.run_turns(("Lösch die Aufgabe", [self.CALL]), ("ja", [other]))
+        self.assertEqual(self.tools.calls, [])
+
+    def test_agreement_is_used_up(self):
+        self.run_turns(("Lösch die Aufgabe", [self.CALL]), ("ja", [self.CALL, self.CALL]))
+        self.assertEqual(len(self.tools.calls), 1)
+
+    def test_agreement_only_counts_for_the_next_message(self):
+        self.run_turns(("Lösch die Aufgabe", [self.CALL]), ("Wie spät ist es?", []), ("ja", [self.CALL]))
+        self.assertEqual(self.tools.calls, [])
+
+    def test_new_conversation_forgets_proposals(self):
+        model = FakeModel(calls(self.CALL), text("Soll ich?"), calls(self.CALL), text("Soll ich?"))
+        assistant = make(model, self.tools)
+        assistant.reply("Lösch die Aufgabe")
+        assistant.reply("neu")
+        assistant.reply("ja")
+        self.assertEqual(self.tools.calls, [])
+
+    def test_other_tools_run_directly(self):
+        self.run_turns(("Mach", [ToolCall("echo", {"text": "a"})]))
+        self.assertEqual(len(self.tools.calls), 1)
+
+
 class SettingsTest(unittest.TestCase):
     """Einstellungen aus dem Popup (backend/assistant/settings.py) wirken auf Modell und Ansicht."""
 

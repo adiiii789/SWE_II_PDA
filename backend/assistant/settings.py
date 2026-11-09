@@ -224,13 +224,18 @@ TASKS_SETTINGS: tuple[Setting, ...] = (
                         "und erstelle sie erst nach Bestätigung des Nutzers."),
 )
 
+# Werkzeuge, die der Assistent nie ohne Zustimmung des Nutzers ausführt (ollama_assistant.py),
+# anders als die Rückfragen oben also keine Bitte ans Modell und nicht abschaltbar.
+CONFIRMED_TOOLS = frozenset({"delete_task"})
+
 TOOL_GROUPS: tuple[ToolGroup, ...] = (
     ToolGroup("mail", "E-Mail", ("list_emails", "read_email", "read_attachment", "send_email"),
               "Mails lesen, Anhänge öffnen und Mails senden", MAIL_SETTINGS),
     ToolGroup("calendar", "Google Kalender", ("list_calendar_events", "create_calendar_event"),
               "Termine lesen und neue Termine erstellen", CALENDAR_SETTINGS),
-    ToolGroup("tasks", "Google Tasks", ("list_tasks", "create_task"),
-              "Offene Aufgaben lesen und neue Aufgaben erstellen", TASKS_SETTINGS),
+    ToolGroup("tasks", "Google Tasks", ("list_tasks", "create_task", "update_task", "complete_task", "delete_task",
+                                        "move_task", "create_task_list"),
+              "Aufgaben lesen, erstellen, ändern, erledigen, löschen und verschieben", TASKS_SETTINGS),
     ToolGroup("basics", "Uhrzeit und Rechnen", ("get_current_time", "calculate"),
               "Aktuelle Uhrzeit, Rechenaufgaben"),
 )

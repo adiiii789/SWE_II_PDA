@@ -38,22 +38,50 @@ class FakeService:
         self.pages = pages or {}
         self.list_calls = []
         self.inserted = []
+        self.parents = []
+        self.patched = []
+        self.deleted = []
+        self.moved = []
+        self.new_lists = []
 
     def tasklists(self):
-        return mock.Mock(list=lambda **_: FakeRequest({"items": self.lists}))
+        return mock.Mock(list=lambda **_: FakeRequest({"items": self.lists}), insert=self._insert_list)
 
     def tasks(self):
-        return mock.Mock(list=self._list, insert=self._insert)
+        return mock.Mock(list=self._list, insert=self._insert, patch=self._patch, get=self._get,
+                         delete=self._delete, move=self._move)
 
     def _list(self, **arguments):
         self.list_calls.append(arguments)
         if arguments["pageToken"] in self.pages:
             return FakeRequest(self.pages[arguments["pageToken"]])
-        return FakeRequest({"items": self.by_list.get(arguments["tasklist"], [])})
+        list_id = arguments["tasklist"]
+        items = [{"id": f"{list_id}-t{i}", **task} for i, task in enumerate(self.by_list.get(list_id, []))]
+        return FakeRequest({"items": items})
 
-    def _insert(self, tasklist, body):
+    def _insert(self, tasklist, body, parent=None):
         self.inserted.append((tasklist, body))
-        return FakeRequest(body)
+        self.parents.append(parent)
+        return FakeRequest({"id": "neu", **body})
+
+    def _insert_list(self, body):
+        self.new_lists.append(body)
+        return FakeRequest({"id": "l9", **body})
+
+    def _patch(self, tasklist, task, body):
+        self.patched.append((tasklist, task, body))
+        return FakeRequest({"id": task, "title": "Titel", **body})
+
+    def _get(self, tasklist, task):
+        return FakeRequest({"id": task, "title": "Alte Aufgabe"})
+
+    def _delete(self, tasklist, task):
+        self.deleted.append((tasklist, task))
+        return FakeRequest("")
+
+    def _move(self, **arguments):
+        self.moved.append(arguments)
+        return FakeRequest({"id": arguments["task"], "title": "Titel"})
 
 
 class ListTasksTest(unittest.TestCase):
@@ -105,8 +133,8 @@ class ListTasksTest(unittest.TestCase):
         self.assertNotIn("Sport", text)
 
     def test_later_pages_are_read(self):
-        service = FakeService(pages={None: {"items": [{"title": "Eins"}], "nextPageToken": "p2"},
-                                     "p2": {"items": [{"title": "Zwei"}]}})
+        service = FakeService(pages={None: {"items": [{"id": "a", "title": "Eins"}], "nextPageToken": "p2"},
+                                     "p2": {"items": [{"id": "b", "title": "Zwei"}]}})
         text = gt.list_tasks(service)
         self.assertIn("Eins", text)
         self.assertIn("Zwei", text)
@@ -134,6 +162,53 @@ class ListTasksTest(unittest.TestCase):
         with self.assertRaisesRegex(gc.CalendarError, "Ungültiges Datum"):
             gt.list_tasks(FakeService(), due_until="morgen")
 
+    def test_lines_carry_list_and_task_id(self):
+        text = gt.list_tasks(FakeService(tasks={"l1": [{"title": "A"}]}))
+        self.assertIn("ID: l1::l1-t0", text)
+
+    def test_several_lists_are_named_inside_the_markers(self):
+        text = gt.list_tasks(FakeService([MINE, SHOP], {"l1": [{"title": "A"}]}))
+        self.assertLess(text.index(gt.TASKS_START), text.index("Listen: Meine Aufgaben, Einkauf"))
+
+    def test_subtasks_follow_their_parent_indented(self):
+        tasks = [{"title": "Kind", "parent": "l1-t2"}, {"title": "Zuerst", "due": due("2999-01-01")},
+                 {"title": "Eltern", "due": due("2999-06-01")}, {"title": "Enkel", "parent": "l1-t0"}]
+        lines = gt.list_tasks(FakeService(tasks={"l1": tasks})).splitlines()[2:-1]
+        self.assertEqual([line.split(" | ")[1] for line in lines], ["Zuerst", "Eltern", "Kind", "Enkel"])
+        self.assertTrue(lines[2].startswith("  ↳ "))
+        self.assertTrue(lines[3].startswith("    ↳ "))
+
+    def test_subtask_whose_parent_is_filtered_out_is_still_shown(self):
+        tasks = [{"title": "Eltern"}, {"title": "Kind", "parent": "l1-t0", "due": due("2999-01-01")}]
+        text = gt.list_tasks(FakeService(tasks={"l1": tasks}), due_until="2999-12-31")
+        self.assertIn("Kind", text)
+        self.assertNotIn("↳", text)
+
+
+class CompletedTasksTest(unittest.TestCase):
+    def setUp(self):
+        self.tasks = {"l1": [
+            {"title": "Früher", "status": "completed", "completed": "2026-11-02T10:00:00.000Z"},
+            {"title": "Später", "status": "completed", "completed": "2026-11-05T10:00:00.000Z"},
+            {"title": "Offen", "status": "needsAction"}]}
+
+    def test_only_completed_newest_first(self):
+        text = gt.list_tasks(FakeService(tasks=self.tasks), completed_since="2026-11-01")
+        self.assertIn("Erledigte Aufgaben seit So 01.11.2026", text)
+        self.assertLess(text.index("Später"), text.index("Früher"))
+        self.assertNotIn("Offen", text)
+        self.assertIn("erledigt Do 05.11.2026", text)
+
+    def test_hidden_tasks_are_requested_since_that_day(self):
+        service = FakeService()
+        gt.list_tasks(service, completed_since="2026-11-01")
+        call = service.list_calls[0]
+        self.assertEqual((call["showCompleted"], call["showHidden"]), (True, True))
+        self.assertTrue(call["completedMin"].startswith("2026-11-01T00:00:00"))
+
+    def test_nothing_completed(self):
+        self.assertIn("Keine erledigten Aufgaben seit", gt.list_tasks(FakeService(), completed_since="2026-11-01"))
+
 
 class CreateTaskTest(unittest.TestCase):
     def setUp(self):
@@ -142,7 +217,7 @@ class CreateTaskTest(unittest.TestCase):
     def test_minimal_goes_to_default_list(self):
         text = gt.create_task(self.service, " Müll rausbringen ")
         self.assertEqual(self.service.inserted, [("@default", {"title": "Müll rausbringen"})])
-        self.assertEqual(text, "Aufgabe erstellt: Müll rausbringen | ohne Datum")
+        self.assertEqual(text, "Aufgabe erstellt: Müll rausbringen | ohne Datum | ID: @default::neu")
 
     def test_due_and_notes(self):
         text = gt.create_task(self.service, "Steuer", "2026-11-10", " Belege ")
@@ -157,6 +232,91 @@ class CreateTaskTest(unittest.TestCase):
             with self.subTest(title=title, day=day), self.assertRaisesRegex(gc.CalendarError, message):
                 gt.create_task(self.service, title, day)
         self.assertEqual(self.service.inserted, [])
+
+    def test_named_list_ignores_case(self):
+        service = FakeService([MINE, SHOP])
+        gt.create_task(service, "Milch", list_name=" einkauf ")
+        self.assertEqual(service.inserted[0][0], "l2")
+
+    def test_unknown_list_names_the_existing_ones(self):
+        service = FakeService([MINE, SHOP])
+        with self.assertRaisesRegex(gc.CalendarError, "Keine Liste namens 'Urlaub'.*Meine Aufgaben, Einkauf"):
+            gt.create_task(service, "Milch", list_name="Urlaub")
+        self.assertEqual(service.inserted, [])
+
+    def test_subtask_goes_to_the_list_of_its_parent(self):
+        gt.create_task(self.service, "Kind", parent_id="l2::eltern", list_name="wird ignoriert")
+        self.assertEqual(self.service.inserted[0][0], "l2")
+        self.assertEqual(self.service.parents, ["eltern"])
+
+    def test_create_list(self):
+        self.assertEqual(gt.create_task_list(self.service, " Urlaub "), "Liste erstellt: Urlaub")
+        self.assertEqual(self.service.new_lists, [{"title": "Urlaub"}])
+        with self.assertRaisesRegex(gc.CalendarError, "Name der Liste"):
+            gt.create_task_list(self.service, "  ")
+
+
+class ChangeTaskTest(unittest.TestCase):
+    def setUp(self):
+        self.service = FakeService()
+
+    def body(self):
+        return self.service.patched[0][2]
+
+    def test_update_changes_only_given_fields(self):
+        gt.update_task(self.service, "l1::t1", title=" Neu ")
+        self.assertEqual(self.service.patched, [("l1", "t1", {"title": "Neu"})])
+
+    def test_update_due_and_notes(self):
+        gt.update_task(self.service, "l1::t1", due="2026-11-10", notes="Hinweis")
+        self.assertEqual(self.body(), {"due": "2026-11-10T00:00:00.000Z", "notes": "Hinweis"})
+
+    def test_update_can_clear_fields(self):
+        gt.update_task(self.service, "l1::t1", due="NONE", notes="none")
+        self.assertEqual(self.body(), {"due": None, "notes": None})
+
+    def test_update_without_changes_or_valid_input(self):
+        with self.assertRaisesRegex(gc.CalendarError, "nichts zum Ändern"):
+            gt.update_task(self.service, "l1::t1")
+        with self.assertRaisesRegex(gc.CalendarError, "Ungültiges Datum"):
+            gt.update_task(self.service, "l1::t1", due="bald")
+        self.assertEqual(self.service.patched, [])
+
+    def test_complete_and_reopen(self):
+        self.assertIn("erledigt: Titel", gt.complete_task(self.service, "l1::t1"))
+        self.assertIn("wieder geöffnet: Titel", gt.complete_task(self.service, "l1::t1", done=False))
+        self.assertEqual(self.service.patched[0][2], {"status": "completed"})
+        self.assertEqual(self.service.patched[1][2], {"status": "needsAction", "completed": None})
+
+    def test_delete_names_the_task(self):
+        self.assertEqual(gt.delete_task(self.service, "l1::t1"), "Aufgabe gelöscht: Alte Aufgabe")
+        self.assertEqual(self.service.deleted, [("l1", "t1")])
+
+    def test_invalid_id_changes_nothing(self):
+        for action in (gt.update_task, gt.complete_task, gt.delete_task, gt.move_task):
+            for ref in ("", "t1", "l1::", "::t1"):
+                with self.subTest(action=action.__name__, ref=ref), \
+                        self.assertRaisesRegex(gc.CalendarError, "Ungültige Aufgaben-ID"):
+                    action(self.service, ref)
+        self.assertEqual((self.service.patched, self.service.deleted, self.service.moved), ([], [], []))
+
+    def test_move_to_other_list(self):
+        service = FakeService([MINE, SHOP])
+        text = gt.move_task(service, "l1::t1", target_list="Einkauf")
+        self.assertEqual(service.moved, [{"tasklist": "l1", "task": "t1", "destinationTasklist": "l2"}])
+        self.assertIn("ID: l2::t1", text)
+
+    def test_move_under_task_in_same_list(self):
+        gt.move_task(self.service, "l1::t1", parent_id="l1::eltern")
+        self.assertEqual(self.service.moved, [{"tasklist": "l1", "task": "t1", "parent": "eltern"}])
+
+    def test_move_under_task_in_other_list(self):
+        gt.move_task(self.service, "l1::t1", parent_id="l2::eltern")
+        self.assertEqual(self.service.moved[0]["destinationTasklist"], "l2")
+
+    def test_move_needs_a_target(self):
+        with self.assertRaisesRegex(gc.CalendarError, "Zielliste"):
+            gt.move_task(self.service, "l1::t1")
 
 
 class ErrorsTest(unittest.TestCase):

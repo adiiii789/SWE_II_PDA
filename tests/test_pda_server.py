@@ -29,8 +29,11 @@ class PdaServerTest(unittest.TestCase):
         tools = {spec.name: spec for spec in self.provider.list_tools()}
         self.assertEqual(set(tools), {"get_current_time", "calculate", "send_email", "list_emails", "read_email",
                                        "read_attachment", "list_calendar_events", "create_calendar_event",
-                                       "list_tasks", "create_task"})
+                                       "list_tasks", "create_task", "update_task", "complete_task", "delete_task",
+                                       "move_task", "create_task_list"})
         self.assertNotIn("required", tools["list_tasks"].input_schema)
+        for name in ("update_task", "complete_task", "delete_task", "move_task"):
+            self.assertEqual(tools[name].input_schema["required"], ["task_id"])
         self.assertEqual(tools["create_task"].input_schema["required"], ["title"])
         self.assertNotIn("required", tools["list_calendar_events"].input_schema)
         self.assertEqual(set(tools["create_calendar_event"].input_schema["required"]), {"title", "start"})
@@ -70,7 +73,10 @@ class PdaServerTest(unittest.TestCase):
             self.assertIn("Google Kalender ist nicht eingerichtet", result.content)
 
     def test_task_tools_report_missing_login(self):
-        for name, arguments in (("list_tasks", {}), ("create_task", {"title": "X"})):
+        for name, arguments in (("list_tasks", {}), ("create_task", {"title": "X"}), ("complete_task", {"task_id": "a::b"}),
+                                ("update_task", {"task_id": "a::b", "title": "X"}), ("delete_task", {"task_id": "a::b"}),
+                                ("move_task", {"task_id": "a::b", "target_list": "X"}),
+                                ("create_task_list", {"title": "X"})):
             result = self.provider.call_tool(name, arguments)
             self.assertTrue(result.is_error)
             self.assertIn("Google Tasks ist nicht eingerichtet", result.content)

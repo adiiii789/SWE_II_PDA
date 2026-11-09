@@ -12,19 +12,25 @@ Ablauf von reply(message):
   5. Sonst ist der Text des Modells die Antwort. Wurden Werkzeuge genutzt,
      zeigt die Ansicht oben eine Tabelle mit Aufrufen und Ergebnissen. Dateien,
      die Werkzeuge mitliefern (z. B. Mail-Anhänge), hängen an der Antwort.
+
+Riskante Werkzeuge (settings.CONFIRMED_TOOLS) laufen erst nach einer Zustimmung: Der erste Aufruf
+wird nur vorgemerkt, das Modell fragt nach. Ausgeführt wird genau derselbe Aufruf erst, wenn die
+nächste Nachricht des Nutzers zustimmt. Das prüft der Code, weil das Modell auch fremden Text
+(Mails, Einladungen) liest: Eingeschleuster Text kann so nichts allein löschen.
 """
 from __future__ import annotations
 
 import datetime
 import json
 import logging
+import re
 from collections.abc import Callable
 
 from backend.assistant.base import AssistantReply
 from backend.assistant.commands import COMMANDS
 from backend.assistant.llm import ChatMessage, ToolCall
 from backend.assistant.ollama import OllamaError, OllamaModel, cloud_name
-from backend.assistant.settings import SETTINGS_KEYS, AssistantSettings
+from backend.assistant.settings import CONFIRMED_TOOLS, SETTINGS_KEYS, AssistantSettings
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult
 from backend.preferences import PreferenceStore
 from backend.views import TemplateView
@@ -43,6 +49,14 @@ BASE_INSTRUCTIONS = (
 # Vor dem Auftrag einer proaktiven Meldung - das Modell soll ihn nicht für eine Frage des Nutzers halten.
 PROACTIVE_TRIGGER = ("[Automatischer Auslöser, nicht vom Nutzer geschrieben] Der Nutzer hat nichts gefragt. "
                      "Schreib ihm von dir aus eine Nachricht. Auftrag: ")
+
+CONFIRM_REQUEST = ("Noch NICHT ausgeführt. Nenne dem Nutzer genau, was passieren würde, und frage, ob du das "
+                   "tun sollst. Stimmt er in seiner nächsten Nachricht zu, rufe das Werkzeug mit genau "
+                   "denselben Argumenten erneut auf. Sonst lass es.")
+_AGREEMENT = re.compile(r"\W*(ja|jap|jo|jep|yes|yep|yeah|ok|okay|klar|gerne?|genau|mach|mache|bitte|los|sicher|"
+                        r"einverstanden|bestätigt|bestätige|passt|richtig|korrekt|stimmt|natürlich|absolut|"
+                        r"lösch|lösche|änder|ändere|verschieb|verschiebe|sag|sage)\b", re.IGNORECASE)
+_REFUSAL = re.compile(r"\b(nein|nö|nicht|no|stop|stopp|abbrechen|warte)\b", re.IGNORECASE)
 
 _WEEKDAYS = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
 
@@ -70,12 +84,15 @@ class OllamaAssistant:
         self.max_history = max_history
         self.clock = clock
         self.history: list[ChatMessage] = []
+        self._proposed: set[str] = set()   # riskante Aufrufe, zu denen das Modell gerade nachfragt
+        self._approved: set[str] = set()   # davon die, denen der Nutzer zugestimmt hat
 
     # --- Assistant -------------------------------------------------------------------
     def reply(self, message: str) -> AssistantReply:
         command = message.strip().lower()
         if command == "neu":
             self.history.clear()
+            self._proposed.clear()
         if command == "hilfe":
             return _with_model_commands(COMMANDS[command][1]())
         if command in COMMANDS:
@@ -93,6 +110,8 @@ class OllamaAssistant:
         except OllamaError as error:
             return AssistantReply(str(error))
 
+        self._approved = self._proposed if _agrees(message) else set()
+        self._proposed = set()
         start = len(self.history)
         self.history.append(ChatMessage("user", message))
         tool_log: list[tuple[ToolCall, ToolResult]] = []
@@ -149,6 +168,12 @@ class OllamaAssistant:
         if not self.settings.tool_enabled(call.name):
             return ToolResult(f"Das Werkzeug {call.name} hat der Nutzer in den Einstellungen abgeschaltet.",
                               is_error=True)
+        if call.name in CONFIRMED_TOOLS:
+            key = _call_key(call)
+            if key not in self._approved:
+                self._proposed.add(key)
+                return ToolResult(CONFIRM_REQUEST)
+            self._approved.discard(key)
         try:
             return self.tools.call_tool(call.name, call.arguments)
         except Exception as error:   # z. B. erfundener Werkzeugname - das Modell soll es korrigieren
@@ -228,6 +253,15 @@ class OllamaAssistant:
         else:
             self.model.name = installed[0] if installed else ""
         return bool(self.model.name)
+
+
+def _agrees(message: str) -> bool:
+    """Stimmt die Nachricht klar zu? Im Zweifel nein, dann fragt das Modell eben noch einmal."""
+    return bool(_AGREEMENT.match(message)) and not _REFUSAL.search(message)
+
+
+def _call_key(call: ToolCall) -> str:
+    return call.name + json.dumps(call.arguments, sort_keys=True, ensure_ascii=False)
 
 
 def _with_model_commands(reply: AssistantReply) -> AssistantReply:

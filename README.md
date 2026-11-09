@@ -60,7 +60,8 @@ sich Einträge aus den Anleitungen fertiger Server meist direkt übernehmen lass
 
 Der eigene Server ist [mcp_servers/pda_server.py](mcp_servers/pda_server.py), geschrieben mit dem
 offiziellen MCP-SDK. Er bietet `get_current_time`, `calculate`, `send_email`, `list_emails`, `read_email`,
-`read_attachment`, `list_calendar_events`, `create_calendar_event`, `list_tasks` und `create_task`. Ein neues Tool
+`read_attachment`, `list_calendar_events`, `create_calendar_event`, `list_tasks`, `create_task`,
+`update_task`, `complete_task`, `delete_task`, `move_task` und `create_task_list`. Ein neues Tool
 ist dort eine Funktion mit `@mcp.tool()`. Mit `mcp dev mcp_servers/pda_server.py` lässt er sich
 ohne Assistent im Browser ausprobieren.
 
@@ -102,8 +103,10 @@ Zugangsdaten und Anmeldung liegen in `%APPDATA%/PersonalDigitalAgent/google/`, n
 Beim Erstellen fragt der Assistent standardmäßig nach. Das lässt sich im Popup unter ⚙ Einstellungen →
 Werkzeuge → Google Kalender abschalten.
 
-**Google Tasks:** Der Assistent liest die offenen Aufgaben aller Listen und legt auf Wunsch neue in
-der Standardliste an. Tasks nutzt dieselbe Anmeldung wie der Kalender, die Einrichtung oben deckt beides
+**Google Tasks:** Der Assistent liest offene und erledigte Aufgaben aller Listen, legt Aufgaben und
+Unteraufgaben an, ändert, erledigt, löscht und verschiebt sie und erstellt neue Listen. Löschen führt
+er nur aus, wenn deine nächste Nachricht zustimmt (z. B. „ja“). Das ist fest eingebaut und nicht
+abschaltbar. Tasks nutzt dieselbe Anmeldung wie der Kalender, die Einrichtung oben deckt beides
 ab. Wer den Kalender schon vor Tasks eingerichtet hat, aktiviert nur noch die **Google Tasks API**,
 fügt unter *Datenzugriff* den Bereich `tasks` hinzu und meldet sich einmal mit
 `python mcp_servers/google_calendar.py` neu an. Die Rückfrage vor dem Erstellen lässt sich unter
