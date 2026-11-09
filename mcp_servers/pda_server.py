@@ -36,6 +36,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ResourceLink, TextContent
 from pydantic import Field
 
+from backend.config import APP_NAME
+
 import basic_tools
 import inbox
 import mailer
@@ -62,7 +64,7 @@ def calculate(expression: Annotated[str, Field(description="Arithmetic expressio
 
 def _mail_description() -> str:
     description = ("Sends an e-mail written by you. Only use it when the user explicitly asks to send a mail. "
-                   "Write subject and body in the user's language.")
+                   f"Write subject and body in the user's language. Sign e-mails in your own name as {APP_NAME}.")
     try:
         settings = mailer.MailSettings.load()
     except mailer.MailError:
