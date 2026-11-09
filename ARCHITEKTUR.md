@@ -80,6 +80,7 @@ mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von
   inbox.py                    E-Mail und Anhänge lesen per IMAP, nur lesend
   file_text.py                Text aus PDF, Word, Excel, PowerPoint, HTML, Textdateien
   google_calendar.py          Google Kalender: Termine lesen und anlegen, Anmeldung per OAuth
+  google_tasks.py             Google Tasks: offene Aufgaben lesen und anlegen, gleiche Anmeldung
   .env.example                Vorlage für die Mail-Einstellungen (.env wird nicht eingecheckt)
   demo_server.py              Server ohne SDK: zeigt das Protokoll, Gegenpart in den Tests
 
@@ -752,6 +753,12 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   bewusst keine Gäste: So kann eingeschleuster Text keine Einladungen an Fremde auslösen. Gelesene
   Termine sind als Daten markiert, weil Einladungen von Fremden stammen. Die Rückfrage vor dem
   Erstellen ist eine Einstellung im Popup und nur eine Anweisung ans Modell.
+- **Google Tasks** (`list_tasks`, `create_task`, Logik in
+  [google_tasks.py](mcp_servers/google_tasks.py)): nutzt Anmeldung und Fehlerbehandlung von
+  `google_calendar.py`, es gibt also nur einen Login und ein `token.json`. Das Token wird ohne feste
+  Bereiche geladen: Eine Anmeldung von vor Tasks bedient den Kalender weiter, nur Tasks bittet um
+  eine neue Anmeldung. Gelesen wird aus allen Listen, angelegt nur in der Standardliste. Das
+  Fälligkeitsdatum wird nicht in Ortszeit umgerechnet, weil Google dort nur das Datum speichert.
 - [mcp_servers/demo_server.py](mcp_servers/demo_server.py) bietet dieselben Rechen- und
   Uhrzeit-Werkzeuge ohne SDK. Er zeigt, wie wenig das Protokoll verlangt, ist in
   `mcp_servers.json` abgeschaltet und dient als Gegenpart in den Tests.
@@ -829,6 +836,7 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_mailer` | Mail-Einstellungen, Freigabeliste, Versand (SMTP gemockt) |
 | `test_inbox` | Mails lesen: Einstellungen, Übersicht, Suche, HTML, Kürzen, read-only, Anhänge ablegen und in Teilen lesen, Dateinamen (IMAP nachgebaut) |
 | `test_google_calendar` | Termine lesen und erstellen, Zeiten, Markierungen, Fehler, Anmeldung (Google nachgebaut) |
+| `test_google_tasks` | Aufgaben lesen und erstellen, Fälligkeit, Markierungen, gemeinsame Anmeldung (Google nachgebaut) |
 | `test_file_text` | Text aus PDF, Word, PowerPoint, Excel, HTML, Mails, Textdateien; defekte Dateien, ZIP-Bomben (Testdateien im Test erzeugt) |
 | `test_attachments` | `AttachmentStore`: nur Dateien aus dem Anhang-Ordner, keine ausführbaren öffnen, Speichern ohne Überschreiben |
 | `test_demo_mcp_server`, `test_preferences` | Demo-Server direkt, `JsonPreferenceStore` |

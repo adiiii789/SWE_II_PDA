@@ -4,7 +4,7 @@ Jinja2==3.1.6
 mcp>=2.3,<3           # MCP-SDK für mcp_servers/pda_server.py (MCPServer)
 pypdf>=6.0,<7         # Text aus PDF-Anhängen (mcp_servers/file_text.py)
 openpyxl>=3.1,<4      # Text aus Excel-Anhängen (mcp_servers/file_text.py)
-google-api-python-client>=2.185,<3   # Google Kalender (mcp_servers/google_calendar.py)
+google-api-python-client>=2.185,<3   # Google Kalender und Tasks (mcp_servers/google_calendar.py, google_tasks.py)
 google-auth-httplib2>=0.2,<1          # Zeitlimit für Anfragen an Google
 google-auth-oauthlib>=1.2,<2          # Google-Anmeldung im Browser
 sounddevice>=0.5,<1  # Mikrofon und Lautsprecher (backend/speech.py)

@@ -28,7 +28,10 @@ class PdaServerTest(unittest.TestCase):
     def test_tools_with_schema_from_type_annotations(self):
         tools = {spec.name: spec for spec in self.provider.list_tools()}
         self.assertEqual(set(tools), {"get_current_time", "calculate", "send_email", "list_emails", "read_email",
-                                       "read_attachment", "list_calendar_events", "create_calendar_event"})
+                                       "read_attachment", "list_calendar_events", "create_calendar_event",
+                                       "list_tasks", "create_task"})
+        self.assertNotIn("required", tools["list_tasks"].input_schema)
+        self.assertEqual(tools["create_task"].input_schema["required"], ["title"])
         self.assertNotIn("required", tools["list_calendar_events"].input_schema)
         self.assertEqual(set(tools["create_calendar_event"].input_schema["required"]), {"title", "start"})
         self.assertNotIn("attendees", tools["create_calendar_event"].input_schema["properties"])
@@ -65,6 +68,12 @@ class PdaServerTest(unittest.TestCase):
             result = self.provider.call_tool(name, arguments)
             self.assertTrue(result.is_error)
             self.assertIn("Google Kalender ist nicht eingerichtet", result.content)
+
+    def test_task_tools_report_missing_login(self):
+        for name, arguments in (("list_tasks", {}), ("create_task", {"title": "X"})):
+            result = self.provider.call_tool(name, arguments)
+            self.assertTrue(result.is_error)
+            self.assertIn("Google Tasks ist nicht eingerichtet", result.content)
 
 
 if __name__ == "__main__":

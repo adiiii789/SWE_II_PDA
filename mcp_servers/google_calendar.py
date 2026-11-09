@@ -1,5 +1,7 @@
 """Google Kalender: Termine lesen und im Hauptkalender neue Termine anlegen.
 
+Die Anmeldung hier gilt auch für Google Tasks (google_tasks.py), es gibt also nur einen Login.
+
 Einrichtung (einmalig, Details im README):
   python mcp_servers/google_calendar.py <Pfad zur heruntergeladenen OAuth-Client-Datei>
 Danach öffnet sich der Browser für die Google-Anmeldung. Client-Datei und Anmeldung liegen in
@@ -31,8 +33,10 @@ GOOGLE_DIR = Path(os.environ.get("PDA_GOOGLE_DIR")
                   or Path(os.environ.get("APPDATA", Path.home())) / "PersonalDigitalAgent" / "google")
 CLIENT_FILE = "credentials.json"
 TOKEN_FILE = "token.json"
+TASKS_SCOPE = "https://www.googleapis.com/auth/tasks"
 # events: Termine lesen und anlegen; readonly: zusätzlich die Liste der Kalender sehen
-SCOPES = ("https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.readonly")
+SCOPES = ("https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.readonly",
+          TASKS_SCOPE)
 
 TIMEOUT_S = 20
 DEFAULT_DAYS = 7
@@ -53,7 +57,12 @@ class CalendarError(ValueError):
 
 # --- Anmeldung ---------------------------------------------------------------------------
 def connect(directory: Path | None = None) -> Any:
-    """Kalender-Dienst mit der gespeicherten Anmeldung; erneuert abgelaufene Zugriffe selbst."""
+    """Kalender-Dienst mit der gespeicherten Anmeldung."""
+    return open_service("calendar", "v3", "Google Kalender", directory)
+
+
+def open_service(api: str, version: str, label: str, directory: Path | None = None, needs_scope: str = "") -> Any:
+    """Google-Dienst mit der gespeicherten Anmeldung; erneuert abgelaufene Zugriffe selbst."""
     directory = directory or GOOGLE_DIR
     try:
         import google_auth_httplib2
@@ -67,11 +76,15 @@ def connect(directory: Path | None = None) -> Any:
 
     token = directory / TOKEN_FILE
     if not token.exists():
-        raise CalendarError(f"Google Kalender ist nicht eingerichtet. {LOGIN_HINT}")
+        raise CalendarError(f"{label} ist nicht eingerichtet. {LOGIN_HINT}")
     try:
-        credentials = Credentials.from_authorized_user_file(str(token), SCOPES)
+        # Bewusst ohne SCOPES: Eine ältere Anmeldung behält so ihre Rechte. Würden neue Rechte
+        # mitgeschickt, lehnte Google die Erneuerung ab und auch der Kalender fiele aus.
+        credentials = Credentials.from_authorized_user_file(str(token))
     except ValueError:
         raise CalendarError(f"Die gespeicherte Google-Anmeldung ist ungültig. {LOGIN_HINT}") from None
+    if needs_scope and not credentials.has_scopes([needs_scope]):
+        raise CalendarError(f"{label} ist für diese Anmeldung noch nicht freigegeben. {LOGIN_HINT}")
     if not credentials.valid:
         try:
             credentials.refresh(Request())
@@ -79,7 +92,7 @@ def connect(directory: Path | None = None) -> Any:
             raise CalendarError(f"Die Google-Anmeldung ist abgelaufen oder nicht erneuerbar. {LOGIN_HINT}") from None
         token.write_text(credentials.to_json(), encoding="utf-8")
     http = google_auth_httplib2.AuthorizedHttp(credentials, http=httplib2.Http(timeout=TIMEOUT_S))
-    return build("calendar", "v3", http=http, cache_discovery=False)
+    return build(api, version, http=http, cache_discovery=False)
 
 
 def login(directory: Path | None = None) -> str:
@@ -99,7 +112,7 @@ def login(directory: Path | None = None) -> str:
         raise CalendarError(f"{client} ist keine OAuth-Client-Datei vom Typ 'Desktop-App'.") from None
     credentials = flow.run_local_server(port=0, prompt="consent", access_type="offline")
     (directory / TOKEN_FILE).write_text(credentials.to_json(), encoding="utf-8")
-    return f"Google Kalender ist eingerichtet (Anmeldung in {directory})."
+    return f"Google Kalender und Google Tasks sind eingerichtet (Anmeldung in {directory})."
 
 
 def install_client_file(source: Path, directory: Path | None = None) -> None:
@@ -111,7 +124,7 @@ def install_client_file(source: Path, directory: Path | None = None) -> None:
     shutil.copyfile(source, directory / CLIENT_FILE)
 
 
-def _execute(request: Any) -> dict:
+def _execute(request: Any, label: str = "Google Kalender") -> dict:
     """Anfrage an Google stellen und jeden erwarteten Fehler als CalendarError melden."""
     from google.auth.exceptions import GoogleAuthError
     from googleapiclient.errors import HttpError
@@ -119,11 +132,11 @@ def _execute(request: Any) -> dict:
     try:
         return request.execute()
     except HttpError as error:
-        raise CalendarError(f"Google Kalender meldet Fehler {error.status_code}: {error.reason}") from None
+        raise CalendarError(f"{label} meldet Fehler {error.status_code}: {error.reason}") from None
     except GoogleAuthError:
         raise CalendarError(f"Die Google-Anmeldung ist abgelaufen oder nicht erneuerbar. {LOGIN_HINT}") from None
     except (HttpLib2Error, OSError) as error:
-        raise CalendarError(f"Google Kalender ist nicht erreichbar: {error}") from None
+        raise CalendarError(f"{label} ist nicht erreichbar: {error}") from None
 
 
 # --- Termine lesen -----------------------------------------------------------------------

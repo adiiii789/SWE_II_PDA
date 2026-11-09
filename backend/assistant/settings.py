@@ -218,11 +218,19 @@ CALENDAR_SETTINGS: tuple[Setting, ...] = (
                         "und erstelle ihn erst nach Bestätigung des Nutzers."),
 )
 
+TASKS_SETTINGS: tuple[Setting, ...] = (
+    Setting("confirm_create", "Vor dem Erstellen nachfragen", "bool", True,
+            instruction="Nenne vor dem Erstellen einer Aufgabe Titel und Fälligkeitsdatum "
+                        "und erstelle sie erst nach Bestätigung des Nutzers."),
+)
+
 TOOL_GROUPS: tuple[ToolGroup, ...] = (
     ToolGroup("mail", "E-Mail", ("list_emails", "read_email", "read_attachment", "send_email"),
               "Mails lesen, Anhänge öffnen und Mails senden", MAIL_SETTINGS),
     ToolGroup("calendar", "Google Kalender", ("list_calendar_events", "create_calendar_event"),
               "Termine lesen und neue Termine erstellen", CALENDAR_SETTINGS),
+    ToolGroup("tasks", "Google Tasks", ("list_tasks", "create_task"),
+              "Offene Aufgaben lesen und neue Aufgaben erstellen", TASKS_SETTINGS),
     ToolGroup("basics", "Uhrzeit und Rechnen", ("get_current_time", "calculate"),
               "Aktuelle Uhrzeit, Rechenaufgaben"),
 )
