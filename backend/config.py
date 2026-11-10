@@ -56,6 +56,9 @@ PROACTIVE_SPEAK = os.environ.get("PDA_PROACTIVE_SPEAK", "1") != "0"           # 
 # Popup von selbst öffnen (wie ein Klick aufs Symbol); "0" = stattdessen Systembenachrichtigung
 PROACTIVE_OPEN_POPUP = os.environ.get("PDA_PROACTIVE_OPEN_POPUP", "1") != "0"
 PROACTIVE_NOTICE_MS = 8000            # Anzeigedauer der Benachrichtigung (Klick darauf öffnet das Popup)
+# Wächter (backend/watcher.py): prüft im Hintergrund Mails, Aufgaben, Termine. Alles Weitere im Popup.
+PROACTIVE_WATCH = os.environ.get("PDA_PROACTIVE_WATCH", "1") != "0"
+PROACTIVE_STATE_FILE = APP_DATA_DIR / "proactive_state.json"   # was schon gemeldet wurde
 
 POPUP_PAGE = FRONTEND_DIR / "popup.html"
 POPUP_SIZE_RATIO = (0.3, 0.6)         # Anteil des Bildschirms (Breite, Höhe)

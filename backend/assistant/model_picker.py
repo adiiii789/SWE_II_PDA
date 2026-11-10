@@ -21,7 +21,7 @@ class ModelPicker:
         command = message.strip().lower()
         if command == "neu":
             for assistant in self._assistants.values():
-                assistant.history.clear()
+                assistant.new_conversation()
             return COMMANDS["neu"][1]()
         if command == "hilfe":
             return model_help_reply({
@@ -36,6 +36,9 @@ class ModelPicker:
 
     def announce(self, instruction: str) -> str | None:
         return self._assistants[self._provider].announce(instruction)
+
+    def consult(self, prompt: str) -> str | None:
+        return self._assistants[self._provider].consult(prompt)
 
     def available_models(self) -> list[dict]:
         return [{**model, "id": f"{provider}/{model['name']}"}

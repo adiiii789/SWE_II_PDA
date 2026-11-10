@@ -46,8 +46,8 @@ def forward_proactive_notices(tray: TrayIcon, popup: PopupWindow, event_bus: Eve
     def forward(name: str, payload: Any) -> None:
         if name != PROACTIVE_NOTICE:
             return
-        # Läuft im Thread des Auslösers - deshalb über Signale.
-        if open_popup:
+        # Läuft im Thread des Auslösers - deshalb über Signale. "display" setzt die Einstellung im Popup.
+        if payload.get("display", "popup" if open_popup else "notice") == "popup":
             popup.show_requested.emit()
         else:
             tray.notify_requested.emit(payload["title"], payload["text"], config.PROACTIVE_NOTICE_MS)
@@ -104,10 +104,15 @@ class Application:
 
         self._unsubscribe = [forward_popup_events(self.popup, events),
                              forward_proactive_notices(self.tray, self.popup, events)]
+        self.watcher = api._proactive_watcher() if config.PROACTIVE_WATCH else None
+        if self.watcher is not None:
+            self.watcher.start()   # meldet sich von selbst bei Mails, Aufgaben und Terminen
         qt_app.aboutToQuit.connect(self.shutdown)
 
     def shutdown(self) -> None:
         """Bridge-Thread beenden und Web-View freigeben (vermeidet WebEngine-Warnungen)."""
+        if self.watcher is not None:
+            self.watcher.stop()
         for unsubscribe in self._unsubscribe:
             unsubscribe()
         self._unsubscribe = []

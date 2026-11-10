@@ -12,7 +12,7 @@ const settingsResetButton = document.getElementById("settings-reset");
 const settingsTabs = Array.from(document.querySelectorAll("#settings-tabs button"));
 
 let settingsForm = null;       // letzte Antwort von get_settings()
-let settingsTab = "answer";    // "answer" | "tools"
+let settingsTab = "answer";    // "answer" | "tools" | "proactive"
 let resetArmed = false;        // Zurücksetzen braucht einen zweiten Klick
 
 function element(tag, className, text) {
@@ -74,6 +74,13 @@ function buildField(field, value, idPrefix) {
     input.value = value;
     row.append(label, input);
     read = () => Number(input.value);
+  } else if (field.kind === "time") {
+    const input = element("input");
+    input.type = "time";
+    input.id = id;
+    input.value = value;
+    row.append(label, input);
+    read = () => input.value;
   } else {
     const input = element("textarea");
     input.id = id;
@@ -105,7 +112,7 @@ function renderSettings() {
   while (settingsBody.firstChild) settingsBody.removeChild(settingsBody.firstChild);
   resetArmed = false;
   updateResetButton();
-  const {answer, tools} = settingsForm;
+  const {answer, tools, proactive} = settingsForm;
 
   const answerSection = element("section", "settings-section");
   answerSection.dataset.tab = "answer";
@@ -117,31 +124,41 @@ function renderSettings() {
   toolSection.dataset.tab = "tools";
   toolSection.appendChild(element("p", "settings-intro",
     "Je Werkzeug: ob der Assistent es nutzt und wie er Ergebnisse zeigt. Neue Werkzeuge erscheinen hier automatisch."));
-  const toolReaders = {};
-  for (const group of tools) {
+  const toolReaders = buildGroups(toolSection, tools, "tool");
+  if (tools.length === 0) toolSection.appendChild(element("p", "settings-intro", "Keine Werkzeuge vorhanden."));
+
+  const proactiveSection = element("section", "settings-section");
+  proactiveSection.dataset.tab = "proactive";
+  proactiveSection.appendChild(element("p", "settings-intro",
+    "Wann sich der PDA von selbst meldet. Gilt ab der nächsten Prüfung."));
+  const proactiveReaders = buildGroups(proactiveSection, proactive, "proactive");
+
+  settingsBody.append(answerSection, toolSection, proactiveSection);
+  const readAll = readers => Object.fromEntries(Object.entries(readers).map(([id, read]) => [id, read()]));
+  readSettings = () => ({answer: readAnswer(), tools: readAll(toolReaders), proactive: readAll(proactiveReaders)});
+  showSettingsTab(settingsTab);
+}
+
+// Aufklappbare Gruppen mit Feldern; gibt {Gruppen-ID: Funktion, die die Werte liest} zurück.
+function buildGroups(container, groups, idPrefix) {
+  const readers = {};
+  for (const group of groups) {
     const details = element("details", "settings-group");
     details.dataset.group = group.id;
     const summary = element("summary", "", group.title);
     if (!group.available) summary.appendChild(element("span", "settings-badge", "gerade nicht verfügbar"));
     details.appendChild(summary);
     if (group.description) details.appendChild(element("div", "settings-description", group.description));
-    details.appendChild(element("div", "settings-tools", group.tools.join(" · ")));
-    toolReaders[group.id] = buildFields(details, group.fields, group.values, `tool-${group.id}`);
+    if (group.tools.length) details.appendChild(element("div", "settings-tools", group.tools.join(" · ")));
+    readers[group.id] = buildFields(details, group.fields, group.values, `${idPrefix}-${group.id}`);
     // Abgeschaltete Gruppe: übrige Felder ausgrauen (Werte bleiben erhalten)
     const enabled = details.querySelector('[data-key="enabled"] input');
     const updateEnabled = () => details.classList.toggle("disabled", enabled && !enabled.checked);
     if (enabled) enabled.addEventListener("change", updateEnabled);
     updateEnabled();
-    toolSection.appendChild(details);
+    container.appendChild(details);
   }
-  if (tools.length === 0) toolSection.appendChild(element("p", "settings-intro", "Keine Werkzeuge vorhanden."));
-
-  settingsBody.append(answerSection, toolSection);
-  readSettings = () => ({
-    answer: readAnswer(),
-    tools: Object.fromEntries(Object.entries(toolReaders).map(([id, read]) => [id, read()])),
-  });
-  showSettingsTab(settingsTab);
+  return readers;
 }
 
 function showSettingsTab(tab) {
@@ -179,7 +196,7 @@ async function saveSettings() {
   try {
     settingsForm = await save_settings(readSettings());
     closeSettings();
-    addMessage("Einstellungen gespeichert - sie gelten ab der nächsten Nachricht.", "assistant");
+    addMessage("Einstellungen gespeichert - sie gelten ab sofort.", "assistant");
   } catch (error) {
     setSettingsStatus(error.message, true);   // nichts gespeichert - Formular bleibt offen
   } finally {

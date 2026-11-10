@@ -13,6 +13,7 @@ from backend.assistant.tools import Attachment
 from backend.attachments import AttachmentStore
 from backend.assistant.settings import AssistantSettings
 from backend.desktop.application import create_popup
+from backend.proactive_settings import ProactiveSettings
 from backend.views import TemplateView
 
 SEND = """
@@ -266,9 +267,11 @@ class SettingsPanelTest(unittest.TestCase):
 
     def setUp(self):
         self.store = MemoryStore()
-        patcher = mock.patch.object(api, "_settings", return_value=AssistantSettings(self.store))
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for name, settings in (("_settings", AssistantSettings(self.store)),
+                               ("_proactive_settings", ProactiveSettings(self.store))):
+            patcher = mock.patch.object(api, name, return_value=settings)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.addCleanup(run_js, self.page, "closeSettings()")
 
     def open(self):
@@ -287,10 +290,24 @@ class SettingsPanelTest(unittest.TestCase):
         self.js("document.querySelector('#settings-tabs [data-tab=tools]').click()")
         self.assertEqual(self.js(visible), ["tools"])
         groups = self.js("Array.from(document.querySelectorAll('.settings-group')).map(g => g.dataset.group)")
-        self.assertEqual(groups[:2], ["mail", "basics"])
+        self.assertEqual(groups[:4], ["mail", "calendar", "tasks", "basics"])
         mail_keys = self.js("Array.from(document.querySelectorAll('[data-group=mail] .setting')).map(r => r.dataset.key)")
         self.assertIn("fields", mail_keys)
         self.assertIn("max", mail_keys)
+
+    def test_proactive_tab_saves_its_own_values(self):
+        self.open()
+        self.js("document.querySelector('#settings-tabs [data-tab=proactive]').click()")
+        self.assertEqual(self.js("Array.from(document.querySelectorAll('[data-tab=proactive] .settings-group'))"
+                                 ".map(g => g.dataset.group)"), ["general", "mail", "tasks", "calendar"])
+        self.js("""
+          document.querySelector('[data-group=general] [data-key=quiet_from] input').value = '21:30';
+          document.querySelector('[data-tab=proactive] [data-group=mail] [data-key=criteria] textarea').value = 'Uni';
+          document.getElementById('settings-save').click();""")
+        self.assertTrue(wait_until(lambda: self.js("document.getElementById('settings-panel').hidden")))
+        settings = ProactiveSettings(self.store)
+        self.assertEqual(settings.values("general")["quiet_from"], "21:30")
+        self.assertEqual(settings.values("mail")["criteria"], "Uni")
 
     def test_save_changes_and_confirm_in_chat(self):
         self.open()

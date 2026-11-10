@@ -3,6 +3,7 @@ import json
 from unittest.mock import patch
 
 from backend.assistant.gemini import MODELS, GeminiModel
+from backend.assistant import ConsultingAssistant
 from backend.assistant.gemini_assistant import GeminiAssistant
 from backend.assistant.model_picker import ModelPicker
 from backend.assistant.ollama import OllamaClient, OllamaModel
@@ -82,3 +83,21 @@ def test_offline_ollama_preserves_selection_without_cloud_fallback(tmp_path):
         assert all(model["cloud"] for model in picker.available_models())
         assert "nicht erreichbar" in picker.reply("Nur lokal").text
         gemini_http.assert_not_called()
+
+
+def test_consult_goes_to_the_active_assistant(tmp_path):
+    picker, _ = _picker(tmp_path / "preferences.json")
+    assert isinstance(picker, ConsultingAssistant)
+    with patch.object(picker._assistants["gemini"], "consult", return_value="Ja") as gemini_consult, \
+            patch.object(picker._assistants["ollama"], "consult") as ollama_consult:
+        assert picker.consult("Wichtig?") == "Ja"
+    gemini_consult.assert_called_once_with("Wichtig?")
+    ollama_consult.assert_not_called()
+
+
+def test_new_conversation_also_forgets_proposed_calls(tmp_path):
+    picker, _ = _picker(tmp_path / "preferences.json")
+    for assistant in picker._assistants.values():
+        assistant._proposed.add("delete_task{}")
+    picker.reply("neu")
+    assert all(not assistant._proposed for assistant in picker._assistants.values())

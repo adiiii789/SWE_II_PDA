@@ -1,16 +1,25 @@
-"""Gemeinsamer Verlauf, Befehle und Werkzeugaufrufe für Sprachmodell-Anbieter."""
+"""Gemeinsamer Verlauf, Befehle und Werkzeugaufrufe für Sprachmodell-Anbieter.
+
+Riskante Werkzeuge (settings.CONFIRMED_TOOLS) laufen erst nach einer Zustimmung: Der erste Aufruf
+wird nur vorgemerkt, das Modell fragt nach. Ausgeführt wird genau derselbe Aufruf erst, wenn die
+nächste Nachricht des Nutzers zustimmt. Das prüft der Code, weil das Modell auch fremden Text
+(Mails, Einladungen) liest: Eingeschleuster Text kann so nichts allein löschen.
+
+Interne Werkzeuge (Präfix watch_, nur für backend/watcher.py) sieht das Modell nie.
+"""
 from __future__ import annotations
 
 import datetime
 import json
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import replace
 
 from backend.assistant.base import AssistantReply, ModelSelection
 from backend.assistant.commands import COMMANDS
 from backend.assistant.llm import ChatMessage, LanguageModelError, SelectableLanguageModel, ToolCall
-from backend.assistant.settings import SETTINGS_KEYS, AssistantSettings
+from backend.assistant.settings import CONFIRMED_TOOLS, SETTINGS_KEYS, AssistantSettings, is_internal_tool
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult
 from backend.config import APP_NAME
 from backend.preferences import PreferenceStore
@@ -34,11 +43,19 @@ BASE_INSTRUCTIONS = (
 PROACTIVE_TRIGGER = ("[Automatischer Auslöser, nicht vom Nutzer geschrieben] Der Nutzer hat nichts gefragt. "
                      "Schreib ihm von dir aus eine Nachricht. Auftrag: ")
 
+CONFIRM_REQUEST = ("Noch NICHT ausgeführt. Nenne dem Nutzer genau, was passieren würde, und frage, ob du das "
+                   "tun sollst. Stimmt er in seiner nächsten Nachricht zu, rufe das Werkzeug mit genau "
+                   "denselben Argumenten erneut auf. Sonst lass es.")
+_AGREEMENT = re.compile(r"\W*(ja|jap|jo|jep|yes|yep|yeah|ok|okay|klar|gerne?|genau|mach|mache|bitte|los|sicher|"
+                        r"einverstanden|bestätigt|bestätige|passt|richtig|korrekt|stimmt|natürlich|absolut|"
+                        r"lösch|lösche|änder|ändere|verschieb|verschiebe|sag|sage)\b", re.IGNORECASE)
+_REFUSAL = re.compile(r"\b(nein|nö|nicht|no|stop|stopp|abbrechen|warte)\b", re.IGNORECASE)
+
 _WEEKDAYS = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
 
 
 class ModelAssistant:
-    """Erfüllt Assistant, ModelSelection und ProactiveAssistant (base.py)."""
+    """Erfüllt Assistant, ModelSelection, ProactiveAssistant und ConsultingAssistant (base.py)."""
 
     provider: str
     model_preference: str
@@ -59,12 +76,20 @@ class ModelAssistant:
         self.max_history = max_history
         self.clock = clock
         self.history: list[ChatMessage] = []
+        self._proposed: set[str] = set()   # riskante Aufrufe, zu denen das Modell gerade nachfragt
+        self._approved: set[str] = set()   # davon die, denen der Nutzer zugestimmt hat
+
+    def new_conversation(self) -> None:
+        """Verlauf und vorgemerkte riskante Aufrufe vergessen."""
+        self.history.clear()
+        self._proposed.clear()
+        self._approved.clear()
 
     # --- Assistant -------------------------------------------------------------------
     def reply(self, message: str) -> AssistantReply:
         command = message.strip().lower()
         if command == "neu":
-            self.history.clear()
+            self.new_conversation()
         if command == "hilfe":
             return model_help_reply(self.model_commands)
         if command in COMMANDS:
@@ -80,6 +105,9 @@ class ModelAssistant:
         except LanguageModelError as error:
             return AssistantReply(str(error))
 
+        # Zustimmung gilt nur in der Nachricht direkt nach der Rückfrage und nur für die vorgemerkten Aufrufe.
+        self._approved = self._proposed if _agrees(message) else set()
+        self._proposed = set()
         start = len(self.history)
         self.history.append(ChatMessage("user", message))
         tool_log: list[tuple[ToolCall, ToolResult]] = []
@@ -113,9 +141,22 @@ class ModelAssistant:
         self._trim_history()
         return text
 
+    # --- ConsultingAssistant -----------------------------------------------------------
+    def consult(self, prompt: str) -> str | None:
+        """Einmalige Frage ohne Werkzeuge und Verlauf (Wächter); None, wenn das Modell nicht antwortet."""
+        try:
+            if not self._ensure_model():
+                return None
+            response = self.model.chat([ChatMessage("user", prompt)], [])
+        except LanguageModelError as error:
+            log.warning("Sprachmodell nicht erreichbar: %s", error)
+            return None
+        return response.message.content.strip() or None
+
     def _run(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> str:
-        # Im Popup abgeschaltete Werkzeuge bekommt das Modell gar nicht erst zu sehen.
-        tools = [tool for tool in self.tools.list_tools() if self.settings.tool_enabled(tool.name)]
+        # Im Popup abgeschaltete und interne Werkzeuge bekommt das Modell gar nicht erst zu sehen.
+        tools = [tool for tool in self.tools.list_tools()
+                 if not is_internal_tool(tool.name) and self.settings.tool_enabled(tool.name)]
         system = self._system_message([tool.name for tool in tools])
         for round_ in range(self.max_tool_rounds + 1):
             # In der letzten Runde keine Werkzeuge mehr anbieten: Das Modell muss antworten.
@@ -133,9 +174,17 @@ class ModelAssistant:
 
     def _call_tool(self, call: ToolCall) -> ToolResult:
         log.info("Werkzeug %s(%s)", call.name, call.arguments)
+        if is_internal_tool(call.name):
+            return ToolResult(f"Unbekanntes Werkzeug: {call.name!r}", is_error=True)
         if not self.settings.tool_enabled(call.name):
             return ToolResult(f"Das Werkzeug {call.name} hat der Nutzer in den Einstellungen abgeschaltet.",
                               is_error=True)
+        if call.name in CONFIRMED_TOOLS:
+            key = _call_key(call)
+            if key not in self._approved:
+                self._proposed.add(key)
+                return ToolResult(CONFIRM_REQUEST)
+            self._approved.discard(key)   # eine Zustimmung gilt für genau einen Aufruf
         try:
             return self.tools.call_tool(call.name, call.arguments)
         except Exception as error:   # z. B. erfundener Werkzeugname - das Modell soll es korrigieren
@@ -185,6 +234,15 @@ class ModelAssistant:
 
     def _ensure_model(self) -> bool:
         raise NotImplementedError
+
+
+def _agrees(message: str) -> bool:
+    """Stimmt die Nachricht klar zu? Im Zweifel nein, dann fragt das Modell eben noch einmal."""
+    return bool(_AGREEMENT.match(message)) and not _REFUSAL.search(message)
+
+
+def _call_key(call: ToolCall) -> str:
+    return call.name + json.dumps(call.arguments, sort_keys=True, ensure_ascii=False)
 
 
 def model_help_reply(commands: dict[str, str]) -> AssistantReply:
