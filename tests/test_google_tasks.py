@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from backend import config
+from backend.watcher import find_time
 
 sys.path.insert(0, str(config.ROOT_DIR / "mcp_servers"))
 import google_calendar as gc  # noqa: E402
@@ -43,6 +44,7 @@ class FakeService:
         self.deleted = []
         self.moved = []
         self.new_lists = []
+        self.current_notes = ""   # Notizen, die get() für eine bestehende Aufgabe liefert
 
     def tasklists(self):
         return mock.Mock(list=lambda **_: FakeRequest({"items": self.lists}), insert=self._insert_list)
@@ -73,7 +75,7 @@ class FakeService:
         return FakeRequest({"id": task, "title": "Titel", **body})
 
     def _get(self, tasklist, task):
-        return FakeRequest({"id": task, "title": "Alte Aufgabe"})
+        return FakeRequest({"id": task, "title": "Alte Aufgabe", "notes": self.current_notes})
 
     def _delete(self, tasklist, task):
         self.deleted.append((tasklist, task))
@@ -243,6 +245,33 @@ class CreateTaskTest(unittest.TestCase):
                 gt.create_task(self.service, title, day)
         self.assertEqual(self.service.inserted, [])
 
+    def test_time_is_first_line_of_notes(self):
+        text = gt.create_task(self.service, "Zahnarzt", "2026-11-10", "Karte mitnehmen", time="9:05")
+        body = self.service.inserted[0][1]
+        self.assertEqual(body["due"], "2026-11-10T00:00:00.000Z")   # Google speichert weiter nur den Tag
+        self.assertEqual(body["notes"], "Uhrzeit: 09:05 Uhr\nKarte mitnehmen")
+        self.assertIn("fällig Di 10.11.2026, 09:05 Uhr", text)
+
+    def test_time_without_notes_and_accepted_formats(self):
+        for given in ("14:30", "14.30", "14:30 Uhr", " 14:30 "):
+            with self.subTest(given=given):
+                service = FakeService()
+                gt.create_task(service, "Anruf", time=given)
+                self.assertEqual(service.inserted[0][1]["notes"], "Uhrzeit: 14:30 Uhr")
+        service = FakeService()
+        gt.create_task(service, "Anruf", time="14 Uhr")
+        self.assertEqual(service.inserted[0][1]["notes"], "Uhrzeit: 14:00 Uhr")
+
+    def test_invalid_time_creates_nothing(self):
+        for given in ("25:00", "14:60", "halb drei", "2026-11-10T14:00"):
+            with self.subTest(given=given), self.assertRaisesRegex(gc.CalendarError, "Ungültige Uhrzeit"):
+                gt.create_task(self.service, "Anruf", time=given)
+        self.assertEqual(self.service.inserted, [])
+
+    def test_time_is_found_by_the_watcher(self):
+        gt.create_task(self.service, "Anruf", notes="Nummer 0171 2345, um 9 Uhr Rückruf möglich", time="16:45")
+        self.assertEqual(find_time(self.service.inserted[0][1]["notes"]), dt.time(16, 45))
+
     def test_named_list_ignores_case(self):
         service = FakeService([MINE, SHOP])
         gt.create_task(service, "Milch", list_name=" einkauf ")
@@ -284,6 +313,50 @@ class ChangeTaskTest(unittest.TestCase):
     def test_update_can_clear_fields(self):
         gt.update_task(self.service, "l1::t1", due="NONE", notes="none")
         self.assertEqual(self.body(), {"due": None, "notes": None})
+
+    def test_update_time_keeps_other_notes(self):
+        self.service.current_notes = "Uhrzeit: 09:00 Uhr\nKarte mitnehmen"
+        gt.update_task(self.service, "l1::t1", time="15:30")
+        self.assertEqual(self.body(), {"notes": "Uhrzeit: 15:30 Uhr\nKarte mitnehmen"})
+
+    def test_update_time_on_task_without_notes(self):
+        gt.update_task(self.service, "l1::t1", time="8:00")
+        self.assertEqual(self.body(), {"notes": "Uhrzeit: 08:00 Uhr"})
+
+    def test_new_notes_keep_the_time(self):
+        self.service.current_notes = "Uhrzeit: 09:00 Uhr\nAlt"
+        gt.update_task(self.service, "l1::t1", notes="Neu")
+        self.assertEqual(self.body(), {"notes": "Uhrzeit: 09:00 Uhr\nNeu"})
+
+    def test_new_notes_and_time_together(self):
+        self.service.current_notes = "Uhrzeit: 09:00 Uhr\nAlt"
+        gt.update_task(self.service, "l1::t1", notes="Neu", time="10:15")
+        self.assertEqual(self.body(), {"notes": "Uhrzeit: 10:15 Uhr\nNeu"})
+
+    def test_clear_time_keeps_notes(self):
+        self.service.current_notes = "Uhrzeit: 09:00 Uhr\nKarte mitnehmen"
+        gt.update_task(self.service, "l1::t1", time="none")
+        self.assertEqual(self.body(), {"notes": "Karte mitnehmen"})
+
+    def test_clear_only_time_leaves_no_notes(self):
+        self.service.current_notes = "Uhrzeit: 09:00 Uhr"
+        gt.update_task(self.service, "l1::t1", time="none")
+        self.assertEqual(self.body(), {"notes": None})
+
+    def test_clear_notes_keeps_the_time(self):
+        self.service.current_notes = "Uhrzeit: 09:00 Uhr\nAlt"
+        gt.update_task(self.service, "l1::t1", notes="none")
+        self.assertEqual(self.body(), {"notes": "Uhrzeit: 09:00 Uhr"})
+
+    def test_other_times_in_notes_are_kept(self):
+        self.service.current_notes = "Treffpunkt 18:00 am Bahnhof"
+        gt.update_task(self.service, "l1::t1", time="17:30")
+        self.assertEqual(self.body(), {"notes": "Uhrzeit: 17:30 Uhr\nTreffpunkt 18:00 am Bahnhof"})
+
+    def test_invalid_time_changes_nothing(self):
+        with self.assertRaisesRegex(gc.CalendarError, "Ungültige Uhrzeit"):
+            gt.update_task(self.service, "l1::t1", time="morgen")
+        self.assertEqual(self.service.patched, [])
 
     def test_update_without_changes_or_valid_input(self):
         with self.assertRaisesRegex(gc.CalendarError, "nichts zum Ändern"):
