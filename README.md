@@ -6,10 +6,10 @@ Desktop-Anwendung für macOS und Windows: Ein Klick auf das Symbol öffnet ein P
 **Anzeigebereich** (oben) und einem **Chat mit einem Assistenten** (unten). Rechtsklick öffnet
 das Kontextmenü mit „Proaktive Meldung testen“ und „Beenden“.
 
-Das Projekt ist die **Grundlage** für einen persönlichen Assistenten mit Gemini als
-Sprachmodell (wahlweise lokal mit Ollama). Geplant sind drei **Fähigkeiten**: Morning-Briefing,
-Weg zum nächsten Termin (Travel) und Organisation von Nachrichten und Terminen (im Projektplan
-„Assistant²“). Die Fähigkeiten selbst sind noch nicht umgesetzt. Schon heute nutzt der Assistent
+EVE ist ein persönlicher Assistent mit Gemini als Sprachmodell, wahlweise lokal mit Ollama.
+Der Morning Assistant liefert auf Wunsch ein tägliches Briefing. Geplant sind der Weg zum
+nächsten Termin (Travel) und die Organisation von Nachrichten und Terminen (im Projektplan
+„Assistant²“). Der Assistent nutzt
 Werkzeuge von **MCP-Servern** (eingetragen in [mcp_servers.json](mcp_servers.json)): E-Mail,
 Google Kalender und Google Tasks. Feste Befehle wie `hilfe`, `uhrzeit`, `system`, `start` und
 `neu` funktionieren auch ohne Modell.
@@ -265,6 +265,7 @@ Im Betrieb prüft ein **Wächter** im Hintergrund alle paar Minuten Postfach, Au
 
 - **Allgemein:** Prüfabstand, Art der Meldung (Popup, Systembenachrichtigung, nur Chat), Vorlesen,
   Formulierung, Ruhezeit, Wochentage, Höchstzahl pro Stunde.
+- **Morning Assistant:** Ein tägliches Briefing mit Terminen, Wetter, Aktien und einem Song.
 - **E-Mail:** Das Sprachmodell entscheidet, was wichtig ist, nach deinen Kriterien. Vorrang haben
   eigene Regeln (Absender und Wörter für „immer“ und „nie“). Newsletter werden an ihren Kopfzeilen
   erkannt. Mails bleiben ungelesen, beim ersten Start gilt das Postfach als gesehen.
@@ -274,6 +275,36 @@ Im Betrieb prüft ein **Wächter** im Hintergrund alle paar Minuten Postfach, Au
   und Titel.
 
 `PDA_PROACTIVE_WATCH=0` schaltet den Wächter ganz ab.
+
+#### Morning Assistant
+
+Unter **⚙ Einstellungen → Proaktive Meldungen → Morning Assistant** das tägliche Briefing
+aktivieren und speichern. Die voreingestellte Zeit ist **07:00 Uhr** in der lokalen Uhrzeit
+des Rechners. Läuft EVE erst später, holt es das Briefing bei der nächsten erlaubten Prüfung
+am selben Tag nach. Wochentage und Ruhezeit aus den allgemeinen Einstellungen gelten auch hier.
+Die vier Themen erscheinen als Karten im oberen Anzeigebereich. Über **Briefing anzeigen**
+im Chat lässt sich die Ansicht erneut öffnen. Der Chatbefehl `morning briefing` ruft
+das heutige Briefing jederzeit manuell ab und steht auch in der Übersicht `hilfe`.
+
+- **Termine** kommen aus den eingeblendeten Google-Kalendern. Die bestehende Google-Anmeldung
+  genügt. Ganztägige und laufende mehrtägige Termine zählen ebenfalls.
+- **Wetter** verwendet die verbleibenden Vorhersagepunkte für den Tag am eingestellten Wetterort
+  (z. B. `Berlin,DE`). Das Symbol zeigt die Wetterlage zur angezeigten Uhrzeit.
+  Den [OpenWeather-Schlüssel](https://openweathermap.org/api/forecast5)
+  als einzige Zeile in `openweather-api-key.txt` im App-Datenordner ablegen.
+- **Aktien** zeigt bis zu fünf eingetragene Kürzel, z. B. `AAPL, MSFT, IBM`. EVE zeigt
+  den Schlusskurs und die Veränderung gegenüber dem vorherigen Handelstag. War gestern
+  die Börse geschlossen, steht das Datum des letzten verfügbaren Handelstags dabei.
+  Eine kleine Kurslinie zeigt die Schlusskurse von bis zu sieben Handelstagen.
+  Den [Alpha-Vantage-Schlüssel](https://www.alphavantage.co/support/#api-key)
+  als einzige Zeile in `alphavantage-api-key.txt` im App-Datenordner ablegen.
+- **Musik** ist ein wechselnder Songvorschlag. Unter **Musikgeschmack** lässt sich ein Genre
+  auswählen. Das Cover lädt direkt von Spotify. Über das Spotify-Logo in der Karte
+  oder **Auf Spotify anhören** im Chat öffnet sich der Track in der Spotify-App.
+  Falls die App nicht geöffnet werden kann, nutzt EVE den Browser.
+
+Der App-Datenordner steht oben unter [Einstellungen](#einstellungen-präferenzen).
+Fällt eine Quelle aus oder fehlt ihr Schlüssel, zeigt EVE die übrigen Teile des Briefings an.
 
 ## Testen
 

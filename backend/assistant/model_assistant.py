@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from backend.assistant.base import AssistantReply, ModelSelection
-from backend.assistant.commands import COMMANDS
+from backend.assistant.commands import COMMANDS, MORNING_BRIEFING, morning_briefing
 from backend.assistant.llm import ChatMessage, LanguageModelError, SelectableLanguageModel, ToolCall
 from backend.assistant.settings import CONFIRMED_TOOLS, SETTINGS_KEYS, AssistantSettings, is_internal_tool
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult
@@ -92,6 +92,8 @@ class ModelAssistant:
             self.new_conversation()
         if command == "hilfe":
             return model_help_reply(self.model_commands)
+        if command == MORNING_BRIEFING:
+            return morning_briefing(self.preferences, self.tools, self.clock())
         if command in COMMANDS:
             return COMMANDS[command][1]()
         if command == "modelle":

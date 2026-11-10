@@ -12,6 +12,8 @@ import sys
 from collections.abc import Callable
 
 from backend.assistant.base import AssistantReply
+from backend.assistant.tools import ToolProvider
+from backend.preferences import PreferenceStore, default_store
 from backend.views import START_VIEW, TemplateView
 
 
@@ -54,10 +56,26 @@ def _new_conversation() -> AssistantReply:
     return AssistantReply("Neues Gespräch begonnen.", START_VIEW)
 
 
+MORNING_BRIEFING = "morning briefing"
+
+
+def morning_briefing(preferences: PreferenceStore | None = None, tools: ToolProvider | None = None,
+                     now: datetime.datetime | None = None) -> AssistantReply:
+    from backend import proactive
+    from backend.assistant.skills import morning
+    from backend.proactive_settings import MORNING, ProactiveSettings
+
+    settings = ProactiveSettings(preferences if preferences is not None else default_store())
+    briefing = morning.prepare(now or datetime.datetime.now(), settings.values(MORNING),
+                                tools.call_tool if tools is not None else None)
+    return proactive.compose(None, briefing)
+
+
 COMMANDS: dict[str, tuple[str, Callable[[], AssistantReply]]] = {
     "hilfe": ("Zeigt alle Befehle", _help),
     "uhrzeit": ("Zeigt Uhrzeit und Datum", _time),
     "system": ("Zeigt Systeminformationen", _system),
+    MORNING_BRIEFING: ("Zeigt das heutige Morning-Briefing", morning_briefing),
     "start": ("Zurück zur Startansicht", _start),
     "neu": ("Neues Gespräch (KI vergisst den Verlauf)", _new_conversation),
 }

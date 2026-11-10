@@ -26,10 +26,11 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from backend.assistant.skills import morning
 from backend.assistant.tools import ToolResult
 from backend.preferences import PreferenceStore
 from backend.proactive import Occasion
-from backend.proactive_settings import CALENDAR, GENERAL, MAIL, TASKS, ProactiveSettings
+from backend.proactive_settings import CALENDAR, GENERAL, MAIL, MORNING, TASKS, ProactiveSettings
 
 log = logging.getLogger(__name__)
 
@@ -120,13 +121,21 @@ class ProactiveWatcher:
     def _run(self) -> None:
         next_check = time.monotonic() + STARTUP_DELAY_S
         while not self._stop.wait(TICK_S):
-            if time.monotonic() < next_check:
+            started = time.monotonic()
+            if started < next_check:
                 continue
+            now = self.clock()
             try:
                 self.check()
             except Exception:  # noqa: BLE001  # der Wächter soll weiterlaufen
                 log.exception("Prüfung für proaktive Meldungen fehlgeschlagen")
             next_check = time.monotonic() + self.settings.values(GENERAL)["interval"] * 60
+            options = self.settings.values(MORNING)
+            if options["enabled"]:
+                scheduled = dt.datetime.combine(now.date(), _clock(options["time"]))
+                if scheduled <= now:
+                    scheduled += dt.timedelta(days=1)
+                next_check = min(next_check, started + scheduled.timestamp() - now.timestamp())
 
     # --- eine Prüfung ------------------------------------------------------------------------
     def check(self) -> int:
@@ -143,6 +152,10 @@ class ProactiveWatcher:
         if budget <= 0:
             return 0
 
+        sent = self._send_morning(now, general)
+        if sent == budget:
+            self._forget_old(now)
+            return sent
         self._mail_progress = None
         findings: list[Finding] = []
         for name, source in (("E-Mail", self._mail_findings), ("Aufgaben", self._task_findings),
@@ -154,11 +167,22 @@ class ProactiveWatcher:
                 findings += self._problem_findings(name, str(error), general, now)
 
         findings = [finding for finding in findings if not self._notified(finding.key)]
-        sent = self._send(findings, general, budget, now)
+        sent += self._send(findings, general, budget - sent, now)
         if self._mail_progress is not None:
             self.state.set(MAIL_STATE, self._mail_progress)
         self._forget_old(now)
         return sent
+
+    def _send_morning(self, now: dt.datetime, general: dict[str, Any]) -> int:
+        options = self.settings.values(MORNING)
+        key = f"morning:{now.date().isoformat()}"
+        if not options["enabled"] or now.time() < _clock(options["time"]) or self._notified(key):
+            return 0
+        briefing = morning.prepare(now, options, self.call_tool)
+        self.deliver(briefing, formulate=False, speak=general["speak"], display=general["display"])
+        self._sent.append(now)
+        self._mark((key,), now)
+        return 1
 
     def _read(self, tool: str, arguments: dict[str, Any] | None = None) -> Any:
         result = self.call_tool(tool, arguments or {})
@@ -260,7 +284,7 @@ class ProactiveWatcher:
             self.deliver(_occasion(group, general), formulate=general["formulate"], speak=general["speak"],
                          display=general["display"])
             self._sent.append(now)
-            self._mark(group, now)
+            self._mark((key for finding in group for key in (finding.key, *finding.also)), now)
         return len(groups)
 
     def _problem_findings(self, source: str, error: str, general: dict[str, Any], now: dt.datetime) -> list[Finding]:
@@ -277,11 +301,10 @@ class ProactiveWatcher:
     def _notified(self, key: str) -> bool:
         return key in (self.state.get(NOTIFIED) or {})
 
-    def _mark(self, findings: Iterable[Finding], now: dt.datetime) -> None:
+    def _mark(self, keys: Iterable[str], now: dt.datetime) -> None:
         notified = dict(self.state.get(NOTIFIED) or {})
-        for finding in findings:
-            for key in (finding.key, *finding.also):
-                notified[key] = now.date().isoformat()
+        for key in keys:
+            notified[key] = now.date().isoformat()
         self.state.set(NOTIFIED, notified)
 
     def _forget_old(self, now: dt.datetime) -> None:

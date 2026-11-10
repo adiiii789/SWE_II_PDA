@@ -22,14 +22,17 @@ let replyPending = false;   // Bridge-Aufrufe laufen nacheinander - während cha
 let chatMaximized = false;
 let popupEnlarged = false;
 let stickToBottom = true;   // war der Verlauf zuletzt ganz unten? Dann bleibt er es auch bei Größenänderungen
+let briefingActive = false;   // weitere Hintergrundmeldungen sollen das Briefing nicht verdrängen
 
 const NEAR_BOTTOM_PX = 40;
 const VIEW_MIN_PX = 60;     // Mindesthöhen beim Ziehen am #splitter
 const CHAT_MIN_PX = 120;
 
 // Zeigt fertig gerendertes HTML (aus frontend/templates/, vom Backend gerendert) im iframe an.
-function showView(html) {
+function showView(html, briefing = false) {
   viewFrame.srcdoc = html;
+  briefingActive = briefing;
+  document.body.classList.toggle("briefing-view", briefing);
 }
 
 function isNearBottom() {
@@ -132,8 +135,24 @@ function showReply(reply) {
   const message = createMessage(reply.text, "assistant");
   if (reply.proactive) markProactive(message, reply.title);
   if (reply.attachments && reply.attachments.length) addAttachments(message, reply.attachments);
+  if (reply.html && reply.view_button) {
+    message.classList.add("with-view-action");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "view-action";
+    button.textContent = reply.view_button;
+    button.addEventListener("click", () => {
+      if (chatMaximized) toggleChatMaximized();
+      showView(reply.html, true);
+      viewFrame.focus();
+    });
+    message.appendChild(button);
+  }
   appendToChat(message);   // erst komplett aufbauen, dann einblenden - so stimmt die Scrollposition
-  if (reply.html) showView(reply.html);
+  if (reply.html && (reply.view_button || !reply.proactive || !briefingActive)) {
+    if (reply.view_button && !reply.proactive && chatMaximized) toggleChatMaximized();
+    showView(reply.html, Boolean(reply.view_button));
+  }
 }
 
 // Kennzeichnung "meldet sich von selbst" über der Nachricht - Titel nur als Text, nie als HTML.
@@ -286,12 +305,24 @@ async function loadModels() {
 }
 
 // Links in Antworten im Standardbrowser öffnen - sonst würde das Popup selbst wegnavigieren.
-async function onChatClick(event) {
+function onChatClick(event) {
   const link = event.target.closest("a[href]");
   if (!link) return;
   event.preventDefault();
+  openLinkInBrowser(link.href);
+}
+
+function onBriefingLink(event) {
+  if (!briefingActive || event.source !== viewFrame.contentWindow || event.data?.type !== "eve:spotify-track") return;
+  const {url} = event.data;
+  if (typeof url === "string" && /^https:\/\/open\.spotify\.com\/track\/[a-z0-9]{22}$/i.test(url)) {
+    openLinkInBrowser(url);
+  }
+}
+
+async function openLinkInBrowser(url) {
   try {
-    await open_link(link.href);
+    await open_link(url);
   } catch (error) {
     addMessage(error.message, "error");
   }
@@ -366,6 +397,7 @@ window.addEventListener("focus", () => {
   if (!modelSelect.disabled && !replyPending) loadModels();
 });
 chatHistory.addEventListener("click", onChatClick);
+window.addEventListener("message", onBriefingLink);
 recordButton.addEventListener("click", toggleRecording);
 chatHistory.addEventListener("scroll", onChatScroll);
 scrollDownButton.addEventListener("click", scrollToBottom);

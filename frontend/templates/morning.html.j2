@@ -1,0 +1,135 @@
+{% from "weather_icon.html.j2" import weather_icon -%}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+{% include "theme.css" %}
+{% include "morning.css" %}
+  </style>
+</head>
+<body>
+  <header class="briefing-header">
+    <div class="sunrise" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <path d="M3 17h18M5 21h14M7 17a5 5 0 0 1 10 0M12 3v4M4 8l2 2m14-2-2 2"/>
+      </svg>
+    </div>
+    <div>
+      <p class="date">{{ date }}</p>
+      <h1>Guten Morgen</h1>
+    </div>
+  </header>
+
+  <main class="briefing-grid">
+    <section class="card" aria-labelledby="calendar-heading">
+      <h2 id="calendar-heading">Termine{% if calendar.total is defined %}<span class="count">{{ calendar.total }}</span>{% endif %}</h2>
+      {% if calendar.status is defined %}
+      <p class="secondary">{{ calendar.status }}</p>
+      {% else %}
+      <ul class="agenda">
+        {% for event in calendar.entries %}
+        <li><span class="event-time">{{ event.time }}</span><span>{{ event.title }}</span></li>
+        {% endfor %}
+      </ul>
+      {% if calendar.remaining %}
+      <p class="secondary more">+ {{ calendar.remaining }} weitere</p>
+      {% endif %}
+      {% endif %}
+    </section>
+
+    <section class="card" aria-labelledby="weather-heading">
+      <h2 id="weather-heading">
+        Wetter{% if weather.icon is defined and weather.icon %}{{ weather_icon(weather.icon) }}{% endif %}
+      </h2>
+      {% if weather.status is defined %}
+      {% if weather.location %}<p class="weather-place">{{ weather.location }}</p>{% endif %}
+      <p class="secondary">{{ weather.status }}</p>
+      {% else %}
+      <p class="temperature">{{ weather.low }} bis {{ weather.high }} <span>°C</span></p>
+      <p class="weather-place">{{ weather.location }}</p>
+      <p class="secondary">{{ weather.condition | capitalize }} gegen {{ weather.time }} Uhr</p>
+      {% endif %}
+    </section>
+
+    <section class="card market" aria-labelledby="market-heading">
+      <h2 id="market-heading">Börse</h2>
+      {% if stocks.status is defined %}
+      <p class="secondary">{{ stocks.status }}</p>
+      {% else %}
+      {% if stocks.trend_sessions %}
+      <p class="secondary trend-caption">Verlauf · bis zu {{ stocks.trend_sessions }} Handelstage</p>
+      {% endif %}
+      <table aria-label="Schlusskurse und Änderungen zum vorherigen Handelstag">
+        <thead>
+          <tr>
+            <th scope="col">Kürzel</th>
+            <th scope="col">Schluss</th>
+            <th scope="col">Änderung</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for quote in stocks.quotes %}
+          <tr>
+            <th scope="row">
+              <div class="quote-label">
+                <span>
+                  {{ quote.symbol }}
+                  {% if quote.day is defined %}<span class="quote-day">{{ quote.day }}</span>{% endif %}
+                </span>
+                {% if quote.trend is defined %}
+                <svg class="quote-trend" viewBox="0 0 64 24" fill="none"
+                     role="img" aria-label="Kursverlauf über {{ quote.trend.sessions }} Handelstage">
+                  <title>Kursverlauf über {{ quote.trend.sessions }} Handelstage bis {{ quote.day }}</title>
+                  <polyline points="{{ quote.trend.points }}" stroke="currentColor" stroke-width="1.7"
+                            stroke-linecap="round" stroke-linejoin="round"/>
+                  <circle cx="62" cy="{{ quote.trend.last_y }}" r="2" fill="currentColor"/>
+                </svg>
+                {% endif %}
+              </div>
+            </th>
+            {% if quote.close is defined %}
+            <td>{{ quote.close }}</td>
+            <td class="change {{ quote.direction }}">{{ quote.change }} %</td>
+            {% else %}
+            <td colspan="2" class="secondary">Keine Kursdaten</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </section>
+
+    <section class="card song" aria-labelledby="song-heading">
+      <h2 id="song-heading">Song des Tages</h2>
+      <div class="song-details">
+        <div class="song-cover">
+          {% if song.cover %}
+          <img src="{{ song.cover }}" alt="Cover zu {{ song.title }}" width="64" height="64"
+               decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">
+          {% endif %}
+          <div class="cover-placeholder" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18V6l11-2v12M9 10l11-2"/>
+              <ellipse cx="6" cy="18" rx="3" ry="2"/>
+              <ellipse cx="17" cy="16" rx="3" ry="2"/>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <p class="song-title">{{ song.title }}</p>
+          <p class="secondary">{{ song.artist }}</p>
+          <a class="spotify-link" href="{{ song.url }}" aria-label="{{ song.title }} auf Spotify öffnen"
+             onclick="if (event.isTrusted) parent.postMessage({type: 'eve:spotify-track', url: this.href}, '*'); return false">
+            <span aria-hidden="true">{% include "spotify_logo.svg" %}</span>
+            <span aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

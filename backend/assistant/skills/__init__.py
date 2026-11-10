@@ -2,7 +2,8 @@
 
 Es gibt genau einen durchgehenden Assistenten: ein Gesprächsverlauf, ein Satz
 Präferenzen, Rückfragen über alle Bereiche hinweg. Eine Fähigkeit bündelt, was
-er für einen Aufgabenbereich braucht. Noch leer. Geplant:
+er für einen Aufgabenbereich braucht. Der Morning Assistant liefert sein Briefing
+über den Wächter. Weitere Fähigkeiten sind geplant:
 
   Fähigkeit           Wofür                                  Integrationen (backend/integrations/)
   ------------------  -------------------------------------  -------------------------------------

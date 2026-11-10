@@ -740,7 +740,7 @@ GeminiAssistant (erfüllt Assistant + ModelSelection)
   │    ├─ MCPToolProvider …      ──stdio──► weitere Server aus mcp_servers.json
   │    └─ Werkzeuge der Fähigkeiten (skills/, noch keine)
   └─ preferences: JsonPreferenceStore
-proaktiv: Auslöser (heute Makro, später z. B. 7 Uhr Briefing) → api.proactive_message → announce()
+proaktiv: Makro oder Wächter (u. a. Morning-Briefing) → api._deliver_proactive → announce()
 ```
 
 Sind es für ein kleines Modell zu viele Werkzeuge, kann der Assistent später je Anfrage nur die

@@ -1,0 +1,26 @@
+{% macro weather_icon(kind) -%}
+<svg class="weather-icon {{ kind }}" viewBox="0 0 32 32" fill="none"
+     stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {% if kind == "sun" %}
+  <circle cx="16" cy="16" r="5.5"/>
+  <path d="M16 3v4m0 18v4M3 16h4m18 0h4M7 7l2.5 2.5m13 13L25 25M7 25l2.5-2.5m13-13L25 7"/>
+  {% elif kind == "moon" %}
+  <path d="M24.5 20.5A10 10 0 0 1 11.5 7a10 10 0 1 0 13 13.5Z"/>
+  <path d="M23 5v4m-2-2h4"/>
+  {% else %}
+  {% if kind == "partly-cloudy" %}
+  <path class="weather-sun" d="M8 15a5 5 0 1 1 8-4M11 2v2.5M3 6l2 1.5m-3 5h2.5M19 4l-2 2"/>
+  {% endif %}
+  <path class="weather-cloud" d="M8 22h15a4.5 4.5 0 0 0 .5-9 7 7 0 0 0-13.5 1.2A4.1 4.1 0 1 0 8 22Z"/>
+  {% if kind == "rain" %}
+  <path d="m10 25-2 4m9-4-2 4m9-4-2 4"/>
+  {% elif kind == "storm" %}
+  <path d="m17 21-4 5h5l-3 4"/>
+  {% elif kind == "snow" %}
+  <path d="M9 26h4m-2-2v4m7 0h4m-2-2v4"/>
+  {% elif kind == "fog" %}
+  <path d="M6 26h16m-12 4h16"/>
+  {% endif %}
+  {% endif %}
+</svg>
+{%- endmacro %}

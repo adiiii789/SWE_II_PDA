@@ -1,0 +1,135 @@
+body {
+  box-sizing: border-box;
+  max-width: 820px;
+  margin-inline: auto;
+  padding: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+::-webkit-scrollbar { width: 7px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+
+.briefing-header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 12px;
+  padding: 2px 0;
+}
+
+.sunrise {
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: #F4C979;
+  background: #483D2D;
+}
+.sunrise svg { width: 23px; height: 23px; }
+
+.date, .secondary { color: var(--text-muted); }
+.date { font-size: 11px; }
+h1, h2, p, ul { margin: 0; }
+h1 { font-size: 21px; line-height: 1.2; }
+
+.briefing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 10px;
+}
+
+.card {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #4C4C4C;
+  border-radius: 10px;
+  background: var(--surface);
+}
+.card h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.count {
+  border-radius: 8px;
+  padding: 0 5px;
+  color: #F4C979;
+  background: #483D2D;
+  font-size: 11px;
+}
+
+.agenda { list-style: none; padding: 0; }
+.agenda li + li { margin-top: 6px; }
+.event-time {
+  display: block;
+  color: #E7C894;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.more { margin-top: 6px; font-size: 11px; }
+
+.temperature { font-size: 21px; font-weight: 600; line-height: 1.25; }
+.temperature span { font-size: 13px; }
+.weather-place { margin-top: 3px; font-weight: 600; }
+.weather-icon { width: 32px; height: 32px; margin: -4px 0 -4px auto; color: #C3D4E4; }
+.weather-icon.sun, .weather-icon .weather-sun { color: #F4C979; }
+.weather-icon.rain { color: #94C6F0; }
+.weather-icon.storm { color: #F4C979; }
+.weather-icon .weather-cloud { color: #C3D4E4; }
+
+.market, .song { grid-column: 1 / -1; }
+.market table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.market th, .market td { text-align: right; padding: 5px 0 5px 8px; }
+.market th:first-child { text-align: left; padding-left: 0; }
+.market td { white-space: nowrap; }
+.market thead { color: var(--text-muted); font-size: 11px; }
+.trend-caption { margin-bottom: 4px; font-size: 11px; }
+.market tbody tr { border-top: 1px solid #4C4C4C; }
+.market tbody th { font-weight: 600; }
+.quote-label { display: flex; flex-wrap: wrap; align-items: center; gap: 1px 8px; }
+.quote-day { margin-left: 4px; color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.quote-trend { width: 57px; height: 21px; flex: none; margin-left: auto; color: #9DBFEE; }
+.change { font-weight: 600; }
+.change.up { color: #A5DCB4; }
+.change.down { color: #F3ABAA; }
+.song-details { display: flex; gap: 11px; align-items: center; }
+.song-cover { flex: 0 0 64px; }
+.song-cover img, .cover-placeholder { width: 64px; height: 64px; border-radius: 4px; }
+.song-cover img { display: block; object-fit: contain; }
+.cover-placeholder { display: grid; place-items: center; color: #E7C894; background: #483D2D; }
+.cover-placeholder svg { width: 25px; height: 25px; }
+.song-cover img + .cover-placeholder { display: none; }
+.song-title { font-weight: 600; }
+.spotify-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  text-decoration: none;
+}
+.spotify-link:hover { background: var(--control-hover); }
+.spotify-link svg { display: block; width: 72px; height: auto; }
+
+@media (max-width: 359px) {
+  .briefing-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (min-width: 630px) {
+  .market, .song { grid-column: auto; }
+}
+@media (max-width: 359px), (min-width: 630px) {
+  .agenda li { display: flex; align-items: baseline; gap: 8px; }
+  .event-time { flex: 0 0 72px; }
+}

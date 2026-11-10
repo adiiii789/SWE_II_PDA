@@ -40,6 +40,8 @@ class Occasion:
     instruction: str   # Auftrag ans Sprachmodell
     fallback: str      # Text, wenn kein Sprachmodell antworten kann
     trigger: str       # wodurch ausgelöst (steht in der Ansicht)
+    view: TemplateView | None = None
+    chat_text: str | None = None  # kurze Nachricht, wenn die Details in der Ansicht stehen
 
 
 DEMO = "demo"
@@ -69,6 +71,8 @@ def occasion(name: str) -> Occasion:
 def compose(assistant: Assistant, occasion: Occasion,
             clock: Callable[[], datetime.datetime] = datetime.datetime.now) -> AssistantReply:
     """Meldung zum Anlass: vom Assistenten formuliert, sonst der Ersatztext. Wirft nie."""
+    if occasion.view is not None:
+        return AssistantReply(occasion.chat_text or occasion.fallback, occasion.view, view_button="Briefing anzeigen")
     text = None
     if isinstance(assistant, ProactiveAssistant):
         try:
@@ -97,7 +101,8 @@ def announce(message: dict[str, Any], occasion: Occasion, event_bus: EventBus,
     event_bus.publish(ASSISTANT_MESSAGE, message)
     if display == "chat":
         return message
-    notice = {"title": occasion.title, "text": notice_text(message["text"])}
+    notice_body = occasion.chat_text.partition("\n\n")[0] if occasion.chat_text is not None else message["text"]
+    notice = {"title": occasion.title, "text": notice_text(notice_body)}
     event_bus.publish(PROACTIVE_NOTICE, notice if display is None else {**notice, "display": display})
     return message
 

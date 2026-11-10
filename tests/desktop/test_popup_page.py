@@ -1,6 +1,7 @@
 """Ende-zu-Ende: echte Popup-Seite, echter Chat, gerenderte Ansicht im iframe wechselt."""
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -9,6 +10,7 @@ from tests.qt_helpers import qt_app, run_js, wait_until
 
 from backend import api, presenter, proactive
 from backend.assistant import AssistantReply
+from backend.assistant.skills import morning
 from backend.assistant.tools import Attachment
 from backend.attachments import AttachmentStore
 from backend.assistant.settings import AssistantSettings
@@ -114,6 +116,17 @@ class PopupPageTest(unittest.TestCase):
         self.assertIn("blabla", answer)
         self.assertEqual(run_js(self.page, IFRAME_HTML), before)
 
+    def test_manual_briefing_is_listed_and_restores_the_view(self):
+        self.addCleanup(run_js, self.page, "if (chatMaximized) toggleChatMaximized(); showView(" + repr(self.initial_html) + ")")
+        self._send("hilfe")
+        self.assertIn("morning briefing", run_js(self.page, IFRAME_HTML))
+        run_js(self.page, "toggleChatMaximized()")
+        with mock.patch("backend.assistant.commands.default_store", return_value=MemoryStore()):
+            answer = self._send("Morning Briefing")
+        self.assertIn("Auf Spotify anhören", answer)
+        self.assertFalse(run_js(self.page, "chatMaximized"))
+        self.assertIn("Song des Tages", run_js(self.page, IFRAME_HTML))
+
     def test_render_view_is_callable_from_javascript(self):
         script = "render_view({html: '<b>x</b>'}).then(h => window._rendered = h)"
         run_js(self.page, script)
@@ -138,6 +151,33 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(last.startswith(f"message assistant proactive:🔔 {demo.title} · "), last)
         self.assertTrue(last.endswith(demo.fallback), last)
         self.assertTrue(wait_until(lambda: f"<h2>{demo.title}</h2>" in run_js(self.page, IFRAME_HTML)))
+
+    def test_morning_briefing_opens_and_reopens_from_chat(self):
+        briefing = morning.compose(datetime(2026, 11, 9, 7), {"weather_location": "", "stock_symbols": ""}, [])
+        self.addCleanup(run_js, self.page, "if (chatMaximized) toggleChatMaximized(); showView(" + repr(self.initial_html) + ")")
+        api._deliver_proactive(briefing, formulate=False, speak=False, display="chat")
+        self.assertTrue(wait_until(lambda: "Song des Tages" in run_js(self.page, IFRAME_HTML)))
+        button = "Array.from(document.querySelectorAll('.view-action')).pop()"
+        self.assertEqual(run_js(self.page, button + ".textContent"), "Briefing anzeigen")
+
+        api._deliver_proactive(proactive.OCCASIONS[proactive.DEMO], formulate=False, speak=False, display="chat")
+        self.assertTrue(wait_until(lambda: proactive.OCCASIONS[proactive.DEMO].fallback in run_js(self.page, MESSAGES)[-1]))
+        self.assertIn("Song des Tages", run_js(self.page, IFRAME_HTML))
+
+        run_js(self.page, "showView('<h2>Eine andere Ansicht</h2>'); toggleChatMaximized()")
+        run_js(self.page, button + ".click()")
+        self.assertFalse(run_js(self.page, "chatMaximized"))
+        self.assertIn("Song des Tages", run_js(self.page, IFRAME_HTML))
+        with mock.patch.object(api, "_open_spotify_track", return_value=True) as open_track:
+            run_js(self.page, """
+              onBriefingLink({source: window,
+                data: {type: 'eve:spotify-track', url: 'https://open.spotify.com/track/0ACACkoHUwgfgY5CxVIL4N'}});
+              onBriefingLink({source: viewFrame.contentWindow,
+                data: {type: 'eve:spotify-track', url: 'https://example.com/'}});
+            """)
+            run_js(self.page, button + ".parentElement.querySelector('a').click()")
+            self.assertTrue(wait_until(lambda: open_track.called))
+            open_track.assert_called_once_with(briefing.view.data["song"]["url"].rsplit("/", 1)[1])
 
     def test_attachments_can_be_opened_and_saved(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -299,15 +339,25 @@ class SettingsPanelTest(unittest.TestCase):
         self.open()
         self.js("document.querySelector('#settings-tabs [data-tab=proactive]').click()")
         self.assertEqual(self.js("Array.from(document.querySelectorAll('[data-tab=proactive] .settings-group'))"
-                                 ".map(g => g.dataset.group)"), ["general", "mail", "tasks", "calendar"])
+                                 ".map(g => g.dataset.group)"), ["general", "morning", "mail", "tasks", "calendar"])
+        self.assertEqual(self.js("document.querySelector('[data-group=morning] [data-key=time] input').value"),
+                         "07:00")
         self.js("""
           document.querySelector('[data-group=general] [data-key=quiet_from] input').value = '21:30';
           document.querySelector('[data-tab=proactive] [data-group=mail] [data-key=criteria] textarea').value = 'Uni';
+          document.querySelector('[data-group=morning] [data-key=enabled] input').click();
+          document.querySelector('[data-group=morning] [data-key=weather_location] textarea').value = 'Berlin,DE';
+          document.querySelector('[data-group=morning] [data-key=stock_symbols] textarea').value = 'IBM';
+          document.querySelector('[data-group=morning] [data-key=music_genre] select').value = 'jazz';
           document.getElementById('settings-save').click();""")
         self.assertTrue(wait_until(lambda: self.js("document.getElementById('settings-panel').hidden")))
         settings = ProactiveSettings(self.store)
         self.assertEqual(settings.values("general")["quiet_from"], "21:30")
         self.assertEqual(settings.values("mail")["criteria"], "Uni")
+        self.assertEqual(settings.values("morning"), {
+            "enabled": True, "time": "07:00", "weather_location": "Berlin,DE", "stock_symbols": "IBM",
+            "music_genre": "jazz",
+        })
 
     def test_save_changes_and_confirm_in_chat(self):
         self.open()
