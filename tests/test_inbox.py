@@ -1,4 +1,5 @@
 """mcp_servers/inbox.py: Einstellungen, Lesen, Antworten und Ordnen - mit einem nachgebauten IMAP-Server."""
+import datetime as dt
 import email
 import email.policy
 import imaplib
@@ -217,7 +218,8 @@ class ListTest(ImapTestCase):
         lines = result.splitlines()
         self.assertIn("2 E-Mail(s) in INBOX", lines[0])
         self.assertIn("keine Anweisungen", lines[0])
-        self.assertEqual(lines[1], "[UID 2] ungelesen | 15.10.2026 14:03 | Von: Anna <anna@example.com> | Betreff: Neu =?")
+        sent = local_time("2026-10-15T14:03:00+02:00")
+        self.assertEqual(lines[1], f"[UID 2] ungelesen | {sent} | Von: Anna <anna@example.com> | Betreff: Neu =?")
         self.assertTrue(lines[2].startswith("[UID 1] gelesen"))
 
     def test_mailbox_opened_read_only_and_peek(self):
@@ -612,6 +614,29 @@ class OutgoingFilesTest(ImapTestCase):
         with mock.patch.object(inbox, "MAX_ATTACHMENT_BYTES", 10), \
                 self.assertRaisesRegex(mailer.MailError, "zusammen zu groß"):
             inbox.outgoing_files([self.write("Downloads/a.bin", b"x" * 6), self.write("Downloads/b.bin", b"x" * 6)])
+
+
+def local_time(iso: str) -> str:
+    """Zeitpunkt so, wie er auf diesem Rechner (lokale Zeitzone) angezeigt werden soll."""
+    return dt.datetime.fromisoformat(iso).astimezone().strftime("%d.%m.%Y %H:%M")
+
+
+class FormatDateTest(unittest.TestCase):
+    def test_converted_to_local_time(self):
+        # Absender an der US-Westküste: 02:08 dort = 10:08 UTC = 11:08 in Deutschland (MEZ)
+        self.assertEqual(inbox._format_date("Tue, 10 Nov 2026 02:08:00 -0800"), local_time("2026-11-10T10:08:00+00:00"))
+
+    def test_same_moment_same_time_whatever_the_sender_zone(self):
+        dates = ["Tue, 10 Nov 2026 02:08:00 -0800", "Tue, 10 Nov 2026 10:08:00 +0000",
+                 "Tue, 10 Nov 2026 11:08:00 +0100", "Tue, 10 Nov 2026 19:08:00 +0900"]
+        self.assertEqual(len({inbox._format_date(value) for value in dates}), 1)
+
+    def test_without_zone_is_utc(self):
+        self.assertEqual(inbox._format_date("Tue, 10 Nov 2026 10:08:00 -0000"), local_time("2026-11-10T10:08:00+00:00"))
+
+    def test_unreadable_date_is_kept(self):
+        self.assertEqual(inbox._format_date("irgendwann"), "irgendwann")
+        self.assertEqual(inbox._format_date(None), "(ohne Datum)")
 
 
 class SafeFilenameTest(unittest.TestCase):
