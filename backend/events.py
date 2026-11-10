@@ -29,6 +29,8 @@ ASSISTANT_MESSAGE = "assistant_message"
 PROACTIVE_NOTICE = "proactive_notice"
 # Popup vergrößern (True) oder auf Normalgröße zurück (False); backend/desktop/application.py reagiert darauf
 POPUP_ENLARGED = "popup_enlarged"
+# Fortschritt beim Hochfahren für den Ladebildschirm, Payload wie Startup.status() (backend/startup.py)
+STARTUP_PROGRESS = "startup_progress"
 
 
 class EventBus:

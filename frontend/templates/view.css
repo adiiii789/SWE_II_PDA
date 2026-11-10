@@ -1,17 +1,22 @@
 /* Layout der Ansicht im iframe (wird in die Templates eingebettet). */
+html, body { background: var(--surface); }   /* Fläche bis unten, nicht nur so hoch wie der Inhalt */
 body {
-  padding: 16px;
+  padding: 18px 20px;
   box-sizing: border-box;
 }
 
-h2 { margin: 0 0 12px; font-size: 18px; }
-p  { margin: 0; color: var(--text-muted); }
+h2 { margin: 0; font-family: var(--font-heading); font-size: 18px; font-weight: 600; }
+p  { margin: 8px 0 0; color: var(--text-muted); line-height: 1.5; }
 
-p + table { margin-top: 12px; }
-table { width: 100%; border-collapse: collapse; }
+table { width: 100%; margin-top: 16px; border-collapse: collapse; }
 th, td {
   text-align: left;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 2px;
+  border-bottom: var(--bw) solid var(--border);
 }
-th { color: var(--text-muted); font-weight: 600; }
+th { color: var(--text-muted); font-weight: 500; font-size: 12px; }
+td:first-child { color: var(--text-muted); }
+tbody tr:last-child td { border-bottom: none; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }

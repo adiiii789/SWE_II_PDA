@@ -6,8 +6,39 @@
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
   <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="proactive_alert.css">
+  <link rel="stylesheet" href="loading_screen.css">
 </head>
 <body>
+  <!-- Ladebildschirm (loading_screen.js): verschwindet, sobald Assistent und Modell bereit sind -->
+  <div id="loading-screen" aria-live="polite">
+    <div id="loading-stage">
+      <canvas id="loading-canvas" aria-hidden="true"></canvas>
+      <div id="loading-caption">
+        <div id="loading-tagline"></div>
+        <div id="loading-step"></div>
+        <button type="button" id="loading-skip" hidden>Nicht warten, schon loslegen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kopfzeile: Avatar des Assistenten (avatar.js) mit Zustand, rechts die Knöpfe -->
+  <header id="app-header">
+    <div id="agent">
+      <canvas id="agent-orb" class="orb"></canvas>
+      <div id="agent-meta">
+        <span id="agent-name">Personal Digital Agent</span>
+        <span id="agent-status">Bereit</span>
+      </div>
+    </div>
+    <div id="chat-toolbar">
+      <button type="button" id="design-button" class="icon-button" data-icon="palette" title="Design und Avatar auswählen">Design</button>
+      <button type="button" id="chat-max-button" class="icon-button" data-icon="chat-max" title="Ansicht ausblenden, Chat über die ganze Höhe">⇕ Chat groß</button>
+      <button type="button" id="enlarge-button" class="icon-button" data-icon="enlarge" title="Fenster vergrößern">⤢ Fenster groß</button>
+      <button type="button" id="settings-button" class="icon-button" data-icon="settings" title="Wie der Assistent antwortet und Werkzeuge zeigt">⚙ Einstellungen</button>
+    </div>
+  </header>
+
   <!-- sandbox ohne allow-same-origin: Inhalte im iframe kommen nicht an die
        Popup-Seite und damit nicht an die Python-Funktionen heran. -->
   <iframe id="view-frame" title="Anzeige" sandbox="allow-scripts"></iframe>
@@ -17,25 +48,39 @@
 
   <!-- nicht id="chat": das würde die globale Python-Funktion chat() verdecken -->
   <section id="chat-panel">
-    <div id="chat-toolbar">
-      <button type="button" id="settings-button" title="Wie der Assistent antwortet und Werkzeuge zeigt">⚙ Einstellungen</button>
-      <span class="toolbar-gap"></span>
-      <button type="button" id="chat-max-button" title="Ansicht ausblenden, Chat über die ganze Höhe">⇕ Chat groß</button>
-      <button type="button" id="enlarge-button" title="Fenster vergrößern">⤢ Fenster groß</button>
-    </div>
     <div id="chat-scroll">
       <div id="chat-history"></div>
       <!-- erscheint, wenn man hochgescrollt hat -->
-      <button type="button" id="scroll-down-button" title="Zur neuesten Nachricht" hidden>↓</button>
+      <button type="button" id="scroll-down-button" class="icon-button" data-icon="down" title="Zur neuesten Nachricht" hidden>↓</button>
+      <!-- während der Spracheingabe: großer Avatar (nur Anzeige, Bedienung bleibt am Mikrofon-Knopf) -->
+      <div id="listening-overlay" aria-hidden="true">
+        <canvas id="listening-orb" class="orb"></canvas>
+        <div id="listening-title">Ich höre zu …</div>
+        <div id="listening-hint">Mikrofon-Knopf: senden · Esc: abbrechen</div>
+      </div>
     </div>
     <form id="input-form">
+      <input id="message-input" placeholder="Nachricht an den Assistenten …" autocomplete="off">
       <!-- Sprachmodell; bleibt versteckt, wenn der Assistent keins nutzt -->
       <select id="model-select" title="Sprachmodell" hidden></select>
-      <input id="message-input" placeholder="Nachricht an den Assistenten…" autocomplete="off">
+      <span class="composer-gap"></span>
       <!-- Spracheingabe: Klick startet, zweiter Klick sendet, Escape bricht ab; versteckt ohne Mikrofon-Pakete -->
-      <button type="button" id="record-button" title="Spracheingabe starten" hidden>🎤</button>
-      <button type="submit">Senden</button>
+      <button type="button" id="record-button" class="icon-button" data-icon="mic" title="Spracheingabe starten" hidden>🎤</button>
+      <button type="submit" id="send-button" class="icon-button" data-icon="send" title="Senden (Enter)">Senden</button>
     </form>
+  </section>
+
+  <!-- Design (appearance.js): Farbschema und Avatar-Stil, wirkt sofort -->
+  <section id="design-panel" hidden>
+    <header class="design-header">
+      <strong>Design</strong>
+      <button type="button" id="design-close" class="icon-button small" data-icon="close" title="Schließen (Escape)">✕</button>
+    </header>
+    <!-- Abschnitte (Farben, Modern, Retro, …) baut appearance.js aus THEME_GROUPS -->
+    <div id="design-groups"></div>
+    <div id="design-description"></div>
+    <div class="design-label">Avatar</div>
+    <div id="design-avatars"></div>
   </section>
 
   <!-- Einstellungen (settings.js): legt sich über das ganze Popup; Formular kommt aus get_settings() -->
@@ -47,7 +92,7 @@
         <button type="button" data-tab="tools">Werkzeuge</button>
         <button type="button" data-tab="proactive">Proaktive Meldungen</button>
       </nav>
-      <button type="button" id="settings-close" title="Schließen ohne Speichern (Escape)">✕</button>
+      <button type="button" id="settings-close" class="icon-button small" data-icon="close" title="Schließen ohne Speichern (Escape)">✕</button>
     </header>
     <div id="settings-body"></div>
     <footer id="settings-footer">
@@ -63,6 +108,11 @@
   <script src="vendor/purify.min.js"></script>
   <script src="vendor/katex/katex.min.js"></script>
   <script src="markdown.js"></script>
+  <script src="avatar.js"></script>
+  <script src="appearance.js"></script>
+  <script src="proactive_alert.js"></script>
+  <script src="loading_scenes.js"></script>
+  <script src="loading_screen.js"></script>
   <script src="popup.js"></script>
   <script src="settings.js"></script>
 </body>

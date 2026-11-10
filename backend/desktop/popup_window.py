@@ -42,14 +42,17 @@ class PopupWindow(QWidget):
         self.enlarge_requested.connect(self.set_enlarged)
         self.show_requested.connect(self._on_show_requested)
         self.outside_click_detected.connect(self._hide_after_outside_click)
-        self.setObjectName("popupRoot")
         # Qt.Popup fängt Klicks aufs Tray-Icon selbst ab und verliert unter Cocoa den Fokus.
-        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        # Ohne System-Schatten: der ist unter Windows immer rechteckig und passt nicht zu runden Ecken.
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         if sys.platform == "darwin":
             self.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
             QApplication.instance().installEventFilter(self)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet(f"#popupRoot {{ background: {config.POPUP_BACKGROUND}; }}")
+        # Durchsichtiges Fenster: Die Seite zeichnet ihre Form selbst (Ecken je nach Design, siehe
+        # --window-radius in frontend/theme.css) - geglättet und in beliebiger Größe, was Windows
+        # selbst nicht kann (höchstens ca. 8 px). Die Web-Ansicht braucht dafür einen durchsichtigen
+        # Seitenhintergrund (config.POPUP_BACKGROUND).
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         self.content = content
         layout = QVBoxLayout(self)

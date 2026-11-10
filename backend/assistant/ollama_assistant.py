@@ -29,6 +29,12 @@ class OllamaAssistant(ModelAssistant):
         except OllamaError:
             return ""
 
+    # --- ModelPreloading ---------------------------------------------------------------
+    def preload_model(self) -> None:
+        """Gewähltes Modell schon vor der ersten Nachricht in den Speicher laden."""
+        if self._ensure_model():
+            self.model.preload()
+
     def _ensure_model(self) -> bool:
         if not self.model.name:
             saved = self.preferences.get(self.model_preference)

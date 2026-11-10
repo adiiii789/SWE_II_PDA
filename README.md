@@ -275,6 +275,12 @@ Im Betrieb prüft ein **Wächter** im Hintergrund alle paar Minuten Postfach, Au
 
 `PDA_PROACTIVE_WATCH=0` schaltet den Wächter ganz ab.
 
+## Ladebildschirm
+
+Beim Programmstart öffnet sich das Popup mit einem Ladebildschirm, bis Einstellungen, Assistent und
+Sprachmodell bereit sind. Jedes Design hat eine eigene Szene. Mit `PDA_STARTUP_OPEN_POPUP=0` bleibt das
+Popup zu, bis man aufs Tray-Icon klickt.
+
 ## Testen
 
 ```sh

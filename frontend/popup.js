@@ -22,14 +22,33 @@ let replyPending = false;   // Bridge-Aufrufe laufen nacheinander - während cha
 let chatMaximized = false;
 let popupEnlarged = false;
 let stickToBottom = true;   // war der Verlauf zuletzt ganz unten? Dann bleibt er es auch bei Größenänderungen
+// Unterkante des sichtbaren Ausschnitts (gemessen ab Anfang des Verlaufs) und Höhe des Verlaufs beim
+// letzten Scrollen - damit bleibt bei Größenänderungen der Text am Eingabefeld stehen (onChatResize).
+let visibleBottom = 0;
+let chatHeight = 0;
+let resizedScrollTop = null;
 
 const NEAR_BOTTOM_PX = 40;
 const VIEW_MIN_PX = 60;     // Mindesthöhen beim Ziehen am #splitter
-const CHAT_MIN_PX = 120;
+const CHAT_MIN_PX = 190;   // wie min-height von #chat-panel in popup.css
 
-// Zeigt fertig gerendertes HTML (aus frontend/templates/, vom Backend gerendert) im iframe an.
+let speaking = false;       // liest gerade vor (nur für den Avatar)
+let viewHtml = "";          // zuletzt gezeigte Ansicht - bei Design-Wechsel neu eingefärbt
+
+// Zeigt fertig gerendertes HTML (aus frontend/templates/, vom Backend gerendert) im iframe an,
+// in den Farben des gewählten Designs (appearance.js).
 function showView(html) {
-  viewFrame.srcdoc = html;
+  viewHtml = html;
+  viewFrame.srcdoc = Appearance.themedHtml(html);
+}
+
+// Avatar (avatar.js) zeigt, was der Assistent gerade tut.
+function updateAgentState() {
+  if (recordState === "recording") Avatar.setState("listening");
+  else if (recordState === "transcribing") Avatar.setState("transcribing");
+  else if (speaking) Avatar.setState("speaking");
+  else if (replyPending) Avatar.setState("thinking");
+  else Avatar.setState("idle");
 }
 
 function isNearBottom() {
@@ -43,6 +62,28 @@ function scrollToBottom() {
 function onChatScroll() {
   stickToBottom = isNearBottom();
   scrollDownButton.hidden = stickToBottom;
+  // Leseposition nur bei echtem Scrollen merken: nicht, wenn sich gerade die Höhe ändert (das regelt
+  // onChatResize), und nicht für die Position, die onChatResize gesetzt hat (evtl. vom Browser
+  // begrenzt) - sonst landet man beim Zurückschalten woanders als vorher.
+  if (!chatHeight) chatHeight = chatHistory.clientHeight;   // noch keine Meldung vom ResizeObserver
+  if (chatHistory.clientHeight !== chatHeight || chatHistory.scrollTop === resizedScrollTop) return;
+  resizedScrollTop = null;
+  visibleBottom = chatHistory.scrollTop + chatHistory.clientHeight;
+}
+
+// Splitter, "Chat groß" oder größeres Fenster ändern die Höhe des Verlaufs. Die Unterkante bleibt fest:
+// wer unten war, bleibt unten; wer weiter oben liest, sieht am Eingabefeld weiter denselben Text -
+// die Ansicht klappt darüber auf und zu, statt den Verlauf nach oben zu schieben.
+function onChatResize() {
+  if (chatHistory.clientHeight === 0) return;   // gerade nicht sichtbar - Position behalten
+  chatHeight = chatHistory.clientHeight;
+  if (stickToBottom) {
+    scrollToBottom();
+  } else {
+    chatHistory.scrollTop = visibleBottom - chatHeight;
+    resizedScrollTop = chatHistory.scrollTop;
+  }
+  onChatScroll();
 }
 
 // Element an den Verlauf hängen. Mitscrollen nur, wenn man unten war oder selbst geschrieben hat -
@@ -130,10 +171,14 @@ function addAttachments(message, attachments) {
 // Proaktive Meldungen (backend/proactive.py) haben zusätzlich "proactive": true und "title".
 function showReply(reply) {
   const message = createMessage(reply.text, "assistant");
-  if (reply.proactive) markProactive(message, reply.title);
+  if (reply.proactive) {
+    markProactive(message, reply.title);
+    Avatar.flash();
+  }
   if (reply.attachments && reply.attachments.length) addAttachments(message, reply.attachments);
   appendToChat(message);   // erst komplett aufbauen, dann einblenden - so stimmt die Scrollposition
   if (reply.html) showView(reply.html);
+  if (reply.proactive) ProactiveAlert.show(message, reply.title || "Meldung", reply.text);
 }
 
 // Kennzeichnung "meldet sich von selbst" über der Nachricht - Titel nur als Text, nie als HTML.
@@ -155,7 +200,8 @@ async function submitText(text, spoken = false) {
   addMessage(text, "user");
   const pending = document.createElement("div");
   pending.className = "pending";
-  pending.textContent = "denkt nach …";
+  pending.appendChild(Avatar.create(16, "orb pending-orb"));
+  pending.appendChild(document.createElement("span")).textContent = "denkt nach …";
   appendToChat(pending, true);
   replyPending = true;
   updateRecordButton();
@@ -163,7 +209,16 @@ async function submitText(text, spoken = false) {
     const reply = await chat(text);
     showReply(reply);
     if (/^modell(?:e$|\s)/i.test(text)) await loadModels();
-    if (spoken && speech.output && reply.text) await speak(reply.text);
+    if (spoken && speech.output && reply.text) {
+      speaking = true;
+      updateAgentState();
+      try {
+        await speak(reply.text);
+      } finally {
+        speaking = false;
+        updateAgentState();
+      }
+    }
   } catch (error) {
     addMessage(error.message, "error");
   } finally {
@@ -191,6 +246,7 @@ function updateRecordButton() {
     recording: "Klicken zum Senden, Escape zum Abbrechen",
     transcribing: "wird erkannt …",
   }[recordState];
+  updateAgentState();
 }
 
 function setRecordState(state) {
@@ -361,6 +417,7 @@ async function changeModel() {
 }
 
 inputForm.addEventListener("submit", sendMessage);
+document.addEventListener("appearancechange", () => { if (viewHtml) showView(viewHtml); });
 modelSelect.addEventListener("change", changeModel);
 window.addEventListener("focus", () => {
   if (!modelSelect.disabled && !replyPending) loadModels();
@@ -369,8 +426,7 @@ chatHistory.addEventListener("click", onChatClick);
 recordButton.addEventListener("click", toggleRecording);
 chatHistory.addEventListener("scroll", onChatScroll);
 scrollDownButton.addEventListener("click", scrollToBottom);
-// Splitter, "Chat groß" oder größeres Fenster ändern die Höhe - wer unten war, bleibt unten.
-new ResizeObserver(() => { if (stickToBottom) scrollToBottom(); }).observe(chatHistory);
+new ResizeObserver(onChatResize).observe(chatHistory);
 splitter.addEventListener("pointerdown", onSplitterDown);
 splitter.addEventListener("pointermove", onSplitterMove);
 splitter.addEventListener("pointerup", onSplitterUp);
@@ -381,8 +437,14 @@ enlargeButton.addEventListener("click", toggleEnlarged);
 document.addEventListener("keydown", onKeyDown);
 onPythonEvent("assistant_message", showReply);   // Nachrichten, die das Backend von sich aus schickt
 start_view().then(showView);
-loadModels();
-loadSpeechSupport();
 updateLayoutButtons();
 addMessage('Hallo! Frag mich etwas oder schreib "hilfe" für die festen Befehle.', "assistant");
-messageInput.focus();
+// Erst schreiben, wenn der Assistent bereit ist; Modellliste und Sprache setzen ihn voraus.
+messageInput.disabled = true;
+LoadingScreen.begin(async () => {
+  await loadModels();
+  await loadSpeechSupport();
+}).then(() => {
+  messageInput.disabled = false;
+  messageInput.focus();
+});

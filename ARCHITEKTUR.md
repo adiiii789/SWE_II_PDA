@@ -85,7 +85,12 @@ mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von
 frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
   popup.html/.css/.js         Popup: Anzeige oben, Chat unten
   settings.js                 ⚙ Einstellungen: Formular, allein aus dem Schema von get_settings()
-  theme.css                   gemeinsame Farben
+  avatar.js                   animierter, runder Avatar (Canvas) – zeigt Bereit/Denkt/Hört zu/Spricht
+  appearance.js               Designs (Farbschemata) und Avatar-Stil, Auswahl über den Design-Knopf
+  proactive_alert.js/.css     große Einblendung bei proaktiven Meldungen, je Design eigener Auftritt
+  loading_screen.js/.css      Ladebildschirm beim Start, hängt am echten Stand aus backend/startup.py
+  loading_scenes.js           je Design eine gezeichnete Szene für den Ladebildschirm
+  theme.css                   gemeinsame Farben (Standard-Design "Nacht")
   templates/
     default.html.j2           Standard-Template (Titel, Text, Tabelle) – weitere *.html.j2 möglich
     view.css                  gemeinsames Layout der Ansichten
@@ -95,6 +100,7 @@ backend/                      BACKEND: läuft in Python
   events.py                   ← Ereignisse vom Backend ans Frontend (Push)
   presenter.py                Antwort des Assistenten → {"text", "html", "attachments"}; push() für autonome Nachrichten
   proactive.py                proaktive Meldungen: Anlässe, Meldung formulieren, an Chat + Benachrichtigung
+  startup.py                  Hochfahren im Hintergrund: Einstellungen, Assistent/Werkzeuge, Modell vorladen
   attachments.py              Dateien im Chat (z. B. Mail-Anhänge): öffnen, speichern
   config.py                   alle Einstellungen
   views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
@@ -460,6 +466,24 @@ Strg+Alt+P (hotkey.py: RegisterHotKey → WM_HOTKEY)  oder  Tray-Menü „Proakt
                                                 Klick darauf → popup.show_requested
 ```
 
+**Einblendung** (`frontend/proactive_alert.js`): Über Ansicht und Verlauf erscheint ein großes
+Ausrufezeichen, dann wächst die Fläche auf und zeigt Titel und Inhalt der Meldung für 10 Sekunden (ein
+Klick beendet das früher). Danach schrumpft sie auf die Chat-Nachricht, die erst dann sichtbar wird; was
+nicht auf die Fläche passt, liest man dort weiter. Ist das Popup zu, wird sie beim Öffnen nachgeholt. Das
+Aussehen pro Design steht in `proactive_alert.css`; ein neues Design ohne eigenen Abschnitt nimmt
+automatisch die Grundform in seinen Farben.
+
+**Ladebildschirm** (`frontend/loading_screen.js`, `backend/startup.py`): Beim Laden der Seite ruft das
+Frontend `loading_status()` auf. Das startet die Schritte einmalig in einem eigenen Thread (Einstellungen
+lesen, Assistent und MCP-Server starten, Sprachmodell vorladen; Cloud-Modelle brauchen das nicht), jeder
+Fortschritt kommt als Ereignis `startup_progress`. Ein fehlgeschlagener Schritt hält den Start nicht auf,
+der Chat meldet das Problem dann bei der ersten Nachricht. Die Eingabe ist gesperrt, bis das Backend fertig
+ist und die Modellliste steht; die Szene bleibt mindestens 2,5 Sekunden, und nach 12 Sekunden im
+Modell-Schritt lässt sich das Warten überspringen. Beim Programmstart öffnet sich das Popup dafür von
+selbst (`PDA_STARTUP_OPEN_POPUP=0` schaltet das ab). Die Szenen stehen pro Design in `loading_scenes.js`;
+ein Design ohne eigene Szene zeigt die von "Nacht". Gezeichnet wird auf ein einziges Canvas mit höchstens
+20 Bildern pro Sekunde und gar nicht bei geschlossenem Popup, weil dieselbe Seite die Python-Aufrufe abwickelt.
+
 **Fokus:** Windows gibt einem Programm ohne vorherige Aktion des Nutzers keinen Fokus
 (Foreground-Lock). `foreground.py` hängt den
 eigenen Thread deshalb kurz an den Eingabe-Thread des Vordergrundfensters (`AttachThreadInput`)
@@ -493,6 +517,26 @@ der Auslöser nicht im Bridge-Thread läuft.
 - **[theme.css](frontend/theme.css):** Farben als CSS-Variablen. Das Popup bindet die Datei
   ein, und die Templates betten sie in jede Ansicht ein. So steht jede Farbe nur an
   einer Stelle.
+- **[appearance.js](frontend/appearance.js):** weitere Designs überschreiben die Variablen aus
+  `theme.css`: Farbschemata (Graphit, Hell, Wald, Sand, Klassisch) nur die Farben, Stile
+  auch Form, Schatten und Schrift. Die Stile sind in Gruppen sortiert (`THEME_GROUPS`):
+  Modern (Apple, Apple Dunkel, Glas, Clay, Material, 3D, Neumorph), Retro (Gameboy, Win 95,
+  Terminal, Vaporwave, Zeitung, Art déco), Ausdrucksstark (Maximal, Brutal, Comic, Bauhaus,
+  Cyberpunk) und Besonders (Nachhaltig, Papier, Blaupause, E-Reader, Kontrast). Dazu
+  kommen eigene, rein statische Regeln in `popup.css` unter `html[data-theme=…]`, optional
+  `viewCss` für die Ansicht und `look` für den Avatar (pixel, gloss, still). `showView` gibt das HTML der Ansicht
+  mit einem `<style>`-Block dieser Variablen ins iframe (`Appearance.themedHtml`). Die Wahl
+  steht nur im Browser-Speicher der Seite (`localStorage`), nicht in den Präferenzen.
+- **[avatar.js](frontend/avatar.js):** runde, animierte Kugel in der Kopfzeile, groß während der
+  Spracheingabe und klein bei „denkt nach …". `popup.js` meldet nur den Zustand
+  (`updateAgentState`), Stile: Nebula, Wellen, Kern.
+- **Leistung:** Die Popup-Seite wickelt auch die Python-Aufrufe ab (QWebChannel). Was den
+  JavaScript-Thread oder den Compositor dauerhaft beschäftigt, verzögert Antworten bis zu
+  Timeouts. Deshalb: Der Avatar zeichnet im Ruhezustand nur ein Bild, sonst höchstens 30 pro
+  Sekunde und nur bei sichtbarer Seite; im CSS keine Dauer-Animationen, kein `filter: blur`,
+  keine Masken über großen Flächen.
+- Qt 5.15.2 bringt **Chromium 83** mit: `gap` bei Flexbox wirkt dort nicht – Abstände in
+  Flex-Containern deshalb über `margin`.
 - **[popup.js](frontend/popup.js):** `sendMessage` zeigt die Nachricht an, ruft `chat` auf und
   gibt die Antwort an `showReply`. `showReply` zeigt den Text an und wechselt bei Bedarf die
   Ansicht – auch für Nachrichten, die das Backend von sich aus schickt
@@ -760,9 +804,11 @@ Farbe, Animationsdauer und das Assistant-Backend.
   Programm funktioniert deshalb unabhängig davon, von wo es gestartet wird.
 - `sys._MEIPASS` ist der Entpack-Ordner, wenn das Programm mit PyInstaller zu einer EXE gepackt
   wird.
-- Die Hintergrundfarbe steht an zwei Stellen: `POPUP_BACKGROUND` in `config.py` (für Qt, gegen
-  weißes Aufblitzen beim Laden) und `--background` in `frontend/theme.css`. Bei Änderungen
-  beide anpassen.
+- Das Popup-Fenster und der Seitenhintergrund der Web-Ansicht sind durchsichtig
+  (`POPUP_BACKGROUND = "transparent"`). Die Seite zeichnet Fläche und Fensterecken selbst: Jedes
+  Design legt `--window-shape` fest (`frontend/theme.css`, `frontend/appearance.js`), `popup.css`
+  schneidet damit die ganze Seite zu. So sind auch große, geglättete Rundungen möglich (Apple),
+  die Windows nativ nicht kann.
 
 ---
 

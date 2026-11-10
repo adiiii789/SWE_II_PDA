@@ -8,6 +8,7 @@ import os
 
 os.environ["PDA_ASSISTANT_BACKEND"] = "commands"   # vor dem ersten Import von backend.config
 os.environ["PDA_PROACTIVE_WATCH"] = "0"            # kein Wächter, der in Tests echte Postfächer abfragt
+os.environ["PDA_STARTUP_OPEN_POPUP"] = "0"         # Tests öffnen das Popup selbst
 
 from backend.speech import load_before_qt  # noqa: E402
 

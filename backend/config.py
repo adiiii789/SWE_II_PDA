@@ -60,10 +60,15 @@ PROACTIVE_NOTICE_MS = 8000            # Anzeigedauer der Benachrichtigung (Klick
 PROACTIVE_WATCH = os.environ.get("PDA_PROACTIVE_WATCH", "1") != "0"
 PROACTIVE_STATE_FILE = APP_DATA_DIR / "proactive_state.json"   # was schon gemeldet wurde
 
+# Beim Programmstart das Popup mit dem Ladebildschirm öffnen; "0" = erst beim Klick aufs Tray-Icon
+STARTUP_OPEN_POPUP = os.environ.get("PDA_STARTUP_OPEN_POPUP", "1") != "0"
+
 POPUP_PAGE = FRONTEND_DIR / "popup.html"
 POPUP_SIZE_RATIO = (0.3, 0.6)         # Anteil des Bildschirms (Breite, Höhe)
 POPUP_ENLARGED_SIZE_RATIO = (0.55, 0.9)   # vergrößertes Popup (Knopf im Chat)
-POPUP_BACKGROUND = "#2E2E2E"          # identisch mit --background in frontend/theme.css
-POPUP_MARGIN_PX = 8
+# Seitenhintergrund der Web-Ansicht vor dem Laden: durchsichtig - das Fenster ist es auch, die Seite
+# zeichnet Fläche und Ecken selbst (--window-shape in frontend/theme.css). Kein weißes Aufblitzen.
+POPUP_BACKGROUND = "transparent"
+POPUP_MARGIN_PX = 0                   # Abstand zum Rand macht die Seite selbst (popup.css), passend zum Design
 POPUP_SLIDE_IN_OFFSET_PX = 50         # Start der Animation unterhalb der Endposition
 POPUP_ANIMATION_MS = 500

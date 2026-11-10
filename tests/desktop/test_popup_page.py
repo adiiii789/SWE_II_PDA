@@ -1,8 +1,11 @@
 """Ende-zu-Ende: echte Popup-Seite, echter Chat, gerenderte Ansicht im iframe wechselt."""
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
+
+from PyQt5.QtCore import QPoint, Qt
 
 from tests.assistant.test_settings import MemoryStore
 from tests.qt_helpers import qt_app, run_js, wait_until
@@ -13,7 +16,9 @@ from backend.assistant.tools import Attachment
 from backend.attachments import AttachmentStore
 from backend.assistant.settings import AssistantSettings
 from backend.desktop.application import create_popup
+from backend.events import events
 from backend.proactive_settings import ProactiveSettings
+from backend.startup import Startup, Step
 from backend.views import TemplateView
 
 SEND = """
@@ -32,6 +37,76 @@ IFRAME_SANDBOX = "document.getElementById('view-frame').getAttribute('sandbox')"
 RECORD = "document.getElementById('record-button').click()"
 RECORD_LABEL = "document.getElementById('record-button').textContent"
 ESCAPE = "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))"
+ALERT_THERE = "Boolean(document.getElementById('proactive-alert'))"
+ALERT_OPEN = "Boolean(document.querySelector('#proactive-alert.open'))"
+ALERT_TITLE = "document.querySelector('.alert-title').textContent"
+ALERT_BODY = "document.querySelector('.alert-body').innerHTML"
+ALERT_MORE_HIDDEN = "document.querySelector('.alert-more').hidden"
+ALERT_CLICK = "document.getElementById('proactive-alert').click()"
+LAST_VISIBILITY = "getComputedStyle(Array.from(document.querySelectorAll('.message')).pop()).visibility"
+
+
+LOADER_THERE = "Boolean(document.getElementById('loading-screen'))"
+LOADER_STEP = "document.getElementById('loading-step').textContent"
+INPUT_DISABLED = "document.getElementById('message-input').disabled"
+# Jede Szene bei Start, nach langer Zeit (Gameboy spielt bis zum Überlauf) und in allen Fortschritts-Zuständen
+DRAW_ALL_SCENES = """(() => {
+  const broken = [], canvas = document.createElement('canvas'); canvas.width = 576; canvas.height = 648;
+  const c = canvas.getContext('2d'), labels = ['Eins', 'Zwei', 'Drei'];
+  for (const id of LoadingScenes.ids) {
+    try {
+      const scene = LoadingScenes.get(id), state = scene.start ? scene.start(576, 648) : {};
+      for (const [t, p, index] of [[0, 0, 0], [3.3, 0.5, 1], [47, 1, 3], [90, 1, 3], [130, 1, 3]]) {
+        scene.draw(c, 576, 648, t, state, {progress: p, smooth: p, index, total: 3, labels, label: index < 3 ? labels[index] : ''});
+      }
+    } catch (error) { broken.push(id + ': ' + error.message); }
+  }
+  return broken;
+})()"""
+
+
+class LoadingScreenTest(unittest.TestCase):
+    def setUp(self):
+        qt_app()
+        self.release = threading.Event()
+        self.addCleanup(self.release.set)
+        steps = [Step("Einstellungen", lambda: None), Step("Modell", self.release.wait, skippable=True)]
+        patcher = mock.patch.object(api, "_startup", return_value=Startup(steps, events))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.popup = create_popup()
+        self.page = self.popup.content.page()
+        self.addCleanup(self._close)
+        loaded = []
+        self.popup.content.loadFinished.connect(loaded.append)
+        self.assertTrue(wait_until(lambda: loaded, 40))
+        self.popup.setAttribute(Qt.WA_DontShowOnScreen, True)
+        self.popup.show_at(QPoint(1500, 900))
+        self.assertTrue(wait_until(lambda: run_js(self.page, LOADER_STEP) == "Modell …"))
+
+    def _close(self):
+        self.popup.content.close_bridge()
+        self.popup.content.deleteLater()
+        qt_app().processEvents()
+
+    def test_covers_page_until_backend_is_ready(self):
+        self.assertTrue(run_js(self.page, INPUT_DISABLED))
+        self.assertFalse(run_js(self.page, "LoadingScreen.ready"))
+        self.assertEqual(run_js(self.page, "document.getElementById('model-select').options.length"), 0)
+        self.release.set()
+        self.assertTrue(wait_until(lambda: run_js(self.page, "LoadingScreen.ready")))
+        self.assertTrue(wait_until(lambda: not run_js(self.page, LOADER_THERE)))
+        self.assertFalse(run_js(self.page, INPUT_DISABLED))
+
+    def test_skip_frees_input_while_model_is_still_loading(self):
+        run_js(self.page, "document.getElementById('loading-skip').click()")
+        self.assertTrue(wait_until(lambda: not run_js(self.page, LOADER_THERE)))
+        self.assertFalse(run_js(self.page, INPUT_DISABLED))
+
+    def test_every_design_has_a_scene_that_draws(self):
+        self.assertEqual(run_js(self.page, DRAW_ALL_SCENES), [])
+        themes = run_js(self.page, "THEMES.map(theme => theme.id)")
+        self.assertEqual(sorted(run_js(self.page, "LoadingScenes.ids")), sorted(themes))
 
 
 class PopupPageTest(unittest.TestCase):
@@ -45,6 +120,8 @@ class PopupPageTest(unittest.TestCase):
         # Großzügig: Laufen vorher Tests mit eigenem Chromium (test_application), dauert das Laden länger.
         if not wait_until(lambda: loaded, 40):
             raise TimeoutError("Popup-Seite nicht geladen")
+        if not wait_until(lambda: not run_js(cls.page, "LoadingScreen.visible"), 20):
+            raise TimeoutError("Ladebildschirm nicht verschwunden")
         # Anfangszustand festhalten, bevor ein Test chattet (Seite wird geteilt).
         # Die Startansicht kommt asynchron vom Backend.
         if not wait_until(lambda: run_js(cls.page, IFRAME_HTML)):
@@ -138,6 +215,19 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(last.startswith(f"message assistant proactive:🔔 {demo.title} · "), last)
         self.assertTrue(last.endswith(demo.fallback), last)
         self.assertTrue(wait_until(lambda: f"<h2>{demo.title}</h2>" in run_js(self.page, IFRAME_HTML)))
+
+    def test_proactive_alert_waits_until_popup_is_opened(self):
+        run_js(self.page, "showReply({text: 'Hallo', proactive: true, title: 'Termin'})")
+        self.assertFalse(run_js(self.page, ALERT_THERE))   # Popup zu: noch nichts zu sehen
+        self.assertEqual(run_js(self.page, LAST_VISIBILITY), "hidden")
+
+        run_js(self.page, "Object.defineProperty(document, 'hidden', {configurable: true, get: () => false})")
+        self.addCleanup(run_js, self.page, "delete document.hidden")
+        run_js(self.page, "document.dispatchEvent(new Event('visibilitychange'))")
+        self.assertTrue(wait_until(lambda: run_js(self.page, ALERT_THERE)))
+        run_js(self.page, ALERT_CLICK)
+        self.assertTrue(wait_until(lambda: not run_js(self.page, ALERT_THERE)))
+        self.assertEqual(run_js(self.page, LAST_VISIBILITY), "visible")
 
     def test_attachments_can_be_opened_and_saved(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -241,7 +331,9 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(run_js(self.page, "isNearBottom()"))
 
     def test_long_reply_is_shown_from_its_start(self):
-        run_js(self.page, "scrollToBottom(); showReply({text: 'Anfang\n\n' + 'Absatz\n\n'.repeat(200)})")
+        # \\n: der Zeilenumbruch muss im JavaScript-String als Escape ankommen, sonst ist das Skript ungültig
+        run_js(self.page, "scrollToBottom(); showReply({text: 'Anfang\\n\\n' + 'Absatz\\n\\n'.repeat(200)})")
+        self.assertTrue(run_js(self.page, "Array.from(document.querySelectorAll('.message')).pop().textContent.startsWith('Anfang')"))
         visible = run_js(self.page, """(() => { const m = Array.from(document.querySelectorAll('.message')).pop();
           return m.offsetTop >= chatHistory.scrollTop && m.offsetTop < chatHistory.scrollTop + 10; })()""")
         self.assertTrue(visible)
@@ -252,6 +344,82 @@ class PopupPageTest(unittest.TestCase):
         self.assertEqual(run_js(self.page, frame_display), "none")
         run_js(self.page, "document.getElementById('chat-max-button').click()")
         self.assertNotEqual(run_js(self.page, frame_display), "none")
+
+    def test_chat_maximize_after_dragging_splitter_fills_height(self):
+        # Nach dem Ziehen hat der Chat flex-grow < 1 - allein muss er trotzdem die ganze Höhe bekommen,
+        # sonst rutscht er beim Ausblenden der Ansicht nach oben.
+        chat_grow = "getComputedStyle(document.getElementById('chat-panel')).flexGrow"
+        run_js(self.page, "setSplit(0.4)")
+        try:
+            run_js(self.page, "document.getElementById('chat-max-button').click()")
+            self.assertEqual(run_js(self.page, chat_grow), "1")
+            run_js(self.page, "document.getElementById('chat-max-button').click()")
+            self.assertEqual(run_js(self.page, chat_grow), "0.6")   # Aufteilung gilt wieder
+        finally:
+            run_js(self.page, "setSplit(null)")
+
+
+class ProactiveAlertTest(unittest.TestCase):
+    """Große Einblendung (frontend/proactive_alert.js) - im geöffneten Popup, damit die Seite ihre echte
+    Größe hat. Klick beendet jeweils die 10 Sekunden Lesezeit."""
+
+    @classmethod
+    def setUpClass(cls):
+        PopupPageTest.setUpClass.__func__(cls)
+        cls.popup.setAttribute(Qt.WA_DontShowOnScreen, True)
+        cls.popup.show_at(QPoint(1500, 900))
+        if not wait_until(lambda: not run_js(cls.page, "document.hidden") and run_js(cls.page, "innerHeight") > 300):
+            raise TimeoutError("Popup nicht geöffnet")
+
+    @classmethod
+    def tearDownClass(cls):
+        PopupPageTest.tearDownClass.__func__(cls)
+
+    def js(self, script):
+        return run_js(self.page, script)
+
+    def wait_open(self):
+        self.assertTrue(wait_until(lambda: self.js(ALERT_OPEN)))
+
+    def dismiss(self):
+        self.js(ALERT_CLICK)
+        self.assertTrue(wait_until(lambda: not self.js(ALERT_THERE)))
+
+    def test_shows_mark_then_message_then_lands_in_chat(self):
+        self.js("showReply({text: '**Hallo** Welt', proactive: true, title: '<b>Termin</b>'})")
+        count = len(self.js(MESSAGES))
+        self.assertTrue(self.js(ALERT_THERE))
+        self.assertEqual(self.js("document.querySelector('.alert-mark').textContent"), "!")
+        self.assertFalse(self.js(ALERT_OPEN))    # erst nur das Ausrufezeichen
+        self.assertEqual(self.js(LAST_VISIBILITY), "hidden")
+
+        self.wait_open()
+        self.assertEqual(self.js(ALERT_TITLE), "<b>Termin</b>")   # als Text, nicht als HTML
+        self.assertIn("<strong>Hallo</strong>", self.js(ALERT_BODY))
+        self.assertTrue(self.js(ALERT_MORE_HIDDEN))               # passt, also kein Verweis
+
+        self.dismiss()
+        self.assertEqual(len(self.js(MESSAGES)), count)           # die Nachricht bleibt im Chat
+        self.assertEqual(self.js(LAST_VISIBILITY), "visible")
+
+    def test_points_to_chat_when_text_does_not_fit(self):
+        self.js("showReply({text: 'Absatz\\n\\n'.repeat(200), proactive: true, title: 'Lang'})")
+        self.wait_open()
+        self.assertFalse(self.js(ALERT_MORE_HIDDEN))
+        self.dismiss()
+
+    def test_works_without_animations_in_still_theme(self):
+        # "Nachhaltig" schaltet alle Animationen ab - die Phasen müssen trotzdem durchlaufen.
+        self.js("Appearance.applyTheme('eco', false)")
+        self.addCleanup(self.js, "Appearance.applyTheme('night', false)")
+        self.js("showReply({text: 'Hallo', proactive: true, title: 'Termin'})")
+        mark = "getComputedStyle(document.querySelector('.alert-mark'))"
+        self.assertEqual(self.js(f"{mark}.animationName"), "none")
+        self.assertEqual(self.js(f"{mark}.opacity"), "1")
+        self.wait_open()
+        self.assertEqual(self.js(f"{mark}.opacity"), "0")
+        self.assertEqual(self.js("getComputedStyle(document.querySelector('.alert-content')).opacity"), "1")
+        self.dismiss()
 
 
 class SettingsPanelTest(unittest.TestCase):

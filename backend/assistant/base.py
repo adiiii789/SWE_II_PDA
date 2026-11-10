@@ -42,6 +42,14 @@ class ModelSelection(Protocol):
 
 
 @runtime_checkable
+class ModelPreloading(Protocol):
+    """Optional: Assistenten, deren Sprachmodell sich vor der ersten Nachricht laden lässt (Ladebildschirm)."""
+
+    def preload_model(self) -> None:
+        ...
+
+
+@runtime_checkable
 class ProactiveAssistant(Protocol):
     """Optional: Assistenten, die eine Meldung von sich aus formulieren können (backend/proactive.py)."""
 
