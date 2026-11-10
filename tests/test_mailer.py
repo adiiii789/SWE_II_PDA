@@ -111,6 +111,14 @@ class SendTest(unittest.TestCase):
                 _, smtp, _ = self._send(body=body + ending)
                 self.assertEqual(smtp.send_message.call_args.args[0].get_content(), body + expected + "\n")
 
+    def test_app_name_matches_config(self):
+        self.assertEqual(mailer.APP_NAME, config.APP_NAME)
+
+    def test_draft_signature_is_replaced_too(self):
+        message = mailer.compose("PDA <ich@example.com>", "max@example.com", "Hi", "Text\n\nViele Grüße\nPDA")
+        self.assertEqual(message["From"].addresses[0].display_name, "EVE")
+        self.assertTrue(message.get_content().endswith("Viele Grüße\nEVE\n"))
+
     def test_replaces_legacy_from_display_name_without_changing_address(self):
         for sender, expected in (("PDA", "EVE"), ("Luca", "Luca")):
             with self.subTest(sender=sender):

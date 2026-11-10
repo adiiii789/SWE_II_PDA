@@ -21,6 +21,7 @@ fremder Text regelmäßig beim Modell - die Liste ist dann der eigentliche Schut
 from __future__ import annotations
 
 import os
+import re
 import smtplib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -31,6 +32,16 @@ from pathlib import Path
 
 ENV_FILE = Path(__file__).with_name(".env")
 MAX_BODY_CHARS = 20_000
+# Wie backend.config.APP_NAME. Nicht importiert, weil der Server eigenständig läuft (sys.path = mcp_servers).
+APP_NAME = "EVE"
+_OLD_AGENT_NAME = r"(?:PDA|Personal Digital Agent(?:[ \t]+\(PDA\))?)"
+_OLD_SIGNATURE = re.compile(
+    r"^([ \t]*(?:mit freundlichen grüßen|mit freundlichem gruß|freundliche grüße|viele grüße|"
+    r"beste grüße|liebe grüße|herzliche grüße|mit besten grüßen|kind regards|best regards|"
+    r"regards|best wishes|sincerely|yours sincerely|--)[:,]?\s+)"
+    + _OLD_AGENT_NAME + r"(?=[.!]?\s*\Z)",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 class MailError(ValueError):
@@ -152,6 +163,10 @@ def compose(sender: str, to: Address | str, subject: str, body: str, files: Sequ
     message = EmailMessage()
     try:
         message["From"] = sender
+        senders = message["From"].addresses
+        if len(senders) == 1 and re.fullmatch(_OLD_AGENT_NAME, senders[0].display_name, re.IGNORECASE):
+            address = senders[0]
+            message.replace_header("From", Address(APP_NAME, address.username, address.domain))
         message["To"] = to
         message["Subject"] = subject.strip()
         for name, value in (replying_to or {}).items():
@@ -159,7 +174,8 @@ def compose(sender: str, to: Address | str, subject: str, body: str, files: Sequ
                 message[name] = value
     except (ValueError, IndexError):        # z. B. Zeilenumbruch in einer Kopfzeile
         raise MailError(f"Ungültige Empfänger- oder Betreffangabe: {to!s}") from None
-    message.set_content(body)
+    # Nur einen alten Namen in der abschließenden Signatur ersetzen, nie Erwähnungen im Mailtext.
+    message.set_content(_OLD_SIGNATURE.sub(r"\g<1>" + APP_NAME, body))
     for file in files:
         maintype, _, subtype = file.mime_type.partition("/")
         message.add_attachment(file.data, maintype=maintype, subtype=subtype, filename=file.name)

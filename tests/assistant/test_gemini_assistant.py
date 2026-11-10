@@ -88,8 +88,7 @@ class WatcherSupportTest(unittest.TestCase):
         self.assertEqual(len(assistant.history), 1)
 
     def test_consult_without_model(self):
-        self.assertIsNone(make(FakeModel(OllamaError("weg"))).consult("Frage"))
-        self.assertIsNone(make(FakeModel(installed=())).consult("Frage"))
+        self.assertIsNone(make(FakeModel(GeminiError("weg"))).consult("Frage"))
         self.assertIsNone(make(FakeModel(text("   "))).consult("Frage"))
 
     def test_internal_tools_stay_hidden_and_cannot_be_called(self):

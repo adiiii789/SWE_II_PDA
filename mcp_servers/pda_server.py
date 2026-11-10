@@ -82,7 +82,8 @@ _ATTACHMENTS_HELP = ("Files to attach: full paths in Downloads, Documents, Deskt
 
 def _mail_description() -> str:
     description = ("Sends an e-mail written by you. Only use it when the user explicitly asks to send a mail. "
-                   "Write subject and body in the user's language.")
+                   f"Write subject and body in the user's language. Sign e-mails in your own name as "
+                   f"{mailer.APP_NAME}.")
     try:
         settings = mailer.MailSettings.load()
     except mailer.MailError:
