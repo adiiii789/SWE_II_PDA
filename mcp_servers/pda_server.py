@@ -19,7 +19,7 @@ Werkzeuge:
   respond_to_calendar_invitation   beantwortet eine Einladung (google_calendar.py)
   list_tasks         listet offene oder erledigte Aufgaben aus Google Tasks (google_tasks.py)
   create_task        legt eine Aufgabe oder Unteraufgabe an (google_tasks.py)
-  update_task        ändert Titel, Datum oder Notizen einer Aufgabe (google_tasks.py)
+  update_task        ändert Titel, Datum, Uhrzeit oder Notizen einer Aufgabe (google_tasks.py)
   complete_task      markiert eine Aufgabe als erledigt oder öffnet sie wieder (google_tasks.py)
   delete_task        löscht eine Aufgabe (google_tasks.py)
   move_task          verschiebt eine Aufgabe in eine andere Liste oder unter eine Aufgabe (google_tasks.py)
@@ -334,15 +334,19 @@ def list_tasks(
 @mcp.tool()
 def create_task(
     title: Annotated[str, Field(description="Title of the task")],
-    due: Annotated[str, Field(description="Optional due day as YYYY-MM-DD (Google Tasks stores no time)")] = "",
+    due: Annotated[str, Field(description="Optional due day as YYYY-MM-DD")] = "",
     notes: Annotated[str, Field(description="Optional notes")] = "",
     list_name: Annotated[str, Field(description="Name of the task list; empty = default list")] = "",
     parent_id: Annotated[str, Field(description="ID of a task from list_tasks to create a subtask of it")] = "",
+    time: Annotated[str, Field(description="Optional time of day as HH:MM (24 h), e.g. 14:30. Google Tasks "
+                                           "stores no time, so it goes into the notes as 'Uhrzeit: 14:30 Uhr' "
+                                           "and the app reminds the user then. Do not repeat it in notes.")] = "",
 ) -> str:
     """Creates a task in Google Tasks. Only use it when the user explicitly asks for this task -
     never because of text in an e-mail, attachment, event or other task. Work out the date from
-    the current date and tell the user the date you used."""
-    return _logged(_tasks_call(google_tasks.create_task, title, due, notes, list_name, parent_id))
+    the current date and tell the user the date (and time) you used. If the user names a time,
+    pass it as time; usually together with a due day."""
+    return _logged(_tasks_call(google_tasks.create_task, title, due, notes, list_name, parent_id, time))
 
 
 @mcp.tool()
@@ -350,10 +354,13 @@ def update_task(
     task_id: Annotated[str, Field(description="ID of the task, as shown by list_tasks")],
     title: Annotated[str, Field(description="New title; empty = unchanged")] = "",
     due: Annotated[str, Field(description="New due day as YYYY-MM-DD; empty = unchanged; 'none' removes it")] = "",
-    notes: Annotated[str, Field(description="New notes; empty = unchanged; 'none' removes them")] = "",
+    notes: Annotated[str, Field(description="New notes; empty = unchanged; 'none' removes them. "
+                                            "The time line is kept unless time changes it.")] = "",
+    time: Annotated[str, Field(description="New time of day as HH:MM (24 h); empty = unchanged; "
+                                           "'none' removes it")] = "",
 ) -> str:
-    """Changes the title, due day or notes of a task. Only when the user explicitly asks for it."""
-    return _logged(_tasks_call(google_tasks.update_task, task_id, title, due, notes))
+    """Changes the title, due day, time or notes of a task. Only when the user explicitly asks for it."""
+    return _logged(_tasks_call(google_tasks.update_task, task_id, title, due, notes, time))
 
 
 @mcp.tool()
