@@ -170,6 +170,13 @@ def _execute(request: Any, label: str = "Google Kalender") -> dict:
 def list_events(service: Any, start_date: str = "", days: int = DEFAULT_DAYS, query: str = "",
                 limit: int = DEFAULT_LIMIT) -> str:
     """Termine aller eingeblendeten Kalender ab start_date (leer = heute), nach Beginn sortiert."""
+    return event_overview(service, start_date, days, query, limit)[0]
+
+
+def event_overview(service: Any, start_date: str = "", days: int = DEFAULT_DAYS, query: str = "",
+                   limit: int = DEFAULT_LIMIT) -> tuple[str, dict]:
+    """Wie list_events, dazu dieselben Termine als Daten für die Kalenderansicht der App
+    (backend/business_views.py): {"type": "calendar", "start", "days", "events": [...], "more"}."""
     days = max(1, min(int(days), MAX_DAYS))
     limit = max(1, min(int(limit), MAX_LIMIT))
     first = _parse_day(start_date) if start_date.strip() else dt.date.today()
@@ -183,12 +190,35 @@ def list_events(service: Any, start_date: str = "", days: int = DEFAULT_DAYS, qu
         found += [(event, calendar) for event in events.get("items", [])]
     found.sort(key=lambda item: _begin(item[0]))
 
+    data = {"type": "calendar", "start": first.isoformat(), "days": days, "query": query.strip(),
+            "events": [_event_data(event, calendar) for event, calendar in found[:limit]], "more": len(found) > limit}
     period = f"{_day(first)} bis {_day(after_last - dt.timedelta(days=1))}"
     if not found:
-        return f"Keine Termine von {period}" + (f" zu {query.strip()!r}." if query.strip() else ".")
+        return f"Keine Termine von {period}" + (f" zu {query.strip()!r}." if query.strip() else "."), data
     lines = [_event_line(event, calendar) for event, calendar in found[:limit]]
     more = f"\nEs gibt weitere Termine; nur die ersten {limit} sind aufgeführt." if len(found) > limit else ""
-    return "\n".join((f"Termine von {period}:", EVENTS_START, *lines, EVENTS_END)) + more
+    return "\n".join((f"Termine von {period}:", EVENTS_START, *lines, EVENTS_END)) + more, data
+
+
+# Farben, die Google für einzelne Termine anbietet (colorId), wie in der Kalender-App
+_EVENT_COLORS = {"1": "#7986CB", "2": "#33B679", "3": "#8E24AA", "4": "#E67C73", "5": "#F6BF26", "6": "#F4511E",
+                 "7": "#039BE5", "8": "#616161", "9": "#3F51B5", "10": "#0B8043", "11": "#D50000"}
+
+
+def _event_data(event: dict, calendar: dict) -> dict:
+    """Ein Termin für die Ansicht: Zeiten in Ortszeit (ISO), ganztägig mit Tagen (Ende exklusiv)."""
+    all_day = "date" in event["start"]
+    own = _own_attendee(event)
+    return {"id": make_ref(calendar["id"], event["id"]),
+            "title": _clean(event.get("summary", "")) or "(ohne Titel)",
+            "start": event["start"]["date"] if all_day else _begin(event).isoformat(timespec="minutes"),
+            "end": event["end"]["date"] if all_day else
+            dt.datetime.fromisoformat(event["end"]["dateTime"]).astimezone().isoformat(timespec="minutes"),
+            "all_day": all_day, "location": _clean(event.get("location", "")),
+            "calendar": _clean(_calendar_name(calendar)), "primary": bool(calendar.get("primary")),
+            "color": _EVENT_COLORS.get(event.get("colorId", ""), calendar.get("backgroundColor", "")),
+            "invitation": own.get("responseStatus", "") if own else "",
+            "recurring": bool(event.get("recurringEventId"))}
 
 
 def _visible_calendars(service: Any) -> list[dict]:

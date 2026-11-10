@@ -78,7 +78,9 @@ class MCPToolProvider:
                 result = self._request("tools/call", {"name": name, "arguments": arguments})
             except MCPError as error:
                 return ToolResult(str(error), is_error=True)
-            return ToolResult(_content_to_text(result), bool(result.get("isError")), _attachments(result))
+            data = result.get("structuredContent")
+            return ToolResult(_content_to_text(result), bool(result.get("isError")), _attachments(result),
+                              data if isinstance(data, dict) else None)
 
     def close(self) -> None:
         with self._lock:

@@ -126,8 +126,17 @@ class MailResult:
 def list_emails(settings: ImapSettings, limit: int = 10, unread_only: bool = False,
                 query: str = "", folder: str = "INBOX") -> str:
     """Übersicht der neuesten Mails (neueste zuerst) mit UID, Datum, Absender und Betreff."""
+    return mail_overview(settings, limit, unread_only, query, folder)[0]
+
+
+def mail_overview(settings: ImapSettings, limit: int = 10, unread_only: bool = False,
+                  query: str = "", folder: str = "INBOX") -> tuple[str, dict]:
+    """Wie list_emails, dazu dieselben Mails als Daten für die Postfachansicht der App
+    (backend/business_views.py): {"type": "mails", "folder", "unread_only", "mails": [...]}."""
     limit = max(1, min(int(limit), MAX_LIST_LIMIT))
     criteria = "UNSEEN" if unread_only else "ALL"
+    overview = {"type": "mails", "folder": folder, "unread_only": bool(unread_only), "query": query.strip(),
+                "mails": []}
     with _connect(settings, folder) as imap:
         if query.strip():
             # Als Literal mit UTF-8 senden, damit auch Umlaute und Anführungszeichen gehen.
@@ -138,7 +147,7 @@ def list_emails(settings: ImapSettings, limit: int = 10, unread_only: bool = Fal
         _check(typ, data, "Suche")
         uids = data[0].split()[-limit:][::-1] if data and data[0] else []
         if not uids:
-            return f"Keine passenden E-Mails in {folder}."
+            return f"Keine passenden E-Mails in {folder}.", overview
         typ, data = imap.uid("FETCH", b",".join(uids).decode(),
                              "(UID FLAGS BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
         _check(typ, data, "Abruf")
@@ -156,7 +165,12 @@ def list_emails(settings: ImapSettings, limit: int = 10, unread_only: bool = Fal
             state = "gelesen" if "\\Seen" in flags else "ungelesen"
             lines.append(f"[UID {uid}] {state} | {_format_date(header['Date'])} | "
                          f"Von: {_clean(header['From'])} | Betreff: {_subject(header)}")
-    return "\n".join(lines)
+            name, address = parseaddr(_clean(header["From"]))
+            sent = _local_date(header["Date"])
+            overview["mails"].append({"uid": uid, "sender": name or address, "address": address,
+                                      "subject": _subject(header), "seen": "\\Seen" in flags,
+                                      "date": sent.isoformat(timespec="minutes") if sent else ""})
+    return "\n".join(lines), overview
 
 
 def read_email(settings: ImapSettings, uid: str, folder: str = "INBOX") -> MailResult:
@@ -613,13 +627,19 @@ def _format_date(value) -> str:
     Umrechnung stünde dort dessen Uhrzeit (hier 02:08 statt 11:08 MEZ). Ohne Zeitzone ("-0000")
     gilt laut RFC 5322 UTC.
     """
+    sent = _local_date(value)
+    return sent.strftime("%d.%m.%Y %H:%M") if sent else _clean(value) or "(ohne Datum)"
+
+
+def _local_date(value) -> dt.datetime | None:
+    """Datum der Kopfzeile in Ortszeit; None, wenn es sich nicht lesen lässt."""
     try:
         sent = parsedate_to_datetime(str(value))
         if sent.tzinfo is None:
             sent = sent.replace(tzinfo=dt.timezone.utc)
-        return sent.astimezone().strftime("%d.%m.%Y %H:%M")
+        return sent.astimezone()
     except (TypeError, ValueError, IndexError, OverflowError, OSError):
-        return _clean(value) or "(ohne Datum)"
+        return None
 
 
 def _size(size: int) -> str:

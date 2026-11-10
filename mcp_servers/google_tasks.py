@@ -53,6 +53,13 @@ def list_tasks(service: Any, due_until: str = "", query: str = "", limit: int = 
     due_until lässt Aufgaben ohne Datum weg. completed_since zeigt stattdessen die seit diesem Tag
     erledigten Aufgaben, die neuesten zuerst.
     """
+    return task_overview(service, due_until, query, limit, completed_since)[0]
+
+
+def task_overview(service: Any, due_until: str = "", query: str = "", limit: int = DEFAULT_LIMIT,
+                  completed_since: str = "") -> tuple[str, dict]:
+    """Wie list_tasks, dazu dieselben Aufgaben als Daten für die Aufgabenansicht der App
+    (backend/business_views.py): {"type": "tasks", "completed", "due_until", "tasks": [...], "more"}."""
     limit = max(1, min(int(limit), MAX_LIMIT))
     last = gc._parse_day(due_until) if due_until.strip() else None
     since = gc._parse_day(completed_since) if completed_since.strip() else None
@@ -76,17 +83,31 @@ def list_tasks(service: Any, due_until: str = "", query: str = "", limit: int = 
 
     kind = f"erledigten Aufgaben seit {gc._day(since)}" if since else "offenen Aufgaben"
     period = f" bis {gc._day(last)}" if last else ""
-    if not found:
-        return f"Keine {kind}{period}" + (f" zu {query.strip()!r}." if needle else ".")
-    today = dt.date.today()
-    several = len(lists) > 1
     ordered = _nested(found)
+    several = len(lists) > 1
+    data = {"type": "tasks", "completed": since is not None, "due_until": last.isoformat() if last else "",
+            "query": query.strip(), "several_lists": several, "more": len(found) > limit,
+            "tasks": [_task_data(depth, due, task, task_list) for depth, (due, task, task_list) in ordered[:limit]]}
+    if not found:
+        return f"Keine {kind}{period}" + (f" zu {query.strip()!r}." if needle else "."), data
+    today = dt.date.today()
     lines = [_task_line(depth, due, task, task_list, several, today) for depth, (due, task, task_list) in ordered[:limit]]
     if several:
         lines.insert(0, "Listen: " + ", ".join(_clean(task_list.get("title", "")) for task_list in lists))
     more = f"\nEs gibt weitere Aufgaben; nur die ersten {limit} sind aufgeführt." if len(found) > limit else ""
     title = f"Erledigte Aufgaben seit {gc._day(since)}" if since else "Offene Aufgaben"
-    return "\n".join((f"{title}{period}:", TASKS_START, *lines, TASKS_END)) + more
+    return "\n".join((f"{title}{period}:", TASKS_START, *lines, TASKS_END)) + more, data
+
+
+def _task_data(depth: int, due: dt.date | None, task: dict, task_list: dict) -> dict:
+    """Eine Aufgabe für die Ansicht; die Uhrzeit-Zeile der Notizen (siehe oben) als eigenes Feld."""
+    notes = task.get("notes", "")
+    match = _TIME_LINE.search(notes)
+    clock = _parse_clock(match.group(0)[len(TIME_PREFIX):].strip()) if match else None
+    return {"id": gc.make_ref(task_list["id"], task["id"]), "title": _clean(task.get("title", "")) or "(ohne Titel)",
+            "notes": _clean(_TIME_LINE.sub("", notes))[:MAX_NOTES_CHARS], "due": due.isoformat() if due else "",
+            "time": f"{clock:%H:%M}" if clock else "", "list": _clean(task_list.get("title", "")), "depth": depth,
+            "done": task.get("status") == "completed"}
 
 
 def _task_lists(service: Any) -> list[dict]:

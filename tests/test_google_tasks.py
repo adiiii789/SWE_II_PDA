@@ -462,3 +462,22 @@ class SharedLoginTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TaskOverviewTest(unittest.TestCase):
+    def test_data_matches_text_with_time_as_own_field(self):
+        service = FakeService([MINE, SHOP], {
+            "l1": [{"id": "t1", "title": "Arzt", "due": due("2999-11-10"), "notes": "Uhrzeit: 14:30 Uhr\nKarte mitnehmen"}],
+            "l2": [{"id": "t2", "title": "Milch"}]})
+        text, data = gt.task_overview(service)
+        self.assertEqual(text, gt.list_tasks(service))
+        self.assertEqual((data["type"], data["completed"], data["several_lists"]), ("tasks", False, True))
+        first = data["tasks"][0]
+        self.assertEqual((first["id"], first["time"], first["notes"], first["due"], first["list"]),
+                         ("l1::t1", "14:30", "Karte mitnehmen", "2999-11-10", "Meine Aufgaben"))
+        self.assertEqual(data["tasks"][1]["due"], "")
+
+    def test_empty_still_has_data(self):
+        text, data = gt.task_overview(FakeService())
+        self.assertTrue(text.startswith("Keine offenen Aufgaben"))
+        self.assertEqual(data["tasks"], [])

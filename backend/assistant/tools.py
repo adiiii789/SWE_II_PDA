@@ -37,6 +37,9 @@ class ToolResult:
     content: str
     is_error: bool = False
     attachments: tuple[Attachment, ...] = ()
+    # Dieselben Daten maschinenlesbar (MCP "structuredContent"), z. B. Termine für die Kalenderansicht
+    # (backend/business_views.py). Das Sprachmodell sieht nur content.
+    data: dict[str, Any] | None = None
 
 
 @runtime_checkable

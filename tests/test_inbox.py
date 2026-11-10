@@ -222,6 +222,16 @@ class ListTest(ImapTestCase):
         self.assertEqual(lines[1], f"[UID 2] ungelesen | {sent} | Von: Anna <anna@example.com> | Betreff: Neu =?")
         self.assertTrue(lines[2].startswith("[UID 1] gelesen"))
 
+    def test_overview_data(self):
+        fake = FakeImap({1: raw_mail("Alt"), 2: raw_mail("Neu", sender="Anna <anna@example.com>")}, seen={1})
+        text, data = self.run_with(fake, inbox.mail_overview)
+        self.assertIn("[UID 2]", text)
+        self.assertEqual([(m["uid"], m["sender"], m["address"], m["subject"], m["seen"]) for m in data["mails"]],
+                         [("2", "Anna", "anna@example.com", "Neu", False), ("1", data["mails"][1]["sender"],
+                          data["mails"][1]["address"], "Alt", True)])
+        self.assertEqual(data["mails"][0]["date"][:16],
+                         inbox._local_date("Thu, 15 Oct 2026 14:03:00 +0200").isoformat(timespec="minutes")[:16])
+
     def test_mailbox_opened_read_only_and_peek(self):
         fake = FakeImap({1: raw_mail()})
         self.run_with(fake, inbox.list_emails)
