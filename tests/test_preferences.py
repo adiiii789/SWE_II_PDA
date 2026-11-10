@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from backend import config
-from backend.preferences import JsonPreferenceStore, PreferenceStore, app_preferences
+from backend.preferences import JsonPreferenceStore, PreferenceStore, default_store
 
 
 class JsonPreferenceStoreTest(unittest.TestCase):
@@ -37,11 +37,11 @@ class JsonPreferenceStoreTest(unittest.TestCase):
         self.assertIsNone(store.get("x"))
 
 
-class AppPreferencesTest(unittest.TestCase):
+class DefaultStoreTest(unittest.TestCase):
     def test_one_shared_store_for_the_app_file(self):
         # Zwei Objekte auf derselben Datei würden sich beim Speichern gegenseitig überschreiben.
-        self.assertIs(app_preferences(), app_preferences())
-        self.assertEqual(app_preferences().path, config.PREFERENCES_FILE)
+        self.assertIs(default_store(), default_store())
+        self.assertEqual(default_store().path, config.PREFERENCES_FILE)
 
 
 if __name__ == "__main__":

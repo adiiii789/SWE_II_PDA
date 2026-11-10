@@ -2,6 +2,7 @@
     Aufruf: {"template": "default", "data": {...}} (siehe backend/views.py)
     Daten:
       title    str                        Überschrift
+      subtitle str, optional              Untertitel
       text     str, optional              Absatz unter der Überschrift
       columns  list[str], optional        Tabellenkopf
       rows     list[list[str]], optional  Tabellenzeilen - ohne Zeilen keine Tabelle
@@ -18,6 +19,10 @@
 </head>
 <body>
   <h2>{{ title }}</h2>
+
+  {% if subtitle is defined and subtitle %}
+  <p>{{ subtitle }}</p>
+  {% endif %}
 
   {% if text is defined and text %}
   <p>{{ text }}</p>

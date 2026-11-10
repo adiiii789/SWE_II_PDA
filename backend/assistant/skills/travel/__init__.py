@@ -39,12 +39,12 @@ def service() -> TravelService:
     from backend.integrations.http import JsonHttp
     from backend.integrations.openrouteservice import OpenRouteService
     from backend.integrations.tankerkoenig import Tankerkoenig
-    from backend.preferences import app_preferences
+    from backend.preferences import default_store
 
     http = JsonHttp(config.HTTP_TIMEOUT_S)
     return TravelService(
         OpenRouteService(http, config.ORS_KEY) if config.ORS_KEY else None,
-        app_preferences(),
+        default_store(),
         GoogleCalendar(http, oauth_token(config.GOOGLE_DIR)),
         DbTimetables(http, config.DB_CLIENT_ID, config.DB_API_KEY) if config.DB_CLIENT_ID and config.DB_API_KEY else None,
         Tankerkoenig(http, config.TANKERKOENIG_KEY) if config.TANKERKOENIG_KEY else None,

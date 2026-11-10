@@ -6,19 +6,74 @@ const chatHistory = document.getElementById("chat-history");
 const inputForm = document.getElementById("input-form");
 const messageInput = document.getElementById("message-input");
 const modelSelect = document.getElementById("model-select");
+const recordButton = document.getElementById("record-button");
+const chatPanel = document.getElementById("chat-panel");
+const splitter = document.getElementById("splitter");
+const chatMaxButton = document.getElementById("chat-max-button");
+const enlargeButton = document.getElementById("enlarge-button");
+const scrollDownButton = document.getElementById("scroll-down-button");
+
+// Sprache (backend/speech.py): was verfügbar ist, kommt von speech_support().
+let speech = {input: false, output: false};
+let recordState = "idle";   // "idle" | "recording" | "transcribing"
+let replyPending = false;   // Bridge-Aufrufe laufen nacheinander - während chat() keine Aufnahme starten
+
+// Layout: Chat über die ganze Höhe (ohne Ansicht) und vergrößertes Fenster (backend/desktop/popup_window.py)
+let chatMaximized = false;
+let popupEnlarged = false;
+let stickToBottom = true;   // war der Verlauf zuletzt ganz unten? Dann bleibt er es auch bei Größenänderungen
+
+const NEAR_BOTTOM_PX = 40;
+const VIEW_MIN_PX = 60;     // Mindesthöhen beim Ziehen am #splitter
+const CHAT_MIN_PX = 120;
 
 // Zeigt fertig gerendertes HTML (aus frontend/templates/, vom Backend gerendert) im iframe an.
 function showView(html) {
   viewFrame.srcdoc = html;
 }
 
-// role: "user", "assistant" oder "error" (CSS-Klasse der Chat-Blase)
-function addMessage(text, role) {
+function isNearBottom() {
+  return chatHistory.scrollHeight - chatHistory.scrollTop - chatHistory.clientHeight < NEAR_BOTTOM_PX;
+}
+
+function scrollToBottom() {
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+function onChatScroll() {
+  stickToBottom = isNearBottom();
+  scrollDownButton.hidden = stickToBottom;
+}
+
+// Element an den Verlauf hängen. Mitscrollen nur, wenn man unten war oder selbst geschrieben hat -
+// wer gerade weiter oben liest, wird nicht weggerissen (dann erscheint der ↓-Knopf).
+// Lange Antworten werden ab ihrem Anfang gezeigt statt ab ihrem Ende.
+function appendToChat(element, own = false) {
+  const follow = own || isNearBottom();
+  chatHistory.appendChild(element);
+  if (follow) {
+    if (element.offsetHeight > chatHistory.clientHeight) chatHistory.scrollTop = element.offsetTop - 4;
+    else scrollToBottom();
+  }
+  onChatScroll();
+}
+
+// role: "user", "assistant" oder "error" (CSS-Klasse der Chat-Blase).
+// Antworten des Assistenten als Markdown mit Formeln (markdown.js), alles andere als reiner Text.
+function createMessage(text, role) {
   const element = document.createElement("div");
   element.className = `message ${role}`;
-  element.textContent = text;
-  chatHistory.appendChild(element);
-  chatHistory.scrollTop = chatHistory.scrollHeight;
+  if (role === "assistant") {
+    element.innerHTML = renderMarkdown(text);   // bereinigt durch DOMPurify
+  } else {
+    element.textContent = text;
+  }
+  return element;
+}
+
+function addMessage(text, role) {
+  const element = createMessage(text, role);
+  appendToChat(element, role === "user");
   return element;
 }
 
@@ -69,66 +124,265 @@ function addAttachments(message, attachments) {
     list.appendChild(row);
   }
   message.appendChild(list);
-  chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
 // Antwort des Assistenten anzeigen: {"text", "html", "attachments"} - aus chat() oder als Push vom Backend.
+// Proaktive Meldungen (backend/proactive.py) haben zusätzlich "proactive": true und "title".
 function showReply(reply) {
-  const message = addMessage(reply.text, "assistant");
+  const message = createMessage(reply.text, "assistant");
+  if (reply.proactive) markProactive(message, reply.title);
   if (reply.attachments && reply.attachments.length) addAttachments(message, reply.attachments);
+  appendToChat(message);   // erst komplett aufbauen, dann einblenden - so stimmt die Scrollposition
   if (reply.html) showView(reply.html);
 }
 
-async function sendMessage(event) {
-  event.preventDefault();
-  const text = messageInput.value.trim();
-  if (!text) return;
-  messageInput.value = "";
+// Kennzeichnung "meldet sich von selbst" über der Nachricht - Titel nur als Text, nie als HTML.
+function markProactive(message, title) {
+  message.classList.add("proactive");
+  const label = document.createElement("div");
+  label.className = "proactive-label";
+  const time = new Date().toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
+  label.textContent = `🔔 ${title || "Meldung"} · ${time}`;
+  message.prepend(label);
+}
+
+// spoken: Nachricht kam per Spracheingabe - dann wird die Antwort vorgelesen.
+async function submitText(text, spoken = false) {
+  if (modelSelect.disabled) {
+    messageInput.value = text;
+    return;
+  }
   addMessage(text, "user");
   const pending = document.createElement("div");
   pending.className = "pending";
   pending.textContent = "denkt nach …";
-  chatHistory.appendChild(pending);
-  chatHistory.scrollTop = chatHistory.scrollHeight;
+  appendToChat(pending, true);
+  replyPending = true;
+  updateRecordButton();
   try {
-    showReply(await chat(text));
+    const reply = await chat(text);
+    showReply(reply);
+    if (/^modell(?:e$|\s)/i.test(text)) await loadModels();
+    if (spoken && speech.output && reply.text) await speak(reply.text);
   } catch (error) {
     addMessage(error.message, "error");
   } finally {
     pending.remove();
+    replyPending = false;
+    updateRecordButton();
   }
 }
 
-// Installierte Ollama-Modelle in die Auswahl laden (leer = Assistent ohne Sprachmodell).
+async function sendMessage(event) {
+  event.preventDefault();
+  if (modelSelect.disabled) return;
+  const text = messageInput.value.trim();
+  if (!text) return;
+  messageInput.value = "";
+  await submitText(text);
+}
+
+function updateRecordButton() {
+  recordButton.classList.toggle("recording", recordState === "recording");
+  recordButton.disabled = recordState === "transcribing" || (replyPending && recordState === "idle");
+  recordButton.textContent = {idle: "🎤", recording: "⏹", transcribing: "…"}[recordState];
+  recordButton.title = {
+    idle: "Spracheingabe starten",
+    recording: "Klicken zum Senden, Escape zum Abbrechen",
+    transcribing: "wird erkannt …",
+  }[recordState];
+}
+
+function setRecordState(state) {
+  recordState = state;
+  updateRecordButton();
+}
+
+// Erster Klick: Aufnahme starten. Zweiter Klick: Aufnahme beenden, erkennen und senden.
+async function toggleRecording() {
+  if (recordState === "idle") {
+    setRecordState("recording");
+    try {
+      await start_recording();
+    } catch (error) {
+      setRecordState("idle");
+      addMessage(error.message, "error");
+    }
+  } else if (recordState === "recording") {
+    setRecordState("transcribing");
+    let text = "";
+    try {
+      text = (await stop_recording()).trim();
+    } catch (error) {
+      addMessage(error.message, "error");
+    }
+    setRecordState("idle");
+    if (text) await submitText(text, true);
+    else addMessage("Ich habe nichts verstanden.", "error");
+  }
+}
+
+// Escape: Aufnahme verwerfen und Vorlesen abbrechen.
+async function onKeyDown(event) {
+  if (event.key !== "Escape") return;
+  if (recordState === "recording") {
+    setRecordState("idle");
+    try {
+      await cancel_recording();
+    } catch (error) {
+      addMessage(error.message, "error");
+    }
+  }
+  if (speech.output) stop_speaking().catch(() => {});
+}
+
+async function loadSpeechSupport() {
+  try {
+    speech = await speech_support();
+  } catch (error) {
+    speech = {input: false, output: false};
+  }
+  recordButton.hidden = !speech.input;
+}
+
+// Sprachmodelle in die Auswahl laden, getrennt nach lokal und Cloud.
+const MODEL_GROUPS = [
+  {label: "Lokal (Ollama)", cloud: false},
+  {label: "Cloud (Gemini)", cloud: true},
+];
+let renderedModels = "";
+
 async function loadModels() {
   try {
     const {models, current} = await list_models();
+    const snapshot = JSON.stringify([models, current]);
+    if (snapshot === renderedModels && modelSelect.value === (current ?? "")) return;
     while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
-    for (const model of models) {
-      const option = document.createElement("option");
-      option.value = model.name;
-      option.textContent = model.tools ? model.name : `${model.name} (ohne Werkzeuge)`;
-      option.selected = model.name === current;
-      modelSelect.appendChild(option);
+    for (const {label, cloud} of MODEL_GROUPS) {
+      const members = models.filter(model => Boolean(model.cloud) === cloud);
+      if (members.length === 0) continue;
+      const group = document.createElement("optgroup");
+      group.label = label;
+      for (const model of members) {
+        const option = document.createElement("option");
+        option.value = model.id ?? model.name;
+        option.textContent = model.tools ? model.name : `${model.name} (ohne Werkzeuge)`;
+        option.selected = option.value === current;
+        group.appendChild(option);
+      }
+      modelSelect.appendChild(group);
     }
-    modelSelect.hidden = models.length === 0;
+    if (current && !Array.from(modelSelect.options).some(option => option.value === current)) {
+      const unavailable = new Option(`${current.replace(/^ollama\//, "") || "Ollama"} (nicht verfügbar)`, current);
+      unavailable.disabled = true;
+      modelSelect.prepend(unavailable);
+      modelSelect.value = current;
+    }
+    modelSelect.hidden = modelSelect.options.length === 0;
+    renderedModels = snapshot;
   } catch (error) {
-    modelSelect.hidden = true;   // z. B. Ollama läuft nicht - der Chat meldet das bei der ersten Nachricht
+    modelSelect.hidden = true;
   }
 }
 
-async function changeModel() {
+// Links in Antworten im Standardbrowser öffnen - sonst würde das Popup selbst wegnavigieren.
+async function onChatClick(event) {
+  const link = event.target.closest("a[href]");
+  if (!link) return;
+  event.preventDefault();
   try {
-    addMessage(`Modell: ${await select_model(modelSelect.value)}`, "assistant");
+    await open_link(link.href);
   } catch (error) {
     addMessage(error.message, "error");
+  }
+}
+
+// Aufteilung Ansicht/Chat: Anteil der Ansicht (0..1) als flex-grow, passt so auch nach Größenänderungen.
+function setSplit(viewShare) {
+  viewFrame.style.flexGrow = viewShare === null ? "" : viewShare;
+  chatPanel.style.flexGrow = viewShare === null ? "" : 1 - viewShare;
+}
+
+function onSplitterDown(event) {
+  splitter.setPointerCapture(event.pointerId);
+  splitter.classList.add("dragging");
+  document.body.classList.add("dragging");
+}
+
+function onSplitterMove(event) {
+  if (!splitter.hasPointerCapture(event.pointerId)) return;
+  const top = viewFrame.getBoundingClientRect().top;
+  const total = chatPanel.getBoundingClientRect().bottom - top;
+  const viewHeight = Math.max(VIEW_MIN_PX, Math.min(event.clientY - top, total - CHAT_MIN_PX));
+  setSplit(viewHeight / total);
+}
+
+function onSplitterUp() {
+  splitter.classList.remove("dragging");
+  document.body.classList.remove("dragging");
+}
+
+function updateLayoutButtons() {
+  document.body.classList.toggle("chat-maximized", chatMaximized);
+  chatMaxButton.classList.toggle("active", chatMaximized);
+  chatMaxButton.textContent = chatMaximized ? "⇕ Ansicht zeigen" : "⇕ Chat groß";
+  chatMaxButton.title = chatMaximized ? "Ansicht wieder einblenden" : "Ansicht ausblenden, Chat über die ganze Höhe";
+  enlargeButton.classList.toggle("active", popupEnlarged);
+  enlargeButton.textContent = popupEnlarged ? "⤡ Fenster klein" : "⤢ Fenster groß";
+  enlargeButton.title = popupEnlarged ? "Fenster auf Normalgröße" : "Fenster vergrößern";
+}
+
+function toggleChatMaximized() {
+  chatMaximized = !chatMaximized;
+  updateLayoutButtons();
+}
+
+async function toggleEnlarged() {
+  try {
+    popupEnlarged = await enlarge_popup(!popupEnlarged);
+  } catch (error) {
+    addMessage(error.message, "error");
+  }
+  updateLayoutButtons();
+}
+
+async function changeModel() {
+  const name = modelSelect.selectedOptions[0].textContent;
+  modelSelect.disabled = true;
+  try {
+    await select_model(modelSelect.value);
+    addMessage(`Modell: ${name}`, "assistant");
+  } catch (error) {
+    addMessage(error.message, "error");
+  } finally {
+    await loadModels();
+    modelSelect.disabled = false;
   }
 }
 
 inputForm.addEventListener("submit", sendMessage);
 modelSelect.addEventListener("change", changeModel);
+window.addEventListener("focus", () => {
+  if (!modelSelect.disabled && !replyPending) loadModels();
+});
+chatHistory.addEventListener("click", onChatClick);
+recordButton.addEventListener("click", toggleRecording);
+chatHistory.addEventListener("scroll", onChatScroll);
+scrollDownButton.addEventListener("click", scrollToBottom);
+// Splitter, "Chat groß" oder größeres Fenster ändern die Höhe - wer unten war, bleibt unten.
+new ResizeObserver(() => { if (stickToBottom) scrollToBottom(); }).observe(chatHistory);
+splitter.addEventListener("pointerdown", onSplitterDown);
+splitter.addEventListener("pointermove", onSplitterMove);
+splitter.addEventListener("pointerup", onSplitterUp);
+splitter.addEventListener("lostpointercapture", onSplitterUp);
+splitter.addEventListener("dblclick", () => setSplit(null));
+chatMaxButton.addEventListener("click", toggleChatMaximized);
+enlargeButton.addEventListener("click", toggleEnlarged);
+document.addEventListener("keydown", onKeyDown);
 onPythonEvent("assistant_message", showReply);   // Nachrichten, die das Backend von sich aus schickt
 start_view().then(showView);
 loadModels();
+loadSpeechSupport();
+updateLayoutButtons();
 addMessage('Hallo! Frag mich etwas oder schreib "hilfe" für die festen Befehle.', "assistant");
 messageInput.focus();

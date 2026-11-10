@@ -4,13 +4,16 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests.assistant.test_settings import MemoryStore
 from tests.qt_helpers import qt_app, run_js, wait_until
 
-from backend import api, presenter
+from backend import api, presenter, proactive
 from backend.assistant import AssistantReply
 from backend.assistant.tools import Attachment
 from backend.attachments import AttachmentStore
+from backend.assistant.settings import AssistantSettings
 from backend.desktop.application import create_popup
+from backend.proactive_settings import ProactiveSettings
 from backend.views import TemplateView
 
 SEND = """
@@ -26,6 +29,9 @@ CLICK = """Array.from(document.querySelectorAll('.attachment')).pop()
   .querySelectorAll('button').forEach(b => { if (b.textContent === %r) b.click(); });"""
 IFRAME_HTML ="document.getElementById('view-frame').srcdoc"
 IFRAME_SANDBOX = "document.getElementById('view-frame').getAttribute('sandbox')"
+RECORD = "document.getElementById('record-button').click()"
+RECORD_LABEL = "document.getElementById('record-button').textContent"
+ESCAPE = "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))"
 
 
 class PopupPageTest(unittest.TestCase):
@@ -36,7 +42,8 @@ class PopupPageTest(unittest.TestCase):
         cls.page = cls.popup.content.page()
         loaded = []
         cls.popup.content.loadFinished.connect(loaded.append)
-        if not wait_until(lambda: loaded):
+        # Großzügig: Laufen vorher Tests mit eigenem Chromium (test_application), dauert das Laden länger.
+        if not wait_until(lambda: loaded, 40):
             raise TimeoutError("Popup-Seite nicht geladen")
         # Anfangszustand festhalten, bevor ein Test chattet (Seite wird geteilt).
         # Die Startansicht kommt asynchron vom Backend.
@@ -59,9 +66,40 @@ class PopupPageTest(unittest.TestCase):
         return run_js(self.page, MESSAGES)[-1]
 
     def test_starts_with_start_view_and_greeting(self):
-        self.assertIn("Personal Digital Agent", self.initial_html)
+        self.assertIn("<h2>EVE</h2>", self.initial_html)
+        self.assertIn("<p>Enhanced Virtual Entity</p>", self.initial_html)
         self.assertEqual(len(self.initial_messages), 1)
         self.assertIn("hilfe", self.initial_messages[0])
+
+    def test_model_menu_groups_and_switches_providers(self):
+        class Models:
+            selected = "gemini/gemini-test"
+
+            def available_models(self):
+                return [{"id": "gemini/gemini-test", "name": "gemini-test", "cloud": True, "tools": True},
+                        {"id": "ollama/lokal:latest", "name": "lokal:latest", "cloud": False, "tools": False}]
+
+            def current_model(self):
+                return self.selected
+
+            def select_model(self, name):
+                self.selected = name
+
+        assistant = Models()
+        with mock.patch.object(api, "_assistant", return_value=assistant):
+            run_js(self.page, "loadModels(); true")
+            self.assertTrue(wait_until(lambda: run_js(self.page, "modelSelect.value") == "gemini/gemini-test"))
+            self.assertEqual(run_js(self.page, "Array.from(modelSelect.children).map(group => group.label)"),
+                             ["Lokal (Ollama)", "Cloud (Gemini)"])
+            run_js(self.page, """
+                modelSelect.value = 'ollama/lokal:latest';
+                modelSelect.dispatchEvent(new Event('change'));
+            """)
+            self.assertTrue(wait_until(lambda: assistant.selected == "ollama/lokal:latest"
+                                       and run_js(self.page, "!modelSelect.disabled")))
+            self.assertEqual(run_js(self.page, "modelSelect.value"), "ollama/lokal:latest")
+        run_js(self.page, "loadModels(); true")
+        self.assertTrue(wait_until(lambda: run_js(self.page, "modelSelect.hidden")))
 
     def test_chat_command_switches_iframe_view(self):
         answer = self._send("system")
@@ -89,6 +127,18 @@ class PopupPageTest(unittest.TestCase):
         self.assertEqual(run_js(self.page, MESSAGES)[-1], "message assistant:Guten Morgen!")
         self.assertTrue(wait_until(lambda: "<h2>Briefing</h2>" in run_js(self.page, IFRAME_HTML)))
 
+    def test_proactive_message_is_marked_in_chat(self):
+        # EVE meldet sich von selbst (Test-Makro) - ohne Sprachmodell mit dem Ersatztext.
+        demo = proactive.OCCASIONS[proactive.DEMO]
+        count = len(run_js(self.page, MESSAGES))
+        with mock.patch.object(api.config, "PROACTIVE_SPEAK", False):
+            api.proactive_message("demo")
+        self.assertTrue(wait_until(lambda: len(run_js(self.page, MESSAGES)) == count + 1))
+        last = run_js(self.page, MESSAGES)[-1]
+        self.assertTrue(last.startswith(f"message assistant proactive:🔔 {demo.title} · "), last)
+        self.assertTrue(last.endswith(demo.fallback), last)
+        self.assertTrue(wait_until(lambda: f"<h2>{demo.title}</h2>" in run_js(self.page, IFRAME_HTML)))
+
     def test_attachments_can_be_opened_and_saved(self):
         with tempfile.TemporaryDirectory() as tmp:
             base, downloads = Path(tmp) / "anhaenge", Path(tmp) / "Downloads"
@@ -112,8 +162,197 @@ class PopupPageTest(unittest.TestCase):
                 self.assertTrue(wait_until(lambda: "Gespeichert unter" in run_js(self.page, MESSAGES)[-1]))
                 self.assertEqual((downloads / "plan.pdf").read_bytes(), b"PDF")
 
+    def _patch_speech(self):
+        """Attrappen statt Mikrofon und Lautsprecher; das Frontend hält beides für verfügbar."""
+        speech_input, speech_output = mock.Mock(), mock.Mock()
+        for name, value in (("_speech_input", speech_input), ("_speech_output", speech_output)):
+            patcher = mock.patch.object(api, name, return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        run_js(self.page, "speech = {input: true, output: true}")
+        return speech_input, speech_output
+
+    def test_voice_message_is_sent_and_reply_spoken(self):
+        speech_input, speech_output = self._patch_speech()
+        speech_input.stop.return_value = "system"
+        count = len(run_js(self.page, MESSAGES))
+        run_js(self.page, RECORD)
+        self.assertTrue(wait_until(lambda: speech_input.start.called))
+        self.assertEqual(run_js(self.page, RECORD_LABEL), "⏹")
+
+        run_js(self.page, RECORD)   # zweiter Klick: beenden, erkennen, senden
+        self.assertTrue(wait_until(lambda: len(run_js(self.page, MESSAGES)) >= count + 2))
+        self.assertEqual(run_js(self.page, MESSAGES)[-2:],
+                         ["message user:system", "message assistant:Hier sind die Systeminfos."])
+        self.assertTrue(wait_until(lambda: speech_output.speak.called))
+        speech_output.speak.assert_called_once_with("Hier sind die Systeminfos.")
+        self.assertTrue(wait_until(lambda: run_js(self.page, RECORD_LABEL) == "🎤"))
+
+    def test_escape_cancels_recording(self):
+        speech_input, _speech_output = self._patch_speech()
+        count = len(run_js(self.page, MESSAGES))
+        run_js(self.page, RECORD)
+        self.assertTrue(wait_until(lambda: speech_input.start.called))
+        run_js(self.page, ESCAPE)
+        self.assertTrue(wait_until(lambda: speech_input.cancel.called))
+        self.assertEqual(run_js(self.page, RECORD_LABEL), "🎤")
+        speech_input.stop.assert_not_called()
+        self.assertEqual(len(run_js(self.page, MESSAGES)), count)
+
     def test_iframe_is_sandboxed_without_same_origin(self):
         self.assertEqual(run_js(self.page, IFRAME_SANDBOX), "allow-scripts")
+
+    def test_reply_markdown_and_formulas_are_rendered(self):
+        html = run_js(self.page, "renderMarkdown(%r)" % "## Titel\n\n**fett**, `code` und $\\frac{1}{2}$\n\n- a\n- b")
+        self.assertIn("<h2>Titel</h2>", html)
+        self.assertIn("<strong>fett</strong>", html)
+        self.assertIn("<code>code</code>", html)
+        self.assertIn('class="katex"', html)
+        self.assertIn("<li>a</li>", html)
+
+    def test_dollar_amounts_and_code_stay_text(self):
+        html = run_js(self.page, "renderMarkdown(%r)" % "5 $ und 10 $, `echo $HOME`")
+        self.assertNotIn("katex", html)
+        self.assertIn("<code>echo $HOME</code>", html)
+
+    def test_reply_html_is_sanitized(self):
+        html = run_js(self.page, "renderMarkdown(%r)" % (
+            '<img src=x onerror="alert(1)"> <script>alert(2)</script> [x](javascript:alert(3)) '
+            '![bild](https://example.com/p.png) $\\href{javascript:alert(4)}{a}$'))
+        for forbidden in ("<img", "<script", "onerror", "javascript:"):
+            self.assertNotIn(forbidden, html)
+
+    def test_many_long_messages_are_not_squeezed_and_scroll(self):
+        run_js(self.page, "scrollToBottom(); onChatScroll()")
+        run_js(self.page, "for (let i = 0; i < 40; i++) addMessage('Zeile\n'.repeat(8) + '`x`', 'assistant')")
+        heights = run_js(self.page, "Array.from(document.querySelectorAll('.message.assistant')).slice(-40)"
+                                    ".map(e => e.offsetHeight)")
+        self.assertTrue(all(h >= 8 * 14 for h in heights), heights)
+        self.assertTrue(run_js(self.page, "isNearBottom()"))
+        self.assertTrue(run_js(self.page, "document.getElementById('scroll-down-button').hidden"))
+
+    def test_scrolled_up_reader_is_not_pulled_down(self):
+        run_js(self.page, "for (let i = 0; i < 30; i++) addMessage('Nachricht ' + i, 'assistant')")
+        run_js(self.page, "chatHistory.scrollTop = 0; onChatScroll()")
+        run_js(self.page, "addMessage('neu', 'assistant')")
+        self.assertEqual(run_js(self.page, "chatHistory.scrollTop"), 0)
+        self.assertFalse(run_js(self.page, "document.getElementById('scroll-down-button').hidden"))
+        run_js(self.page, "document.getElementById('scroll-down-button').click()")
+        self.assertTrue(run_js(self.page, "isNearBottom()"))
+
+    def test_long_reply_is_shown_from_its_start(self):
+        run_js(self.page, "scrollToBottom(); showReply({text: 'Anfang\n\n' + 'Absatz\n\n'.repeat(200)})")
+        visible = run_js(self.page, """(() => { const m = Array.from(document.querySelectorAll('.message')).pop();
+          return m.offsetTop >= chatHistory.scrollTop && m.offsetTop < chatHistory.scrollTop + 10; })()""")
+        self.assertTrue(visible)
+
+    def test_chat_maximize_hides_view(self):
+        frame_display = "getComputedStyle(document.getElementById('view-frame')).display"
+        run_js(self.page, "document.getElementById('chat-max-button').click()")
+        self.assertEqual(run_js(self.page, frame_display), "none")
+        run_js(self.page, "document.getElementById('chat-max-button').click()")
+        self.assertNotEqual(run_js(self.page, frame_display), "none")
+
+
+class SettingsPanelTest(unittest.TestCase):
+    """⚙ Einstellungen (frontend/settings.js) - Speicher im Arbeitsspeicher statt APPDATA."""
+
+    @classmethod
+    def setUpClass(cls):
+        PopupPageTest.setUpClass.__func__(cls)
+
+    @classmethod
+    def tearDownClass(cls):
+        PopupPageTest.tearDownClass.__func__(cls)
+
+    def setUp(self):
+        self.store = MemoryStore()
+        for name, settings in (("_settings", AssistantSettings(self.store)),
+                               ("_proactive_settings", ProactiveSettings(self.store))):
+            patcher = mock.patch.object(api, name, return_value=settings)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.addCleanup(run_js, self.page, "closeSettings()")
+
+    def open(self):
+        run_js(self.page, "document.getElementById('settings-button').click()")
+        self.assertTrue(wait_until(lambda: run_js(self.page, "document.querySelectorAll('.setting').length") > 0))
+
+    def js(self, script):
+        return run_js(self.page, script)
+
+    def test_panel_shows_answer_and_tool_settings(self):
+        self.open()
+        self.assertFalse(self.js("document.getElementById('settings-panel').hidden"))
+        visible = "Array.from(document.querySelectorAll('.settings-section')).filter(s => !s.hidden).map(s => s.dataset.tab)"
+        self.assertEqual(self.js(visible), ["answer"])
+        self.assertEqual(self.js("document.querySelector('[data-key=length] select').value"), "kurz")
+        self.js("document.querySelector('#settings-tabs [data-tab=tools]').click()")
+        self.assertEqual(self.js(visible), ["tools"])
+        groups = self.js("Array.from(document.querySelectorAll('.settings-group')).map(g => g.dataset.group)")
+        self.assertEqual(groups[:4], ["mail", "calendar", "tasks", "basics"])
+        mail_keys = self.js("Array.from(document.querySelectorAll('[data-group=mail] .setting')).map(r => r.dataset.key)")
+        self.assertIn("fields", mail_keys)
+        self.assertIn("max", mail_keys)
+
+    def test_proactive_tab_saves_its_own_values(self):
+        self.open()
+        self.js("document.querySelector('#settings-tabs [data-tab=proactive]').click()")
+        self.assertEqual(self.js("Array.from(document.querySelectorAll('[data-tab=proactive] .settings-group'))"
+                                 ".map(g => g.dataset.group)"), ["general", "mail", "tasks", "calendar"])
+        self.js("""
+          document.querySelector('[data-group=general] [data-key=quiet_from] input').value = '21:30';
+          document.querySelector('[data-tab=proactive] [data-group=mail] [data-key=criteria] textarea').value = 'Uni';
+          document.getElementById('settings-save').click();""")
+        self.assertTrue(wait_until(lambda: self.js("document.getElementById('settings-panel').hidden")))
+        settings = ProactiveSettings(self.store)
+        self.assertEqual(settings.values("general")["quiet_from"], "21:30")
+        self.assertEqual(settings.values("mail")["criteria"], "Uni")
+
+    def test_save_changes_and_confirm_in_chat(self):
+        self.open()
+        count = len(self.js(MESSAGES))
+        self.js("""
+          document.querySelector('[data-key=length] select').value = 'ausfuehrlich';
+          document.querySelector('[data-group=mail] [data-key=max] input').value = '4';
+          document.querySelector('[data-group=mail] [data-key=fields] input[value=preview]').click();
+          document.querySelector('[data-group=basics] [data-key=enabled] input').click();
+          document.getElementById('settings-save').click();""")
+        self.assertTrue(wait_until(lambda: self.js("document.getElementById('settings-panel').hidden")))
+        settings = AssistantSettings(self.store)
+        self.assertEqual(settings.answer_values()["length"], "ausfuehrlich")
+        self.assertEqual(settings.tool_values("list_emails")["max"], 4)
+        self.assertEqual(settings.tool_values("list_emails")["fields"], ["sender", "subject", "date", "preview"])
+        self.assertFalse(settings.tool_enabled("calculate"))
+        self.assertTrue(wait_until(lambda: len(self.js(MESSAGES)) == count + 1))
+        self.assertIn("Einstellungen gespeichert", self.js(MESSAGES)[-1])
+
+    def test_invalid_value_keeps_panel_open_with_error(self):
+        self.open()
+        self.js("document.querySelector('[data-group=mail] [data-key=max] input').value = '500';"
+                "document.getElementById('settings-save').click();")
+        self.assertTrue(wait_until(lambda: "zwischen 1 und 50" in self.js("document.getElementById('settings-status').textContent")))
+        self.assertFalse(self.js("document.getElementById('settings-panel').hidden"))
+        self.assertEqual(self.store.values, {})
+
+    def test_reset_needs_second_click(self):
+        AssistantSettings(self.store).save(answer={"tone": "locker"})
+        self.open()
+        self.js("document.getElementById('settings-reset').click()")
+        self.assertIn("Wirklich", self.js("document.getElementById('settings-reset').textContent"))
+        self.assertEqual(AssistantSettings(self.store).answer_values()["tone"], "locker")
+        self.js("document.getElementById('settings-reset').click()")
+        self.assertTrue(wait_until(lambda: AssistantSettings(self.store).answer_values()["tone"] == "freundlich"))
+        self.assertTrue(wait_until(lambda: self.js("document.querySelector('[data-key=tone] select').value") == "freundlich"))
+
+    def test_disabled_group_is_greyed_and_escape_closes(self):
+        self.open()
+        self.js("document.querySelector('[data-group=mail] [data-key=enabled] input').click()")
+        self.assertTrue(self.js("document.querySelector('[data-group=mail]').classList.contains('disabled')"))
+        self.js("document.getElementById('settings-panel').dispatchEvent("
+                "new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+        self.assertTrue(self.js("document.getElementById('settings-panel').hidden"))
+        self.assertEqual(self.store.values, {})   # Schließen ohne Speichern
 
 
 if __name__ == "__main__":

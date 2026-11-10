@@ -3,7 +3,7 @@ import unittest
 
 from backend import config
 from backend.assistant import Assistant, ModelSelection, create_assistant
-from backend.assistant.ollama_assistant import OllamaAssistant
+from backend.assistant.gemini_assistant import GeminiAssistant
 from backend.assistant import commands
 from backend.assistant.commands import CommandAssistant
 from backend.assistant.skills import travel
@@ -60,10 +60,10 @@ class CreateAssistantTest(unittest.TestCase):
     def test_commands_backend(self):
         self.assertIsInstance(create_assistant("commands"), CommandAssistant)
 
-    def test_ollama_backend_uses_configured_mcp_servers(self):
-        # Erzeugen startet weder Ollama noch MCP-Server - das passiert erst bei Bedarf.
-        assistant = create_assistant("ollama")
-        self.assertIsInstance(assistant, OllamaAssistant)
+    def test_gemini_backend_uses_configured_mcp_servers(self):
+        # Erzeugen startet weder einen Gemini-Aufruf noch MCP-Server - das passiert erst bei Bedarf.
+        assistant = create_assistant("gemini")
+        self.assertIsInstance(assistant, GeminiAssistant)
         self.assertIsInstance(assistant, ModelSelection)
         providers = assistant.tools._providers
         self.assertEqual([p.name for p in providers if isinstance(p, MCPToolProvider)], ["pda"])   # "demo" ist abgeschaltet

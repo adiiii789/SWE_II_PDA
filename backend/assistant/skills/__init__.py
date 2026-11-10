@@ -28,7 +28,7 @@ Konvention:
   - Kontextwissen kommt aus dem PreferenceStore (backend/preferences.py).
   - Jedes Modul liefert ein Skill-Objekt (skills/base.py); es wird in SKILLS
     eingetragen. Größere Fähigkeiten sind ein Paket, z. B. skills/travel/. Der
-    OllamaAssistant (backend/assistant/ollama_assistant.py) gibt dem Modell die
+    ModelAssistant (backend/assistant/model_assistant.py) gibt dem Modell die
     Werkzeuge und Anweisungen aller Fähigkeiten mit.
 
 Beispiel skills/morning.py:

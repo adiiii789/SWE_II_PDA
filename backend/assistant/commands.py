@@ -1,6 +1,6 @@
 """CommandAssistant: Assistent mit festen Befehlen (ohne Sprachmodell).
 
-Die Befehle in COMMANDS gelten auch im OllamaAssistant: Eine Nachricht, die genau
+Die Befehle in COMMANDS gelten auch im GeminiAssistant: Eine Nachricht, die genau
 einem Befehl entspricht, wird sofort beantwortet, ohne das Sprachmodell zu fragen.
 """
 from __future__ import annotations
@@ -56,7 +56,7 @@ def _travel() -> AssistantReply:
 
 
 def _new_conversation() -> AssistantReply:
-    # Den Verlauf leert der OllamaAssistant, bevor er diesen Befehl ausführt.
+    # Den Verlauf leert der GeminiAssistant, bevor er diesen Befehl ausführt.
     return AssistantReply("Neues Gespräch begonnen.", START_VIEW)
 
 

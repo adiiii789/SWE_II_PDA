@@ -1,5 +1,14 @@
-"""E-Mails und ihre Anhänge per IMAP lesen - nur lesend: nichts wird als gelesen markiert,
-gelöscht oder verschoben.
+"""E-Mails und ihre Anhänge per IMAP lesen und ordnen, Antworten senden, Entwürfe ablegen.
+
+Lesen ändert nichts: Ordner werden dabei read-only geöffnet, Mails bleiben ungelesen. Nur die
+eigenen Werkzeuge zum Ordnen (organize_email, delete_email) öffnen den Ordner schreibend. Gelöscht
+wird nie endgültig: delete_email verschiebt in den Papierkorb, dort kann man es rückgängig machen.
+
+Antworten gehen wie alle Mails nur an freigegebene Empfänger (mailer.py). Entwürfe dürfen an
+jede Adresse gerichtet sein, weil sie das Postfach nicht verlassen, bis der Nutzer sie selbst abschickt.
+
+Dateianhänge kommen nur aus den Ordnern in shareable_dirs: Sonst könnte eingeschleuster Text
+Dateien wie die Google-Anmeldung an einen Kontakt schicken lassen.
 
 Einstellungen wie in mailer.py aus Umgebungsvariablen oder der .env im Projektordner:
 
@@ -23,27 +32,33 @@ bleibt die Freigabeliste in mailer.py, die fremde Empfänger gar nicht erst zul�
 """
 from __future__ import annotations
 
+import datetime as dt
 import email
 import email.policy
 import imaplib
+import mimetypes
 import os
 import re
 import shutil
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from email.message import Message
-from email.utils import parsedate_to_datetime
+from email.utils import getaddresses, parseaddr, parsedate_to_datetime
 from pathlib import Path, PurePath
 
 import file_text
-from mailer import ENV_FILE, MailError, read_env_file
+import mailer
+from mailer import ENV_FILE, MailError, MailSettings, OutgoingFile, read_env_file
 
 MAX_LIST_LIMIT = 25             # höchstens so viele Mails pro Übersicht
 MAX_READ_CHARS = 8_000          # längere Mails werden gekürzt (kleine Modelle haben wenig Kontext)
 ATTACHMENT_PART_CHARS = 7_000   # Anhangtext in Teilen dieser Größe (passt samt Rahmen in ein Tool-Ergebnis)
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 KEEP_ATTACHMENTS_DAYS = 7
+MAX_WATCHED_MAILS = 20          # so viele neue Mails prüft der Wächter höchstens auf einmal
+WATCHED_PREVIEW_CHARS = 800     # Textanfang, nach dem das Sprachmodell die Wichtigkeit beurteilt
 ATTACHMENT_DIR = Path({**read_env_file(ENV_FILE), **os.environ}.get("PDA_ATTACHMENT_DIR")
                       or Path(os.environ.get("APPDATA", Path.home())) / "PersonalDigitalAgent" / "attachments")
 
@@ -52,6 +67,15 @@ MAIL_END = "--- Ende der E-Mail ---"
 ATTACHMENT_END = "--- Ende des Anhangs ---"
 _MARKERS = (MAIL_START, MAIL_END, ATTACHMENT_END)
 _RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(10)), *(f"LPT{i}" for i in range(10))}
+
+ORGANIZE_ACTIONS = ("read", "unread", "archive")
+_SHAREABLE_FOLDERS = ("Downloads", "Documents", "Desktop", "Pictures", "OneDrive")
+# Sonderordner: zuerst über ihre Kennzeichnung (\Drafts ...), sonst über die üblichen Namen.
+# "entw&apw-rfe" ist "Entwürfe" in der IMAP-Schreibweise für Umlaute.
+_DRAFTS = (("\\drafts",), ("drafts", "draft", "entwürfe", "entw&apw-rfe"), "Entwürfe")
+_TRASH = (("\\trash",), ("trash", "papierkorb", "deleted items", "deleted messages", "gelöschte elemente"), "Papierkorb")
+_ARCHIVE = (("\\all", "\\archive"), ("archive", "archiv"), "Archiv")
+_LIST_LINE = re.compile(r'\((?P<flags>[^)]*)\)\s+(?:"[^"]*"|NIL)\s+(?P<name>.+)$')
 
 
 @dataclass(frozen=True)
@@ -199,12 +223,256 @@ def read_attachment(settings: ImapSettings, uid: str, index: int, part: int = 1,
     return MailResult("\n".join(lines), (saved,))
 
 
-# --- IMAP ----------------------------------------------------------------------------
+# --- Für den Wächter (backend/watcher.py) ----------------------------------------------
 
-def _fetch(settings: ImapSettings, uid: str, folder: str) -> tuple[str, Message]:
+def new_mails(settings: ImapSettings, after_uid: int = 0, known_validity: str = "", folder: str = "INBOX") -> dict:
+    """Mails nach after_uid als Daten; ändert nichts, sie bleiben ungelesen.
+
+    Ohne after_uid oder wenn der Server die UIDs neu vergeben hat, kommen keine Mails, nur der
+    neue Stand: Sonst gälte beim ersten Start das ganze Postfach als neu.
+    """
+    after_uid = int(after_uid)
+    with _connect(settings, folder) as imap:
+        _, values = imap.response("UIDVALIDITY")
+        validity = values[0].decode(errors="replace") if values and values[0] else ""
+        if known_validity and validity != known_validity:
+            after_uid = 0
+        baseline = not after_uid
+        typ, data = imap.uid("SEARCH", "UID", f"{after_uid + 1}:*")
+        _check(typ, data, "Suche")
+        # n:* liefert immer mindestens die letzte Mail, auch wenn die älter ist
+        uids = sorted(number for number in map(int, data[0].split()) if number > after_uid) if data and data[0] else []
+        latest = uids[-1] if uids else after_uid
+        fresh = [] if baseline else uids[-MAX_WATCHED_MAILS:]
+        items = []
+        if fresh:
+            typ, items = imap.uid("FETCH", ",".join(map(str, fresh)), "(UID FLAGS BODY.PEEK[])")
+            _check(typ, items, "Abruf")
+    mails = []
+    for item in items:
+        if isinstance(item, tuple):
+            uid, flags = _uid_and_flags(item[0])
+            message = email.message_from_bytes(item[1], policy=email.policy.default)
+            mails.append({"uid": uid, "sender": _clean(message["From"]), "subject": _subject(message),
+                          "date": _format_date(message["Date"]), "seen": "\\Seen" in flags, "bulk": _is_bulk(message),
+                          "preview": " ".join(file_text.mail_body_text(message).split())[:WATCHED_PREVIEW_CHARS]})
+    return {"validity": validity, "latest_uid": latest, "baseline": baseline, "mails": mails}
+
+
+def _is_bulk(message: Message) -> bool:
+    """Kennzeichen von Newslettern und automatischen Massenmails in den Kopfzeilen."""
+    automatic = _clean(message["Auto-Submitted"]).lower()
+    return bool(message["List-Unsubscribe"] or message["List-Id"] or (automatic and automatic != "no")
+                or _clean(message["Precedence"]).lower() in ("bulk", "list", "junk"))
+
+
+# --- Antworten und Entwürfe ------------------------------------------------------------
+
+def reply_email(settings: ImapSettings, mail: MailSettings, uid: str, body: str, files: Sequence[OutgoingFile] = (),
+                folder: str = "INBOX") -> str:
+    """Antwort im selben Verlauf senden; der Absender muss ein freigegebener Empfänger sein."""
+    uid, original = _fetch(settings, uid, folder)
+    address = _reply_address(original)
+    try:
+        return mailer.send_email(mail, address, _reply_subject(original), body, files, _thread_headers(original))
+    except MailError as error:
+        if "kein freigegebener Empfänger" in str(error):
+            raise MailError(f"{error}. Als Entwurf lässt sich die Antwort trotzdem speichern "
+                            f"(save_email_draft mit reply_to_uid=\"{uid}\").") from None
+        raise
+
+
+def save_draft(settings: ImapSettings, mail: MailSettings, to: str = "", subject: str = "", body: str = "",
+               files: Sequence[OutgoingFile] = (), reply_to_uid: str = "", folder: str = "INBOX") -> str:
+    """Entwurf im Postfach ablegen, optional als Antwort auf reply_to_uid."""
+    headers: dict[str, str] = {}
+    if reply_to_uid.strip():
+        _, original = _fetch(settings, reply_to_uid, folder)
+        to = to.strip() or _reply_address(original)
+        subject = subject.strip() or _reply_subject(original)
+        headers = _thread_headers(original)
+    recipient = _draft_recipient(mail, to)
+    message = mailer.compose(mail.sender, recipient, subject, body, files, headers)
+    with _writing(settings, folder) as imap:
+        target = _special_folder(imap, _DRAFTS)
+        typ, data = imap.append(_quote(target), "(\\Draft \\Seen)", imaplib.Time2Internaldate(time.time()),
+                                message.as_bytes())
+        _check(typ, data, "Entwurf speichern")
+    return f"Entwurf für {recipient} gespeichert (Betreff: {subject.strip()}). Abgeschickt wurde nichts."
+
+
+def _draft_recipient(mail: MailSettings, to: str) -> str:
+    """Adresse oder Name eines Kontakts; ein Entwurf darf auch an andere Adressen gehen."""
+    to = _clean(to)
+    if not to:
+        raise MailError("Bitte einen Empfänger angeben")
+    if "@" not in to:
+        return str(mailer.find_contact(mail, to))
+    if len(getaddresses([to])) != 1 or "@" not in getaddresses([to])[0][1]:
+        raise MailError(f"Ungültiger Empfänger {to!r}")
+    return to
+
+
+def _reply_address(original: Message) -> str:
+    address = parseaddr(_clean(original["Reply-To"] or original["From"]))[1]
+    if not address:     # leer hieße beim Senden: an den Standardempfänger
+        raise MailError("Diese E-Mail hat keinen lesbaren Absender, auf den man antworten könnte")
+    return address
+
+
+def _reply_subject(original: Message) -> str:
+    subject = _subject(original)
+    return subject if subject.lower().startswith(("re:", "aw:")) else f"Re: {subject}"
+
+
+def _thread_headers(original: Message) -> dict[str, str]:
+    message_id = _clean(original["Message-ID"])
+    return {"In-Reply-To": message_id, "References": " ".join(filter(None, (_clean(original["References"]), message_id)))}
+
+
+def shareable_dirs() -> tuple[Path, ...]:
+    """Ordner, aus denen Dateien an Mails gehängt werden dürfen."""
+    home = Path.home()
+    return (ATTACHMENT_DIR, *(home / name for name in _SHAREABLE_FOLDERS))
+
+
+def outgoing_files(paths: Sequence[str]) -> tuple[OutgoingFile, ...]:
+    """Anzuhängende Dateien laden. Eine Pfadangabe oder der Name eines abgelegten Mail-Anhangs."""
+    files, total = [], 0
+    for text in filter(str.strip, paths):
+        path = _shareable_path(text.strip())
+        total += path.stat().st_size
+        if total > MAX_ATTACHMENT_BYTES:
+            raise MailError(f"Die Anhänge sind zusammen zu groß (höchstens {_size(MAX_ATTACHMENT_BYTES)})")
+        mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        files.append(OutgoingFile(path.name, path.read_bytes(), mime_type))
+    return tuple(files)
+
+
+def _shareable_path(text: str) -> Path:
+    path = Path(text).expanduser()
+    if not path.is_absolute():
+        path = _saved_attachment(text)
+    path = path.resolve()
+    if not any(path.is_relative_to(folder.resolve()) for folder in shareable_dirs()) or path.name.startswith("."):
+        names = ", ".join(_SHAREABLE_FOLDERS)
+        raise MailError(f"{text} darf nicht angehängt werden. Erlaubt sind Dateien aus {names} und Mail-Anhänge.")
+    if not path.is_file():
+        raise MailError(f"Datei nicht gefunden: {text}")
+    return path
+
+
+def _saved_attachment(name: str) -> Path:
+    """Der zuletzt abgelegte Mail-Anhang dieses Namens."""
+    wanted = safe_filename(name, "")
+    found = [path for path in ATTACHMENT_DIR.rglob("*") if path.is_file() and path.name == wanted]
+    if not found:
+        raise MailError(f"Datei nicht gefunden: {name}. Bitte den vollständigen Pfad angeben.")
+    return max(found, key=lambda path: path.stat().st_mtime)
+
+
+# --- Mails ordnen ----------------------------------------------------------------------
+
+def organize_email(settings: ImapSettings, uid: str, action: str, folder: str = "INBOX") -> str:
+    """Als gelesen oder ungelesen markieren oder archivieren."""
+    if action not in ORGANIZE_ACTIONS:
+        raise MailError(f"Unbekannte Aktion {action!r}, erlaubt: {', '.join(ORGANIZE_ACTIONS)}")
+    uid = _valid_uid(uid)
+    with _writing(settings, folder) as imap:
+        subject = _subject_of(imap, uid, folder)
+        if action == "archive":
+            _move(imap, uid, _special_folder(imap, _ARCHIVE))
+            return f"E-Mail archiviert: {subject}"
+        typ, data = imap.uid("STORE", uid, "+FLAGS.SILENT" if action == "read" else "-FLAGS.SILENT", "(\\Seen)")
+        _check(typ, data, "Markieren")
+    return f"E-Mail als {'gelesen' if action == 'read' else 'ungelesen'} markiert: {subject}"
+
+
+def delete_email(settings: ImapSettings, uid: str, folder: str = "INBOX") -> str:
+    """In den Papierkorb verschieben, nie endgültig löschen."""
+    uid = _valid_uid(uid)
+    with _writing(settings, folder) as imap:
+        subject = _subject_of(imap, uid, folder)
+        _move(imap, uid, _special_folder(imap, _TRASH))
+    return f"E-Mail in den Papierkorb verschoben: {subject}"
+
+
+def _valid_uid(uid: str) -> str:
     uid = str(uid).strip()
     if not uid.isdigit():
         raise MailError(f"Ungültige UID {uid!r} - bitte eine UID aus list_emails verwenden")
+    return uid
+
+
+def _subject_of(imap: imaplib.IMAP4, uid: str, folder: str) -> str:
+    typ, data = imap.uid("FETCH", uid, "(BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
+    _check(typ, data, "Abruf")
+    raw = next((item[1] for item in data if isinstance(item, tuple)), None)
+    if raw is None:
+        raise MailError(f"Keine E-Mail mit UID {uid} in {folder}")
+    return _subject(email.message_from_bytes(raw, policy=email.policy.default))
+
+
+def _special_folder(imap: imaplib.IMAP4, kind: tuple[tuple[str, ...], tuple[str, ...], str]) -> str:
+    flags, names, label = kind
+    typ, data = imap.list()
+    _check(typ, data, "Ordner auflisten")
+    folders = []
+    for item in data:
+        line = b" ".join(item) if isinstance(item, tuple) else item
+        match = _LIST_LINE.match(line.decode(errors="replace")) if line else None
+        if match:
+            folders.append((match["flags"].lower().split(), _unquote(match["name"].strip())))
+    for flag in flags:
+        for folder_flags, name in folders:
+            if flag in folder_flags:
+                return name
+    for folder_flags, name in folders:
+        if re.split(r"[/.]", name)[-1].casefold() in names:
+            return name
+    raise MailError(f"Der Ordner {label} wurde im Postfach nicht gefunden")
+
+
+def _unquote(name: str) -> str:
+    if len(name) >= 2 and name[0] == name[-1] == '"':
+        return name[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    return name
+
+
+def _move(imap: imaplib.IMAP4, uid: str, target: str) -> None:
+    # Gmail nennt MOVE erst nach dem Login, die beim Verbinden gemerkte Liste reicht also nicht.
+    typ, data = imap.capability()
+    _check(typ, data, "Fähigkeiten abfragen")
+    capabilities = set(b" ".join(item for item in data if item).decode(errors="replace").upper().split())
+    if "MOVE" in capabilities:
+        typ, data = imap.uid("MOVE", uid, _quote(target))
+        _check(typ, data, "Verschieben")
+        return
+    typ, data = imap.uid("COPY", uid, _quote(target))
+    _check(typ, data, "Kopieren")
+    typ, data = imap.uid("STORE", uid, "+FLAGS.SILENT", "(\\Deleted)")
+    _check(typ, data, "Markieren")
+    if "UIDPLUS" in capabilities:   # sonst bleibt sie markiert: ein EXPUNGE träfe auch fremde Löschmarken
+        typ, data = imap.uid("EXPUNGE", uid)
+        _check(typ, data, "Aufräumen")
+
+
+@contextmanager
+def _writing(settings: ImapSettings, folder: str) -> Iterator[imaplib.IMAP4]:
+    """Verbindung mit schreibend geöffnetem Ordner; IMAP-Fehler werden zu MailError."""
+    imap = _connect(settings, folder, readonly=False)
+    try:
+        yield imap
+    except (imaplib.IMAP4.error, OSError) as error:
+        raise MailError(f"Änderung am Postfach fehlgeschlagen: {error}") from None
+    finally:
+        _logout(imap)
+
+
+# --- IMAP ----------------------------------------------------------------------------
+
+def _fetch(settings: ImapSettings, uid: str, folder: str) -> tuple[str, Message]:
+    uid = _valid_uid(uid)
     with _connect(settings, folder) as imap:
         typ, data = imap.uid("FETCH", uid, "(BODY.PEEK[])")
         _check(typ, data, "Abruf")
@@ -214,8 +482,8 @@ def _fetch(settings: ImapSettings, uid: str, folder: str) -> tuple[str, Message]
     return uid, email.message_from_bytes(raw, policy=email.policy.default)
 
 
-def _connect(settings: ImapSettings, folder: str) -> imaplib.IMAP4:
-    """Angemeldete Verbindung, Ordner read-only geöffnet (Mails bleiben ungelesen)."""
+def _connect(settings: ImapSettings, folder: str, readonly: bool = True) -> imaplib.IMAP4:
+    """Angemeldete Verbindung, Ordner standardmäßig read-only geöffnet (Mails bleiben ungelesen)."""
     try:
         if settings.port == 993:
             imap = imaplib.IMAP4_SSL(settings.host, settings.port, timeout=30)
@@ -226,7 +494,7 @@ def _connect(settings: ImapSettings, folder: str) -> imaplib.IMAP4:
         raise MailError(f"Verbindung zu {settings.host} fehlgeschlagen: {error}") from None
     try:
         imap.login(settings.user, settings.password)
-        typ, data = imap.select(_quote(folder), readonly=True)
+        typ, data = imap.select(_quote(folder), readonly=readonly)
         _check(typ, data, f"Ordner {folder!r} öffnen")
     except (imaplib.IMAP4.error, OSError) as error:
         _logout(imap)
@@ -338,9 +606,18 @@ def _subject(message: Message) -> str:
 
 
 def _format_date(value) -> str:
+    """Datum der Kopfzeile in der lokalen Zeit des Nutzers.
+
+    Die Kopfzeile trägt die Zeitzone des Absenders ("Mon, 10 Nov 2026 02:08:00 -0800"); ohne
+    Umrechnung stünde dort dessen Uhrzeit (hier 02:08 statt 11:08 MEZ). Ohne Zeitzone ("-0000")
+    gilt laut RFC 5322 UTC.
+    """
     try:
-        return parsedate_to_datetime(str(value)).strftime("%d.%m.%Y %H:%M")
-    except (TypeError, ValueError, IndexError):
+        sent = parsedate_to_datetime(str(value))
+        if sent.tzinfo is None:
+            sent = sent.replace(tzinfo=dt.timezone.utc)
+        return sent.astimezone().strftime("%d.%m.%Y %H:%M")
+    except (TypeError, ValueError, IndexError, OverflowError, OSError):
         return _clean(value) or "(ohne Datum)"
 
 

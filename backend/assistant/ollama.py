@@ -1,13 +1,4 @@
-"""OllamaModel: LanguageModel (llm.py) über die HTTP-API eines lokalen Ollama.
-
-Ollama läuft als eigener Dienst (Standard: http://localhost:11434). Modelle lädt
-man vorher herunter, z. B. "ollama pull llama3.2". Genutzt werden:
-  POST /api/chat   nächste Antwort, optional mit Werkzeugen (Tool-Calling)
-  GET  /api/tags   installierte Modelle
-  POST /api/show   Details eines Modells (u. a. ob es Tool-Calling kann)
-
-Nur Standardbibliothek (urllib), damit keine weitere Abhängigkeit nötig ist.
-"""
+"""Lokal installierte Ollama-Modelle über die API auf dem eigenen Rechner."""
 from __future__ import annotations
 
 import json
@@ -15,75 +6,79 @@ import logging
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any
 
-from backend.assistant.llm import ChatMessage, ModelResponse, ToolCall
+from backend.assistant.llm import ChatMessage, LanguageModelError, ModelInfo, ModelResponse, ToolCall
 from backend.assistant.tools import ToolSpec
 
 log = logging.getLogger(__name__)
 
 
-class OllamaError(RuntimeError):
+class OllamaError(LanguageModelError):
     """Ollama ist nicht erreichbar oder hat mit einem Fehler geantwortet."""
 
 
-@dataclass(frozen=True)
-class ModelInfo:
-    name: str
-    supports_tools: bool
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 class OllamaClient:
-    """Dünne Hülle um die HTTP-API. Getrennt vom Modell, damit Tests sie ersetzen können."""
+    """Für lokale Anfragen werden weder Proxys noch HTTP-Weiterleitungen benutzt."""
 
-    def __init__(self, base_url: str, timeout: float):
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
+    def __init__(self, chat_timeout: float, catalog_timeout: float):
+        self.chat_timeout = chat_timeout
+        self.catalog_timeout = catalog_timeout
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
     def get(self, path: str) -> dict[str, Any]:
-        return self._request(urllib.request.Request(self.base_url + path))
+        request = urllib.request.Request("http://127.0.0.1:11434" + path)
+        return self._request(request, self.catalog_timeout)
 
     def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        data = json.dumps(body).encode("utf-8")
-        request = urllib.request.Request(self.base_url + path, data, {"Content-Type": "application/json"})
-        return self._request(request)
+        request = urllib.request.Request("http://127.0.0.1:11434" + path, json.dumps(body).encode("utf-8"),
+                                         {"Content-Type": "application/json"})
+        return self._request(request, self.chat_timeout)
 
-    def _request(self, request: urllib.request.Request) -> dict[str, Any]:
+    def _request(self, request: urllib.request.Request, timeout: float) -> dict[str, Any]:
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
+            with self._opener.open(request, timeout=timeout) as response:
+                data = json.load(response)
+                if not isinstance(data, dict):
+                    raise ValueError
+                return data
         except urllib.error.HTTPError as error:
-            raise OllamaError(_error_message(error)) from None
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
-            raise OllamaError(
-                f"Ollama ist unter {self.base_url} nicht erreichbar ({error}). "
-                "Läuft Ollama (Tray-Icon bzw. 'ollama serve')?") from None
-
-
-def _error_message(error: urllib.error.HTTPError) -> str:
-    try:
-        return json.loads(error.read().decode("utf-8"))["error"]
-    except Exception:
-        return f"HTTP {error.code}: {error.reason}"
+            with error:
+                try:
+                    message = str(json.load(error)["error"])
+                except (KeyError, TypeError, ValueError):
+                    message = f"HTTP {error.code}"
+            raise OllamaError(message) from None
+        except OSError:
+            raise OllamaError("Ollama ist lokal nicht erreichbar. Starte die Ollama-App oder `ollama serve`.") from None
+        except ValueError:
+            raise OllamaError("Ollama hat eine ungültige Antwort geliefert.") from None
 
 
 class OllamaModel:
     """Erfüllt LanguageModel. Das Modell lässt sich zur Laufzeit wechseln (Attribut name)."""
 
-    def __init__(self, client: OllamaClient, name: str, options: dict[str, Any] | None = None):
+    def __init__(self, client: OllamaClient):
         self.client = client
-        self.name = name
-        self.options = options or {}
+        self.name = ""
 
     def chat(self, messages: Sequence[ChatMessage], tools: Sequence[ToolSpec] = ()) -> ModelResponse:
+        # Auch nach der Auswahl prüfen: Ein Modell kann entfernt oder ersetzt worden sein.
+        local = self._installed()
+        if self.name not in local:
+            raise OllamaError("Das ausgewählte lokale Modell fehlt. Wähle ein installiertes Ollama-Modell.")
+        if not local[self.name].supports_tools:
+            tools = ()
         body: dict[str, Any] = {
             "model": self.name,
             "messages": [_message_to_ollama(m) for m in messages],
             "stream": False,
         }
-        if self.options:
-            body["options"] = self.options
         if tools:
             body["tools"] = [_tool_to_ollama(t) for t in tools]
         try:
@@ -95,23 +90,39 @@ class OllamaModel:
             log.warning("Modell %s kann kein Tool-Calling, antworte ohne Werkzeuge", self.name)
             del body["tools"]
             data = self.client.post("/api/chat", body)
-        return ModelResponse(_message_from_ollama(data["message"]))
+            tools = ()
+        try:
+            message = _message_from_ollama(data["message"])
+            if message.tool_calls and not tools:
+                raise ValueError
+        except (AttributeError, KeyError, TypeError, ValueError):
+            raise OllamaError("Ollama hat eine ungültige Chat-Antwort geliefert.") from None
+        return ModelResponse(message)
 
-    def installed(self) -> list[str]:
-        """Namen aller in Ollama installierten Modelle, alphabetisch."""
-        return sorted(model["name"] for model in self.client.get("/api/tags").get("models", []))
+    def _installed(self) -> dict[str, ModelInfo]:
+        try:
+            return {model["name"]: ModelInfo(model["name"], _supports_tools(model))
+                    for model in self.client.get("/api/tags").get("models", [])
+                    if not _is_cloud(model)}
+        except (AttributeError, KeyError, TypeError):
+            raise OllamaError("Ollama hat eine ungültige Modellliste geliefert.") from None
 
     def available_models(self) -> list[ModelInfo]:
-        """Installierte Modelle mit der Angabe, ob sie Tool-Calling können."""
-        return [ModelInfo(name, self._supports_tools(name)) for name in self.installed()]
+        return sorted(self._installed().values(), key=lambda model: model.name)
 
-    def _supports_tools(self, name: str) -> bool:
-        try:
-            capabilities = self.client.post("/api/show", {"model": name}).get("capabilities")
-        except OllamaError:
-            return True   # unbekannt - im Zweifel anbieten, chat() fällt notfalls zurück
-        # Ältere Ollama-Versionen liefern keine capabilities.
-        return capabilities is None or "tools" in capabilities
+    def selectable(self) -> list[str]:
+        return sorted(self._installed())
+
+
+def _supports_tools(model: dict[str, Any]) -> bool:
+    # Ältere Ollama-Versionen melden in /api/tags keine Capabilities.
+    capabilities = model.get("capabilities")
+    return capabilities is None or "tools" in capabilities
+
+
+def _is_cloud(model: dict[str, Any]) -> bool:
+    return bool(model.get("remote_host") or model.get("remote_model")
+                or model["name"].endswith(("-cloud", ":cloud")))
 
 
 # --- Übersetzung in das JSON-Format von Ollama --------------------------------
@@ -132,20 +143,25 @@ def _tool_to_ollama(spec: ToolSpec) -> dict[str, Any]:
 
 
 def _message_from_ollama(data: dict[str, Any]) -> ChatMessage:
+    text = data.get("content") or ""
+    if not isinstance(text, str):
+        raise ValueError
     calls = tuple(
         ToolCall(call["function"]["name"], _parse_arguments(call["function"].get("arguments")))
         for call in data.get("tool_calls") or ())
-    return ChatMessage(data.get("role", "assistant"), data.get("content") or "", calls)
+    if any(not isinstance(call.name, str) or not call.name for call in calls):
+        raise ValueError
+    return ChatMessage("assistant", text, calls)
 
 
 def _parse_arguments(arguments: Any) -> dict[str, Any]:
     # Normalerweise ein Objekt; manche Modelle liefern die Argumente als JSON-Text.
     if isinstance(arguments, dict):
         return arguments
-    if isinstance(arguments, str) and arguments.strip():
-        try:
-            parsed = json.loads(arguments)
-        except json.JSONDecodeError:
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-    return {}
+    if arguments is None:
+        return {}
+    if isinstance(arguments, str):
+        parsed = json.loads(arguments)
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError

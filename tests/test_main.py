@@ -5,10 +5,11 @@ import main
 
 
 class MainTest(unittest.TestCase):
+    @mock.patch("backend.desktop.macos.configure_application")
     @mock.patch.object(main, "configure_qt")
     @mock.patch.object(main, "Application")
     @mock.patch.object(main, "QApplication")
-    def test_main_builds_application_and_returns_exit_code(self, qapp_cls, application_cls, configure_qt):
+    def test_main_builds_application_and_returns_exit_code(self, qapp_cls, application_cls, configure_qt, configure_mac):
         qapp_cls.return_value.exec_.return_value = 7
 
         self.assertEqual(main.main(), 7)

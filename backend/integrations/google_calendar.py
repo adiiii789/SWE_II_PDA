@@ -71,7 +71,9 @@ def oauth_token(google_dir: Path) -> Callable[[bool], str]:
             if credentials is not None and credentials.valid:
                 return credentials.token
             if credentials is None and token_file.is_file():
-                credentials = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+                # Ohne SCOPES laden: token.json teilt sich die App mit mcp_servers/google_calendar.py
+                # (Kalender schreiben, Tasks). Mit SCOPES würde das Speichern unten dessen Rechte kürzen.
+                credentials = Credentials.from_authorized_user_file(str(token_file))
             if credentials is not None and not credentials.valid and credentials.refresh_token:
                 try:
                     credentials.refresh(Request())
