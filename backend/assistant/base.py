@@ -49,3 +49,12 @@ class ProactiveAssistant(Protocol):
         """Meldung an den Nutzer zum Auftrag `instruction` (kommt vom Programm, nicht vom Nutzer).
         Die Meldung gehört danach zum Gesprächsverlauf. None = gerade nicht möglich (z. B. kein Modell)."""
         ...
+
+
+@runtime_checkable
+class ConsultingAssistant(Protocol):
+    """Optional: Assistenten, die eine einmalige Frage beantworten können (backend/watcher.py)."""
+
+    def consult(self, prompt: str) -> str | None:
+        """Antwort ohne Werkzeuge und ohne Gesprächsverlauf. None = gerade nicht möglich."""
+        ...

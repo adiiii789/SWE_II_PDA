@@ -4,15 +4,42 @@ from unittest import mock
 
 from backend import api
 from backend.assistant.settings import ANSWER_KEY, AssistantSettings
+from backend.proactive_settings import ProactiveSettings
 from tests.assistant.test_settings import MemoryStore
 
 
 class SettingsApiTest(unittest.TestCase):
     def setUp(self):
         self.store = MemoryStore()
-        patcher = mock.patch.object(api, "_settings", return_value=AssistantSettings(self.store))
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for name, settings in (("_settings", AssistantSettings(self.store)),
+                               ("_proactive_settings", ProactiveSettings(self.store))):
+            patcher = mock.patch.object(api, name, return_value=settings)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_proactive_settings_are_saved_and_reset(self):
+        form = api.save_settings({"proactive": {"mail": {"criteria": "Uni"}}})
+        mail = next(section for section in form["proactive"] if section["id"] == "mail")
+        self.assertEqual(mail["values"]["criteria"], "Uni")
+        reset = next(section for section in api.reset_settings()["proactive"] if section["id"] == "mail")
+        self.assertEqual(reset["values"]["criteria"], "")
+
+    def test_invalid_answer_also_keeps_proactive_settings_unsaved(self):
+        with self.assertRaises(ValueError):
+            api.save_settings({"answer": {"tone": "frech"}, "proactive": {"mail": {"criteria": "Uni"}}})
+        self.assertEqual(self.store.values, {})
+
+    def test_invalid_proactive_value_saves_nothing(self):
+        with self.assertRaises(ValueError):
+            api.save_settings({"answer": {"tone": "sachlich"}, "proactive": {"general": {"quiet_from": "25:00"}}})
+        self.assertEqual(self.store.values, {})
+
+    def test_internal_tools_are_not_offered_in_settings(self):
+        assistant = mock.Mock()
+        assistant.tools.list_tools.return_value = [mock.Mock(description="intern")]
+        assistant.tools.list_tools.return_value[0].name = "watch_open_tasks"
+        with mock.patch.object(api, "_assistant", return_value=assistant):
+            self.assertNotIn("tool:watch_open_tasks", [group["id"] for group in api.get_settings()["tools"]])
 
     def test_form_without_language_model_has_no_tools_available(self):
         # Tests laufen mit dem CommandAssistant: keine Werkzeuge, die bekannten Gruppen trotzdem

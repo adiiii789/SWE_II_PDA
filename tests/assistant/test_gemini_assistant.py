@@ -2,7 +2,7 @@
 import datetime
 import unittest
 
-from backend.assistant import Assistant, ModelSelection, ProactiveAssistant
+from backend.assistant import Assistant, ConsultingAssistant, ModelSelection, ProactiveAssistant
 from backend.assistant.llm import ChatMessage, ModelResponse, ToolCall
 from backend.assistant.gemini import MODELS, GeminiError
 from backend.assistant.llm import ModelInfo
@@ -75,6 +75,38 @@ FIXED_NOW = datetime.datetime(2026, 10, 14, 9, 30)
 def make(model, tools=None, preferences=None, **kwargs):
     return GeminiAssistant(model, tools or EchoTools(), preferences or MemoryPreferences(),
                            clock=lambda: FIXED_NOW, **kwargs)
+
+
+class WatcherSupportTest(unittest.TestCase):
+    def test_consult_has_no_history_or_tools_and_leaves_no_trace(self):
+        model = FakeModel(text("  Nein  "))
+        assistant = make(model)
+        assistant.history.append(ChatMessage("user", "privat"))
+        self.assertIsInstance(assistant, ConsultingAssistant)
+        self.assertEqual(assistant.consult("Wichtig?"), "Nein")
+        self.assertEqual(model.calls, [([ChatMessage("user", "Wichtig?")], [])])
+        self.assertEqual(len(assistant.history), 1)
+
+    def test_consult_without_model(self):
+        self.assertIsNone(make(FakeModel(OllamaError("weg"))).consult("Frage"))
+        self.assertIsNone(make(FakeModel(installed=())).consult("Frage"))
+        self.assertIsNone(make(FakeModel(text("   "))).consult("Frage"))
+
+    def test_internal_tools_stay_hidden_and_cannot_be_called(self):
+        class Tools(EchoTools):
+            def list_tools(self):
+                return [*super().list_tools(), ToolSpec("watch_new_emails", "intern", {"type": "object"})]
+
+        tools = Tools()
+        model = FakeModel(calls(ToolCall("watch_new_emails", {})), text("Fertig"))
+        make(model, tools).reply("Hi")
+        self.assertEqual([tool.name for tool in model.calls[0][1]], ["echo"])
+        self.assertEqual(tools.calls, [])
+
+    def test_proactive_settings_are_not_personal_facts(self):
+        model = FakeModel(text("Hallo"))
+        make(model, preferences=MemoryPreferences(proactive_settings={"mail": {"criteria": "GEHEIMES_KRITERIUM"}})).reply("Hi")
+        self.assertNotIn("GEHEIMES_KRITERIUM", model.calls[0][0][0].content)
 
 
 class ReplyTest(unittest.TestCase):
@@ -186,6 +218,73 @@ class ReplyTest(unittest.TestCase):
         self.assertIn('"wohnort": "Mannheim"', system)
         self.assertNotIn(MODEL_PREFERENCE, system)
         self.assertTrue(system.endswith("Briefing kurz halten."))
+
+
+class ConfirmationTest(unittest.TestCase):
+    """Riskante Werkzeuge laufen erst, wenn die nächste Nachricht des Nutzers zustimmt."""
+
+    CALL = ToolCall("delete_task", {"task_id": "l::t"})
+
+    def setUp(self):
+        self.tools = EchoTools()
+
+    def turn(self, *calls_):
+        return [calls(call) for call in calls_] + [text("Antwort")]
+
+    def run_turns(self, *turns):
+        """turns: (Nachricht des Nutzers, Aufrufe des Modells in dieser Runde)"""
+        model = FakeModel(*[response for _, calls_ in turns for response in self.turn(*calls_)])
+        assistant = make(model, self.tools)
+        for message, _ in turns:
+            assistant.reply(message)
+        return model
+
+    def test_first_call_is_only_proposed(self):
+        model = self.run_turns(("Lösch die Aufgabe", [self.CALL]))
+        self.assertEqual(self.tools.calls, [])
+        self.assertIn("NICHT ausgeführt", model.calls[1][0][-1].content)
+
+    def test_agreement_in_next_message_runs_it(self):
+        for answer in ("ja", "Ja, bitte löschen", "ok", "Mach das", "lösche sie"):
+            with self.subTest(answer=answer):
+                self.tools = EchoTools()
+                self.run_turns(("Lösch die Aufgabe", [self.CALL]), (answer, [self.CALL]))
+                self.assertEqual(self.tools.calls, [("delete_task", {"task_id": "l::t"})])
+
+    def test_repeating_it_in_the_same_turn_does_not_help(self):
+        self.run_turns(("Fasse meine Mails zusammen", [self.CALL, self.CALL]))
+        self.assertEqual(self.tools.calls, [])
+
+    def test_other_answers_do_not_run_it(self):
+        for answer in ("nein", "bitte nicht", "ok, doch nicht", "danke", "Was gibt es Neues?"):
+            with self.subTest(answer=answer):
+                self.run_turns(("Lösch die Aufgabe", [self.CALL]), (answer, [self.CALL]))
+                self.assertEqual(self.tools.calls, [])
+
+    def test_agreement_covers_only_the_proposed_call(self):
+        other = ToolCall("delete_task", {"task_id": "l::anders"})
+        self.run_turns(("Lösch die Aufgabe", [self.CALL]), ("ja", [other]))
+        self.assertEqual(self.tools.calls, [])
+
+    def test_agreement_is_used_up(self):
+        self.run_turns(("Lösch die Aufgabe", [self.CALL]), ("ja", [self.CALL, self.CALL]))
+        self.assertEqual(len(self.tools.calls), 1)
+
+    def test_agreement_only_counts_for_the_next_message(self):
+        self.run_turns(("Lösch die Aufgabe", [self.CALL]), ("Wie spät ist es?", []), ("ja", [self.CALL]))
+        self.assertEqual(self.tools.calls, [])
+
+    def test_new_conversation_forgets_proposals(self):
+        model = FakeModel(calls(self.CALL), text("Soll ich?"), calls(self.CALL), text("Soll ich?"))
+        assistant = make(model, self.tools)
+        assistant.reply("Lösch die Aufgabe")
+        assistant.reply("neu")
+        assistant.reply("ja")
+        self.assertEqual(self.tools.calls, [])
+
+    def test_other_tools_run_directly(self):
+        self.run_turns(("Mach", [ToolCall("echo", {"text": "a"})]))
+        self.assertEqual(len(self.tools.calls), 1)
 
 
 class SettingsTest(unittest.TestCase):
