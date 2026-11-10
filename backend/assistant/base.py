@@ -1,7 +1,7 @@
 """Schnittstelle zwischen Chat (Frontend) und Assistent.
 
 Jeder Assistent - der heutige CommandAssistant ebenso wie ein späterer
-Ollama/MCP-Assistent - implementiert das Protokoll Assistant.
+Gemini/MCP-Assistent - implementiert das Protokoll Assistant.
 """
 from __future__ import annotations
 
@@ -48,4 +48,13 @@ class ProactiveAssistant(Protocol):
     def announce(self, instruction: str) -> str | None:
         """Meldung an den Nutzer zum Auftrag `instruction` (kommt vom Programm, nicht vom Nutzer).
         Die Meldung gehört danach zum Gesprächsverlauf. None = gerade nicht möglich (z. B. kein Modell)."""
+        ...
+
+
+@runtime_checkable
+class ConsultingAssistant(Protocol):
+    """Optional: Assistenten, die eine einmalige Frage beantworten können (backend/watcher.py)."""
+
+    def consult(self, prompt: str) -> str | None:
+        """Antwort ohne Werkzeuge und ohne Gesprächsverlauf. None = gerade nicht möglich."""
         ...

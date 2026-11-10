@@ -148,6 +148,10 @@ function markProactive(message, title) {
 
 // spoken: Nachricht kam per Spracheingabe - dann wird die Antwort vorgelesen.
 async function submitText(text, spoken = false) {
+  if (modelSelect.disabled) {
+    messageInput.value = text;
+    return;
+  }
   addMessage(text, "user");
   const pending = document.createElement("div");
   pending.className = "pending";
@@ -158,6 +162,7 @@ async function submitText(text, spoken = false) {
   try {
     const reply = await chat(text);
     showReply(reply);
+    if (/^modell(?:e$|\s)/i.test(text)) await loadModels();
     if (spoken && speech.output && reply.text) await speak(reply.text);
   } catch (error) {
     addMessage(error.message, "error");
@@ -170,6 +175,7 @@ async function submitText(text, spoken = false) {
 
 async function sendMessage(event) {
   event.preventDefault();
+  if (modelSelect.disabled) return;
   const text = messageInput.value.trim();
   if (!text) return;
   messageInput.value = "";
@@ -239,15 +245,18 @@ async function loadSpeechSupport() {
   recordButton.hidden = !speech.input;
 }
 
-// Ollama-Modelle in die Auswahl laden, getrennt nach lokal und Cloud (leer = Assistent ohne Sprachmodell).
+// Sprachmodelle in die Auswahl laden, getrennt nach lokal und Cloud.
 const MODEL_GROUPS = [
-  {label: "Lokal (auf diesem PC)", cloud: false},
-  {label: "Cloud (ollama.com)", cloud: true},
+  {label: "Lokal (Ollama)", cloud: false},
+  {label: "Cloud (Gemini)", cloud: true},
 ];
+let renderedModels = "";
 
 async function loadModels() {
   try {
     const {models, current} = await list_models();
+    const snapshot = JSON.stringify([models, current]);
+    if (snapshot === renderedModels && modelSelect.value === (current ?? "")) return;
     while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
     for (const {label, cloud} of MODEL_GROUPS) {
       const members = models.filter(model => Boolean(model.cloud) === cloud);
@@ -256,16 +265,23 @@ async function loadModels() {
       group.label = label;
       for (const model of members) {
         const option = document.createElement("option");
-        option.value = model.name;
+        option.value = model.id ?? model.name;
         option.textContent = model.tools ? model.name : `${model.name} (ohne Werkzeuge)`;
-        option.selected = model.name === current;
+        option.selected = option.value === current;
         group.appendChild(option);
       }
       modelSelect.appendChild(group);
     }
-    modelSelect.hidden = models.length === 0;
+    if (current && !Array.from(modelSelect.options).some(option => option.value === current)) {
+      const unavailable = new Option(`${current.replace(/^ollama\//, "") || "Ollama"} (nicht verfügbar)`, current);
+      unavailable.disabled = true;
+      modelSelect.prepend(unavailable);
+      modelSelect.value = current;
+    }
+    modelSelect.hidden = modelSelect.options.length === 0;
+    renderedModels = snapshot;
   } catch (error) {
-    modelSelect.hidden = true;   // z. B. Ollama läuft nicht - der Chat meldet das bei der ersten Nachricht
+    modelSelect.hidden = true;
   }
 }
 
@@ -331,15 +347,24 @@ async function toggleEnlarged() {
 }
 
 async function changeModel() {
+  const name = modelSelect.selectedOptions[0].textContent;
+  modelSelect.disabled = true;
   try {
-    addMessage(`Modell: ${await select_model(modelSelect.value)}`, "assistant");
+    await select_model(modelSelect.value);
+    addMessage(`Modell: ${name}`, "assistant");
   } catch (error) {
     addMessage(error.message, "error");
+  } finally {
+    await loadModels();
+    modelSelect.disabled = false;
   }
 }
 
 inputForm.addEventListener("submit", sendMessage);
 modelSelect.addEventListener("change", changeModel);
+window.addEventListener("focus", () => {
+  if (!modelSelect.disabled && !replyPending) loadModels();
+});
 chatHistory.addEventListener("click", onChatClick);
 recordButton.addEventListener("click", toggleRecording);
 chatHistory.addEventListener("scroll", onChatScroll);

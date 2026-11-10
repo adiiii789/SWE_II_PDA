@@ -2,6 +2,7 @@
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -36,12 +37,52 @@ class SettingsTest(unittest.TestCase):
             mailer.MailSettings.load({"PDA_SMTP_HOST": "h", "PDA_SMTP_USER": "u"}, NO_FILE)
 
 
+class ContactTest(unittest.TestCase):
+    def setUp(self):
+        self.settings = mailer.MailSettings.load({**ENV, "PDA_MAIL_RECIPIENTS":
+            'Ich <ich@example.com>, Anna Müller <anna@example.com>, "Schmidt, Anna" <as@example.com>, '
+            'Mama <mama@example.com>, max@example.com'}, NO_FILE)
+
+    def find(self, to):
+        return mailer.find_contact(self.settings, to).address
+
+    def test_parse(self):
+        self.assertEqual(self.settings.contacts[1], mailer.Contact("Anna Müller", "anna@example.com"))
+        self.assertEqual(self.settings.contacts[2].name, "Schmidt, Anna")
+        self.assertEqual(self.settings.recipients[-1], "max@example.com")
+
+    def test_by_name(self):
+        self.assertEqual(self.find("mama"), "mama@example.com")
+        self.assertEqual(self.find("Anna Müller"), "anna@example.com")
+        self.assertEqual(self.find("müller anna"), "anna@example.com")
+        self.assertEqual(self.find("Müller"), "anna@example.com")
+        self.assertEqual(self.find("Anna Schmidt"), "as@example.com")
+
+    def test_by_address_or_default(self):
+        self.assertEqual(self.find("MAX@example.com"), "max@example.com")
+        self.assertEqual(self.find("Wer auch immer <mama@example.com>"), "mama@example.com")
+        self.assertEqual(self.find(""), "ich@example.com")
+
+    def test_ambiguous_name(self):
+        with self.assertRaisesRegex(mailer.MailError, "nicht eindeutig.*Anna Müller.*Schmidt, Anna"):
+            self.find("Anna")
+
+    def test_unknown_name_or_address(self):
+        for to in ("Papa", "Mama <fremd@evil.example>"):
+            with self.assertRaisesRegex(mailer.MailError, "kein freigegebener Empfänger.*Mama <mama@example.com>"):
+                self.find(to)
+
+    def test_no_valid_address(self):
+        with self.assertRaisesRegex(mailer.MailError, "keine gültige Adresse"):
+            mailer.MailSettings.load({**ENV, "PDA_MAIL_RECIPIENTS": "Mama"}, NO_FILE)
+
+
 class SendTest(unittest.TestCase):
     def setUp(self):
         self.settings = mailer.MailSettings.load(ENV, NO_FILE)
 
-    def _send(self, to="", subject="Hallo", body="Text", port=None):
-        settings = self.settings if port is None else mailer.MailSettings(**{**self.settings.__dict__, "port": port})
+    def _send(self, to="", subject="Hallo", body="Text", **settings_overrides):
+        settings = replace(self.settings, **settings_overrides)
         with mock.patch("smtplib.SMTP") as smtp, mock.patch("smtplib.SMTP_SSL") as smtp_ssl:
             result = mailer.send_email(settings, to, subject, body)
         return result, smtp.return_value.__enter__.return_value, smtp_ssl.return_value.__enter__.return_value
@@ -56,6 +97,35 @@ class SendTest(unittest.TestCase):
                          ("ich@example.com", "max@example.com", "Hallo"))
         self.assertIn("Ich komme später.", message.get_content())
 
+    def test_replaces_only_legacy_signatures_in_outgoing_body(self):
+        for ending, expected in (
+            ("Mit freundlichen Grüßen PDA", "Mit freundlichen Grüßen EVE"),
+            ("Mit freundlichen Grüßen,\n\nPDA", "Mit freundlichen Grüßen,\n\nEVE"),
+            ("Best regards,\nPersonal Digital Agent (PDA)", "Best regards,\nEVE"),
+            ("-- \nPDA", "-- \nEVE"),
+            ("Mit freundlichen Grüßen\nLuca", "Mit freundlichen Grüßen\nLuca"),
+            ("> Mit freundlichen Grüßen\n> PDA", "> Mit freundlichen Grüßen\n> PDA"),
+        ):
+            with self.subTest(ending=ending):
+                body = "Hier steht PDA als Zitat.\n\n"
+                _, smtp, _ = self._send(body=body + ending)
+                self.assertEqual(smtp.send_message.call_args.args[0].get_content(), body + expected + "\n")
+
+    def test_app_name_matches_config(self):
+        self.assertEqual(mailer.APP_NAME, config.APP_NAME)
+
+    def test_draft_signature_is_replaced_too(self):
+        message = mailer.compose("PDA <ich@example.com>", "max@example.com", "Hi", "Text\n\nViele Grüße\nPDA")
+        self.assertEqual(message["From"].addresses[0].display_name, "EVE")
+        self.assertTrue(message.get_content().endswith("Viele Grüße\nEVE\n"))
+
+    def test_replaces_legacy_from_display_name_without_changing_address(self):
+        for sender, expected in (("PDA", "EVE"), ("Luca", "Luca")):
+            with self.subTest(sender=sender):
+                _, smtp, _ = self._send(sender=f"{sender} <ich@example.com>")
+                address = smtp.send_message.call_args.args[0]["From"].addresses[0]
+                self.assertEqual((address.display_name, address.addr_spec), (expected, "ich@example.com"))
+
     def test_ascii_hostname_for_ehlo(self):
         # Rechnernamen mit Umlaut (z. B. "Gergö-PC") dürfen nicht im EHLO landen.
         with mock.patch("smtplib.SMTP") as smtp:
@@ -64,7 +134,8 @@ class SendTest(unittest.TestCase):
 
     def test_allowed_recipient_case_insensitive(self):
         result, smtp, _ = self._send(to="anna@example.com")
-        self.assertIn("anna@example.com", result)
+        self.assertEqual(smtp.send_message.call_args.args[0]["To"], "Anna@Example.com")
+        self.assertIn("Anna@Example.com", result)  # so, wie sie in der Liste steht
 
     def test_ssl_port(self):
         _, smtp, smtp_ssl = self._send(port=465)
@@ -82,6 +153,29 @@ class SendTest(unittest.TestCase):
             mailer.send_email(self.settings, "", " ", "Text")
         with self.assertRaisesRegex(mailer.MailError, "zu lang"):
             mailer.send_email(self.settings, "", "Hi", "x" * (mailer.MAX_BODY_CHARS + 1))
+
+    def test_send_by_name(self):
+        settings = mailer.MailSettings.load({**ENV, "PDA_MAIL_RECIPIENTS":
+                                             'Mama <mama@example.com>, "Müller, Anna" <anna@example.com>'}, NO_FILE)
+        with mock.patch("smtplib.SMTP") as smtp:
+            result = mailer.send_email(settings, "mama", "Hi", "Text")
+        message = smtp.return_value.__enter__.return_value.send_message.call_args.args[0]
+        self.assertEqual(message["To"], "Mama <mama@example.com>")
+        self.assertEqual(result, "E-Mail an Mama <mama@example.com> gesendet (Betreff: Hi)")
+
+    def test_attachments(self):
+        files = (mailer.OutgoingFile("plan.pdf", b"%PDF", "application/pdf"),)
+        with mock.patch("smtplib.SMTP") as smtp:
+            result = mailer.send_email(self.settings, "", "Hi", "Text", files)
+        message = smtp.return_value.__enter__.return_value.send_message.call_args.args[0]
+        part = next(message.iter_attachments())
+        self.assertEqual((part.get_filename(), part.get_content()), ("plan.pdf", b"%PDF"))
+        self.assertIn("1 Anhang", result)
+
+    def test_header_injection_is_refused(self):
+        with mock.patch("smtplib.SMTP") as smtp, self.assertRaisesRegex(mailer.MailError, "Ungültige"):
+            mailer.send_email(self.settings, "", "Hi\nBcc: fremd@evil.example", "Text")
+        smtp.assert_not_called()
 
     def test_smtp_error(self):
         with mock.patch("smtplib.SMTP", side_effect=OSError("Verbindung abgelehnt")):

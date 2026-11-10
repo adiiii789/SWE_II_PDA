@@ -41,13 +41,13 @@ def forward_popup_events(popup: PopupWindow, event_bus: EventBus) -> Callable[[]
 def forward_proactive_notices(tray: TrayIcon, popup: PopupWindow, event_bus: EventBus,
                               open_popup: bool = config.PROACTIVE_OPEN_POPUP) -> Callable[[], None]:
     """Proaktive Meldungen (backend/proactive.py) sichtbar machen: das Popup öffnet sich von selbst
-    wie bei einem Klick aufs Tray-Icon - oder (open_popup=False) eine Windows-Benachrichtigung,
+    wie bei einem Klick aufs Tray-Icon - oder (open_popup=False) eine Systembenachrichtigung,
     deren Klick das Popup öffnet. Gibt die Abmeldung zurück."""
     def forward(name: str, payload: Any) -> None:
         if name != PROACTIVE_NOTICE:
             return
-        # Läuft im Thread des Auslösers - deshalb über Signale.
-        if open_popup:
+        # Läuft im Thread des Auslösers - deshalb über Signale. "display" setzt die Einstellung im Popup.
+        if payload.get("display", "popup" if open_popup else "notice") == "popup":
             popup.show_requested.emit()
         else:
             tray.notify_requested.emit(payload["title"], payload["text"], config.PROACTIVE_NOTICE_MS)
@@ -87,7 +87,9 @@ class Application:
 
         self.popup = create_popup()
         self.tray = TrayIcon(config.TRAY_ICON, config.APP_NAME)
-        self.tray.left_clicked.connect(self.popup.show_at_cursor)
+        self.popup.anchor = self.tray.anchor
+        self.popup.tray_geometry = self.tray.geometry
+        self.tray.left_clicked.connect(self.popup.toggle_at_anchor)
         self.tray.quit_requested.connect(qt_app.quit)
         self.tray.show()
 
@@ -96,21 +98,27 @@ class Application:
         self.hotkey = GlobalHotkey(config.PROACTIVE_HOTKEY)
         self.hotkey.triggered.connect(self.proactive.fire)
         self.tray.proactive_test_requested.connect(self.proactive.fire)
-        self.popup.anchor = self.tray.anchor   # von selbst öffnen: dort, wo ein Klick aufs Icon wäre
         self.tray.messageClicked.connect(self.popup.show_requested.emit)
         if self.hotkey.registered:
             self.tray.setToolTip(f"{config.APP_NAME} - Test-Meldung: {config.PROACTIVE_HOTKEY}")
 
         self._unsubscribe = [forward_popup_events(self.popup, events),
                              forward_proactive_notices(self.tray, self.popup, events)]
+        self.watcher = api._proactive_watcher() if config.PROACTIVE_WATCH else None
+        if self.watcher is not None:
+            self.watcher.start()   # meldet sich von selbst bei Mails, Aufgaben und Terminen
         qt_app.aboutToQuit.connect(self.shutdown)
 
     def shutdown(self) -> None:
         """Bridge-Thread beenden und Web-View freigeben (vermeidet WebEngine-Warnungen)."""
+        if self.watcher is not None:
+            self.watcher.stop()
         for unsubscribe in self._unsubscribe:
             unsubscribe()
         self._unsubscribe = []
         self.hotkey.unregister()
         self.tray.hide()
+        self.popup.hide()
+        self.popup.release_desktop_resources()
         self.popup.content.close_bridge()
         self.popup.content.deleteLater()

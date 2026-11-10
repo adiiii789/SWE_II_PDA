@@ -6,7 +6,7 @@ Spracherkennung mit.
 Spracheingabe (Speech-to-Text): Mikrofon über sounddevice aufnehmen, faster-whisper
 macht daraus Text. Das Whisper-Modell wird beim ersten Gebrauch geladen.
 Sprachausgabe (Text-to-Speech): Piper (neuronale Stimme, wird beim ersten Gebrauch
-geladen); geht das nicht, die eingebaute Windows-Stimme (SAPI).
+geladen); geht das nicht, eine installierte macOS-Stimme oder Windows-Stimme (SAPI).
 
 Ablauf im Chat (frontend/popup.js über backend/api.py): Mikrofon-Knopf ->
 start(), zweiter Klick -> stop() liefert den Text, Escape -> cancel(). Alle
@@ -21,7 +21,11 @@ from __future__ import annotations
 import importlib.util
 import logging
 import re
+import subprocess
+import sys
+import tempfile
 import threading
+import wave
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -75,13 +79,19 @@ class Microphone:
 
         if self._stream is not None:
             return
+        _require_microphone_access()
         self._chunks = []
         try:
-            self._stream = sd.InputStream(samplerate=self.sample_rate, channels=1, dtype="float32",
-                                          callback=self._on_audio)
+            stream = sd.InputStream(samplerate=self.sample_rate, channels=1, dtype="float32",
+                                    callback=self._on_audio)
+            try:
+                stream.start()
+            except Exception:
+                stream.close()
+                raise
+            self._stream = stream
         except sd.PortAudioError as exc:
             raise RuntimeError(f"Kein Mikrofon verfügbar: {exc}") from exc
-        self._stream.start()
 
     def stop(self) -> Any:
         """Aufnahme beenden; liefert die Samples als float32-Array (leer, wenn nicht aufgenommen wurde)."""
@@ -186,6 +196,42 @@ class PiperSynthesizer:
                 download_voice(self._voice_name, self._voice_dir)
             self._voice = PiperVoice.load(model)
         return self._voice
+
+
+class MacSynthesizer:
+    """Installierte macOS-Stimme über say; kein zusätzlicher Download nötig."""
+
+    def __init__(self, language: str | None, voice: str = ""):
+        self._language = language
+        self._voice = voice
+        self._selected = bool(voice)
+
+    def _select_voice(self) -> str:
+        if not self._selected:
+            voices = subprocess.run(["/usr/bin/say", "-v", "?"], capture_output=True, text=True,
+                                    check=True, timeout=15).stdout
+            for line in voices.splitlines():
+                match = re.match(r"^(.+?)\s+([a-z]{2,3})[_-][A-Za-z_]+\s", line)
+                if match and match[2] == self._language:
+                    self._voice = match[1].strip()
+                    break
+            self._selected = True
+        return self._voice
+
+    def synthesize(self, text: str) -> tuple[Any, int]:
+        import numpy as np
+
+        voice = self._select_voice()
+        with tempfile.TemporaryDirectory(prefix="pda-speech-") as folder:
+            output = Path(folder) / "speech.wav"
+            command = ["/usr/bin/say", "--file-format=WAVE", "--data-format=LEI16@22050", "--channels=1",
+                       "-o", str(output)]
+            if voice:
+                command += ["-v", voice]
+            # Über stdin übergeben: Nachrichtentext kann keine Kommandozeilenoptionen einschleusen.
+            subprocess.run(command, input=text, text=True, check=True, capture_output=True, timeout=120)
+            with wave.open(str(output), "rb") as audio:
+                return np.frombuffer(audio.readframes(audio.getnframes()), dtype="<i2").copy(), audio.getframerate()
 
 
 class SapiSynthesizer:
@@ -305,6 +351,12 @@ def _installed(*modules: str) -> bool:
     return all(importlib.util.find_spec(module) is not None for module in modules)
 
 
+def _require_microphone_access() -> None:
+    if sys.platform == "darwin":
+        from backend.desktop.macos import require_microphone_access
+        require_microphone_access()
+
+
 def load_before_qt() -> None:
     """Vor dem ersten PyQt5-Import aufrufen (main.py, tests/conftest.py).
 
@@ -327,16 +379,18 @@ def create_speech_input() -> SpeechInput | None:
 
 
 def create_speech_output() -> SpeechOutput | None:
-    """Sprachausgabe mit Piper, ersatzweise Windows-Stimme; None, wenn beides fehlt."""
+    """Sprachausgabe mit Piper und plattformspezifischer Ersatzstimme."""
     if not _installed("sounddevice", "numpy"):
         log.info("Sprachausgabe aus: sounddevice nicht installiert")
         return None
     synthesizers: list[Synthesizer] = []
     if _installed("piper"):
         synthesizers.append(PiperSynthesizer(config.PIPER_VOICE, config.SPEECH_DIR / "piper"))
-    if _installed("win32com"):
+    if sys.platform == "darwin":
+        synthesizers.append(MacSynthesizer(config.SPEECH_LANGUAGE or None, config.MAC_VOICE))
+    elif sys.platform == "win32" and _installed("win32com"):
         synthesizers.append(SapiSynthesizer(config.SPEECH_LANGUAGE or None))
     if not synthesizers:
-        log.info("Sprachausgabe aus: weder Piper noch die Windows-Stimme verfügbar")
+        log.info("Sprachausgabe aus: keine Stimme verfügbar")
         return None
     return VoiceOutput(FallbackSynthesizer(synthesizers), AudioPlayer())

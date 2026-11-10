@@ -16,11 +16,16 @@ from functools import cache
 from typing import Any
 
 from backend import config, proactive
-from backend.assistant import Assistant, ModelSelection, create_assistant
+from backend.assistant import Assistant, ConsultingAssistant, ModelSelection, create_assistant
+from backend.assistant.settings import AssistantSettings, is_internal_tool
+from backend.assistant.tools import ToolResult
+from backend.preferences import JsonPreferenceStore, default_store
 from backend.events import POPUP_ENLARGED, events
 from backend.presenter import attachment_store, present, renderer
+from backend.proactive_settings import ProactiveSettings
 from backend.speech import SpeechInput, SpeechOutput, create_speech_input, create_speech_output
 from backend.views import START_VIEW, view_from_dict
+from backend.watcher import ProactiveWatcher
 
 log = logging.getLogger(__name__)
 
@@ -56,12 +61,13 @@ def start_view() -> str:
 
 
 def list_models() -> dict[str, Any]:
-    """Wählbare Sprachmodelle: {"models": [{"name", "tools", "cloud"}], "current": str | None}.
+    """Wählbare Sprachmodelle: {"models": [{"name", "tools", "cloud", optional "id"}], "current": str | None}.
     Ohne Sprachmodell (CommandAssistant) ist die Liste leer."""
     assistant = _assistant()
     if not isinstance(assistant, ModelSelection):
         return {"models": [], "current": None}
-    return {"models": assistant.available_models(), "current": assistant.current_model()}
+    with _assistant_lock:
+        return {"models": assistant.available_models(), "current": assistant.current_model()}
 
 
 def select_model(name: str) -> str:
@@ -69,7 +75,8 @@ def select_model(name: str) -> str:
     assistant = _assistant()
     if not isinstance(assistant, ModelSelection):
         raise ValueError("Dieser Assistent nutzt kein Sprachmodell")
-    assistant.select_model(name)
+    with _assistant_lock:
+        assistant.select_model(name)
     return name
 
 
@@ -141,22 +148,105 @@ def enlarge_popup(enlarged: bool) -> bool:
 
 
 def proactive_message(occasion: str = proactive.DEMO) -> dict[str, Any]:
-    """Der PDA meldet sich von sich aus (Anlass aus backend/proactive.py, z. B. "demo").
+    """EVE meldet sich von sich aus (Anlass aus backend/proactive.py, z. B. "demo").
 
     Die Meldung erscheint als Push im Chat und als Windows-Benachrichtigung und wird
     vorgelesen (config.PROACTIVE_SPEAK). Gibt die Chat-Nachricht zurück. Darf aus jedem
     Thread aufgerufen werden; dauert so lange, wie das Sprachmodell braucht.
     """
-    chosen = proactive.occasion(occasion)
+    return _deliver_proactive(proactive.occasion(occasion), speak=config.PROACTIVE_SPEAK)
+
+
+def _deliver_proactive(occasion: proactive.Occasion, formulate: bool = True, speak: bool = True,
+                       display: str | None = None) -> dict[str, Any]:
+    """Meldung formulieren (oder fester Text), zeigen und ggf. vorlesen. Aus jedem Thread aufrufbar."""
     with _assistant_lock:
-        reply = proactive.compose(_assistant(), chosen)
-    message = proactive.announce(present(reply), chosen, events)
-    if config.PROACTIVE_SPEAK and (speech_output := _speech_output()) is not None:
+        reply = proactive.compose(_assistant() if formulate else None, occasion)
+    message = proactive.announce(present(reply), occasion, events, display)
+    if speak and (speech_output := _speech_output()) is not None:
         try:
             speech_output.speak(reply.text)
         except Exception:  # noqa: BLE001  # Meldung ist schon da - Vorlesen ist Zugabe
             log.exception("Proaktive Meldung konnte nicht vorgelesen werden")
     return message
+
+
+def _watch_tool(name: str, arguments: dict[str, Any]) -> ToolResult:
+    """Internes Werkzeug für den Wächter; Fehler kommen als Ergebnis zurück, nie als Ausnahme."""
+    with _assistant_lock:   # MCP-Clients teilt der Assistent - nicht gleichzeitig benutzen
+        tools = getattr(_assistant(), "tools", None)
+        if tools is None:
+            return ToolResult("Dieser Assistent hat keine Werkzeuge", is_error=True)
+        try:
+            return tools.call_tool(name, arguments)
+        except Exception as error:  # noqa: BLE001  # z. B. MCP-Server gerade nicht erreichbar
+            return ToolResult(str(error), is_error=True)
+
+
+def _consult_model(prompt: str) -> str | None:
+    """Einmalige Frage ans Sprachmodell, ohne Verlauf und Werkzeuge; None, wenn es nicht antwortet."""
+    with _assistant_lock:
+        assistant = _assistant()
+        return assistant.consult(prompt) if isinstance(assistant, ConsultingAssistant) else None
+
+
+@cache
+def _proactive_settings() -> ProactiveSettings:
+    return ProactiveSettings(default_store())
+
+
+@cache
+def _proactive_watcher() -> ProactiveWatcher:
+    """Der eine Wächter der App; application.py startet ihn."""
+    return ProactiveWatcher(_proactive_settings(), JsonPreferenceStore(config.PROACTIVE_STATE_FILE), _watch_tool,
+                            _consult_model, _deliver_proactive)
+
+
+@cache
+def _settings() -> AssistantSettings:
+    """Einstellungen auf demselben Store wie der Assistent (preferences.default_store)."""
+    return AssistantSettings(default_store())
+
+
+def _available_tools() -> list[tuple[str, str]]:
+    """Werkzeuge des Assistenten als (Name, Beschreibung); leer ohne Sprachmodell oder wenn keine da sind."""
+    tools = getattr(_assistant(), "tools", None)
+    if tools is None:
+        return []
+    try:
+        with _assistant_lock:   # MCP-Clients teilt der Assistent - nicht gleichzeitig benutzen
+            return [(spec.name, spec.description) for spec in tools.list_tools() if not is_internal_tool(spec.name)]
+    except Exception:  # noqa: BLE001  # Einstellungen sollen sich trotzdem öffnen lassen
+        log.exception("Werkzeuge für die Einstellungen nicht abrufbar")
+        return []
+
+
+def get_settings() -> dict[str, Any]:
+    """Formular der Einstellungen (⚙ im Popup), siehe backend/assistant/settings.py:
+    {"answer": {"fields": [...], "values": {...}},
+     "tools": [{"id", "title", "description", "tools", "available", "fields", "values"}, ...],
+     "proactive": [gleicher Aufbau wie "tools", siehe backend/proactive_settings.py]}
+    fields: [{"key", "label", "kind": "choice"|"multi"|"bool"|"number"|"text"|"time", "default", "help",
+              "choices"?: [{"value", "label"}], "minimum"?, "maximum"?}]"""
+    return {**_settings().form(_available_tools()), "proactive": _proactive_settings().form()}
+
+
+def save_settings(changes: dict[str, Any]) -> dict[str, Any]:
+    """Einstellungen speichern: {"answer": {key: value}, "tools": {group_id: {key: value}},
+    "proactive": {bereich: {key: value}}} - alles optional, nur geänderte Werte nötig. Ungültige
+    Werte: ValueError, dann wird nichts gespeichert. Gilt ab der nächsten Nachricht bzw. Prüfung.
+    Gibt das aktualisierte Formular zurück."""
+    proactive_values = _proactive_settings().validated(changes.get("proactive"))
+    _settings().save(changes.get("answer"), changes.get("tools"))
+    _proactive_settings().store_validated(proactive_values)
+    return get_settings()
+
+
+def reset_settings() -> dict[str, Any]:
+    """Alle Einstellungen auf die Standardwerte. Gibt das Formular zurück."""
+    _settings().reset()
+    _proactive_settings().reset()
+    return get_settings()
 
 
 def _require(component: Any, name: str) -> Any:

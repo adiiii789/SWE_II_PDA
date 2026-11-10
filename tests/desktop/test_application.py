@@ -1,14 +1,17 @@
 import threading
+import sys
 import time
 import unittest
+from unittest import mock
 
 from PyQt5.QtCore import QObject, QRect, QUrl, pyqtSignal
+from PyQt5.QtWidgets import QSystemTrayIcon
 
 from tests.qt_helpers import qt_app, wait_until
 
 from backend import api, config
 from backend.desktop.application import Application, ProactiveTrigger, create_popup, forward_proactive_notices
-from backend.desktop.popup_window import PopupWindow
+from backend.desktop.popup_window import PopupWindow, popup_geometry
 from backend.desktop.tray_icon import TrayIcon
 from backend.desktop.web_view import WebView
 from backend.events import PROACTIVE_NOTICE, EventBus, events
@@ -31,7 +34,7 @@ class CreatePopupTest(unittest.TestCase):
         self.assertIsInstance(popup.content, WebView)
         script = popup.content.page().scripts().findScript("python-bridge").sourceCode()
         self.assertTrue(callable(api.chat))
-        self.assertIn('["cancel_recording", "chat", "enlarge_popup", "list_models", "open_attachment", "open_link", "proactive_message", "render_view", "save_attachment", "select_model", "speak", "speech_support", "start_recording", "start_view", "stop_recording", "stop_speaking"]', script)
+        self.assertIn('["cancel_recording", "chat", "enlarge_popup", "get_settings", "list_models", "open_attachment", "open_link", "proactive_message", "render_view", "reset_settings", "save_attachment", "save_settings", "select_model", "speak", "speech_support", "start_recording", "start_view", "stop_recording", "stop_speaking"]', script)
         expected = QUrl.fromLocalFile(str(config.POPUP_PAGE))
         self.assertTrue(wait_until(lambda: popup.content.url() == expected))
 
@@ -39,6 +42,10 @@ class CreatePopupTest(unittest.TestCase):
 class ApplicationTest(unittest.TestCase):
     def setUp(self):
         self.qt_app = qt_app()
+        # Reale Nutzerklicks außerhalb des Testfensters dürfen den Fokus-Test nicht schließen.
+        monitor = mock.patch("backend.desktop.macos.OutsideClickMonitor")
+        monitor.start()
+        self.addCleanup(monitor.stop)
         self.application = Application(self.qt_app)
         self.addCleanup(self.application.shutdown)
 
@@ -48,16 +55,18 @@ class ApplicationTest(unittest.TestCase):
     def test_tray_is_configured(self):
         self.assertTrue(self.application.tray.toolTip().startswith(config.APP_NAME))
 
-    def test_left_click_and_notice_click_open_popup(self):
+    def test_left_click_toggles_popup_and_notice_click_opens_it(self):
         # Ein Test statt zwei: jede Application startet ein eigenes Chromium, zu viele davon
         # lassen spätere Tests (test_popup_page) beim Laden scheitern.
-        self.application.tray.left_clicked.emit()
+        self.application.tray.activated.emit(QSystemTrayIcon.Trigger)
         self.assertTrue(self.application.popup.isVisible())
-        self.application.popup.hide()
+        self.application.tray.activated.emit(QSystemTrayIcon.Trigger)
+        self.assertTrue(wait_until(lambda: not self.application.popup.isVisible()))
         settle()
         self.application.tray.messageClicked.emit()   # Klick auf die Benachrichtigung einer Meldung
         self.assertTrue(wait_until(self.application.popup.isVisible))
-        self.application.popup.hide()
+        self.application.tray.activated.emit(QSystemTrayIcon.DoubleClick)
+        self.assertTrue(wait_until(lambda: not self.application.popup.isVisible()))
 
     def test_proactive_notice_opens_popup_like_a_tray_click(self):
         # Wie im Betrieb: Meldung aus einem fremden Thread, das Programm hat keinen Fokus, vorher war
@@ -81,7 +90,7 @@ class ApplicationTest(unittest.TestCase):
         # Die Icon-Position kann sich ändern, wenn andere Tray-Icons kommen und gehen - daher der beim Öffnen benutzte Punkt.
         anchor, = used
         self.assertEqual(popup._animation.endValue(),
-                         QRect(anchor.x() - popup.width(), anchor.y() - popup.height(), popup.width(), popup.height()))
+                         popup_geometry(anchor, popup._screen().availableGeometry(), popup.width(), popup.height(), sys.platform == "darwin"))
         popup.hide()
 
     def test_enlarge_event_resizes_popup(self):
@@ -124,6 +133,12 @@ class ForwardProactiveNoticesTest(unittest.TestCase):
         sender.join()
         self.assertTrue(wait_until(lambda: self.opened == [True]))
         self.assertEqual(self.notices, [])
+
+    def test_display_setting_beats_app_default(self):
+        self.addCleanup(forward_proactive_notices(self.tray, self.popup, self.bus, open_popup=True))
+        self.bus.publish(PROACTIVE_NOTICE, {"title": "T", "text": "Hallo", "display": "notice"})
+        self.assertEqual(self.notices, [("T", "Hallo", config.PROACTIVE_NOTICE_MS)])
+        self.assertEqual(self.opened, [])
 
     def test_notice_becomes_tray_notification_when_popup_should_stay_closed(self):
         self.addCleanup(forward_proactive_notices(self.tray, self.popup, self.bus, open_popup=False))

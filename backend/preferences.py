@@ -5,9 +5,9 @@ Lieblingsmusik, Uhrzeit des Morning-Briefings.
 
 Aufbau:
   - Speicherung als JSON-Datei: JsonPreferenceStore (config.PREFERENCES_FILE).
-    Heute steht dort z. B. das gewählte Ollama-Modell ("ollama_model").
-  - Bearbeitung "vorab grafisch per UI": ein Template mit Formular im Frontend
-    plus Funktionen in backend/api.py, die get/set aufrufen (noch offen)
+    Heute steht dort z. B. das gewählte Gemini-Modell ("gemini_model").
+  - Bearbeitung im Popup (⚙ Einstellungen): Antwort- und Werkzeug-Einstellungen,
+    Schema und Wirkung in backend/assistant/settings.py, Funktionen in backend/api.py
   - Zugriff der Assistenten über einen PreferenceStore, der ihnen beim
     Erzeugen übergeben wird (backend/assistant/__init__.py, _BACKENDS)
 Werte müssen JSON-tauglich sein.
@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from functools import cache
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -36,6 +37,14 @@ class PreferenceStore(Protocol):
     def all(self) -> Mapping[str, Any]:
         """Alle Präferenzen, z. B. als Kontext für das Sprachmodell oder für die Einstellungs-UI."""
         ...
+
+
+@cache
+def default_store() -> JsonPreferenceStore:
+    """Der eine Store der laufenden App (config.PREFERENCES_FILE) - Assistent und Popup müssen
+    dasselbe Objekt nutzen, sonst überschreibt einer die Änderungen des anderen."""
+    from backend import config
+    return JsonPreferenceStore(config.PREFERENCES_FILE)
 
 
 class JsonPreferenceStore:

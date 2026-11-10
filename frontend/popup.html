@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <title>Popup</title>
+  <title>EVE</title>
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
   <link rel="stylesheet" href="popup.css">
@@ -18,6 +18,8 @@
   <!-- nicht id="chat": das würde die globale Python-Funktion chat() verdecken -->
   <section id="chat-panel">
     <div id="chat-toolbar">
+      <button type="button" id="settings-button" title="Wie der Assistent antwortet und Werkzeuge zeigt">⚙ Einstellungen</button>
+      <span class="toolbar-gap"></span>
       <button type="button" id="chat-max-button" title="Ansicht ausblenden, Chat über die ganze Höhe">⇕ Chat groß</button>
       <button type="button" id="enlarge-button" title="Fenster vergrößern">⤢ Fenster groß</button>
     </div>
@@ -27,7 +29,7 @@
       <button type="button" id="scroll-down-button" title="Zur neuesten Nachricht" hidden>↓</button>
     </div>
     <form id="input-form">
-      <!-- Sprachmodell (Ollama); bleibt versteckt, wenn der Assistent keins nutzt -->
+      <!-- Sprachmodell; bleibt versteckt, wenn der Assistent keins nutzt -->
       <select id="model-select" title="Sprachmodell" hidden></select>
       <input id="message-input" placeholder="Nachricht an den Assistenten…" autocomplete="off">
       <!-- Spracheingabe: Klick startet, zweiter Klick sendet, Escape bricht ab; versteckt ohne Mikrofon-Pakete -->
@@ -36,11 +38,32 @@
     </form>
   </section>
 
+  <!-- Einstellungen (settings.js): legt sich über das ganze Popup; Formular kommt aus get_settings() -->
+  <section id="settings-panel" hidden>
+    <header id="settings-header">
+      <strong>Einstellungen</strong>
+      <nav id="settings-tabs">
+        <button type="button" data-tab="answer">Antworten</button>
+        <button type="button" data-tab="tools">Werkzeuge</button>
+        <button type="button" data-tab="proactive">Proaktive Meldungen</button>
+      </nav>
+      <button type="button" id="settings-close" title="Schließen ohne Speichern (Escape)">✕</button>
+    </header>
+    <div id="settings-body"></div>
+    <footer id="settings-footer">
+      <span id="settings-status"></span>
+      <button type="button" id="settings-reset">Standard wiederherstellen</button>
+      <button type="button" id="settings-cancel">Abbrechen</button>
+      <button type="button" id="settings-save" class="primary">Speichern</button>
+    </footer>
+  </section>
+
   <!-- Markdown und Formeln in Antworten (markdown.js), Bibliotheken lokal in vendor/ -->
   <script src="vendor/marked.min.js"></script>
   <script src="vendor/purify.min.js"></script>
   <script src="vendor/katex/katex.min.js"></script>
   <script src="markdown.js"></script>
   <script src="popup.js"></script>
+  <script src="settings.js"></script>
 </body>
 </html>

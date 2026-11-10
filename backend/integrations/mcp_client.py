@@ -124,8 +124,9 @@ class MCPToolProvider:
     def _start(self) -> None:
         command = sys.executable if self.command == "python" else (shutil.which(self.command) or self.command)
         try:
+            inherited_env = {name: value for name, value in os.environ.items() if name != "GEMINI_API_KEY"}
             self._process = subprocess.Popen(
-                [command, *self.args], cwd=self.cwd, env={**os.environ, **self.env},
+                [command, *self.args], cwd=self.cwd, env={**inherited_env, **self.env},
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 encoding="utf-8", errors="replace", bufsize=1,
                 # Tray-App ohne Konsole: kein schwarzes Fenster für den Server öffnen.

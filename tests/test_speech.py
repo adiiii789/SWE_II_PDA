@@ -70,6 +70,11 @@ class VoiceInputTest(unittest.TestCase):
 
 
 class MicrophoneTest(unittest.TestCase):
+    def setUp(self):
+        permission = mock.patch.object(speech, "_require_microphone_access")
+        permission.start()
+        self.addCleanup(permission.stop)
+
     def test_collects_chunks_until_stop(self):
         stream = mock.MagicMock()
         with mock.patch("sounddevice.InputStream", return_value=stream) as input_stream:
@@ -255,8 +260,11 @@ class SapiSynthesizerTest(unittest.TestCase):
         voice, stream = mock.Mock(), mock.Mock()
         voice.GetVoices.return_value = [self._voice_token("409"), german]
         stream.GetData.return_value = np.ones(4, dtype=np.int16).tobytes()
-        with mock.patch("pythoncom.CoInitialize"), \
-                mock.patch("win32com.client.Dispatch", side_effect=[voice, stream]):
+        client = mock.Mock()
+        client.Dispatch.side_effect = [voice, stream]
+        with mock.patch.dict("sys.modules", {"pythoncom": mock.Mock(),
+                                             "win32com": types.SimpleNamespace(client=client),
+                                             "win32com.client": client}):
             audio, rate = speech.SapiSynthesizer("de").synthesize("Hallo")
         self.assertIs(voice.Voice, german)
         voice.Speak.assert_called_once_with("Hallo")
@@ -306,7 +314,8 @@ class FactoryTest(unittest.TestCase):
     def _output_with(*packages):
         """create_speech_output(), wenn außer sounddevice und numpy nur diese Pakete installiert sind."""
         available = {"sounddevice", "numpy", *packages}
-        with mock.patch.object(speech, "_installed", side_effect=lambda *modules: set(modules) <= available):
+        with mock.patch.object(speech.sys, "platform", "win32"), \
+                mock.patch.object(speech, "_installed", side_effect=lambda *modules: set(modules) <= available):
             return speech.create_speech_output()
 
     def test_voices_depend_on_installed_packages(self):
