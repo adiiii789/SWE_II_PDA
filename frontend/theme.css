@@ -3,7 +3,7 @@
    frontend/appearance.js; das gewählte Design überschreibt diese Variablen im Popup und in der
    Ansicht (iframe). Neben Farben gehören dazu Form (Radien, Rahmen), Schatten und Schrift. */
 :root {
-  --background: #111215;   /* identisch mit POPUP_BACKGROUND in backend/config.py */
+  --background: #111215;
   --page-bg: #111215;      /* Hintergrund des Popups, darf ein Verlauf oder Muster sein */
   --surface: #18191D;
   --surface-2: #1E2025;
@@ -23,6 +23,10 @@
   --radius: 12px;          /* Karten: Ansicht, Eingabe, Panels */
   --radius-sm: 8px;        /* Knöpfe, Felder */
   --bw: 1px;               /* Rahmenstärke */
+  /* Fensterecken des Popups (border-radius, nur popup.css). Faustregel für runde Designs:
+     Fensterradius ≈ --radius + Innenabstand der Seite (ca. 12 px), dann laufen die Ecken der Karten
+     parallel zum Fensterrand (wie bei Apple). */
+  --window-radius: 14px;
   --card-shadow: none;
   --control-shadow: none;
   --bubble-shadow: none;

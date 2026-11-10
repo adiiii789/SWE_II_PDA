@@ -24,10 +24,13 @@ class PopupWindow(QWidget):
         self.anchor: Callable[[], QPoint] = lambda: self._screen().availableGeometry().bottomRight()
         self.enlarge_requested.connect(self.set_enlarged)
         self.show_requested.connect(self._on_show_requested)
-        self.setObjectName("popupRoot")
-        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet(f"#popupRoot {{ background: {config.POPUP_BACKGROUND}; }}")
+        # Ohne Windows-Schatten: der ist immer rechteckig und passt nicht zu runden Ecken.
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        # Durchsichtiges Fenster: Die Seite zeichnet ihre Form selbst (Ecken je nach Design, siehe
+        # --window-radius in frontend/theme.css) - geglättet und in beliebiger Größe, was Windows
+        # selbst nicht kann (höchstens ca. 8 px). Die Web-Ansicht braucht dafür einen durchsichtigen
+        # Seitenhintergrund (config.POPUP_BACKGROUND).
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         self.content = content
         layout = QVBoxLayout(self)

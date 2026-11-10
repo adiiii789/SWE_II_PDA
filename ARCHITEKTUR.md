@@ -822,9 +822,11 @@ Farbe, Animationsdauer und das Assistant-Backend.
   Programm funktioniert deshalb unabhängig davon, von wo es gestartet wird.
 - `sys._MEIPASS` ist der Entpack-Ordner, wenn das Programm mit PyInstaller zu einer EXE gepackt
   wird.
-- Die Hintergrundfarbe steht an zwei Stellen: `POPUP_BACKGROUND` in `config.py` (für Qt, gegen
-  weißes Aufblitzen beim Laden) und `--background` in `frontend/theme.css`. Bei Änderungen
-  beide anpassen.
+- Das Popup-Fenster und der Seitenhintergrund der Web-Ansicht sind durchsichtig
+  (`POPUP_BACKGROUND = "transparent"`). Die Seite zeichnet Fläche und Fensterecken selbst: Jedes
+  Design legt `--window-shape` fest (`frontend/theme.css`, `frontend/appearance.js`), `popup.css`
+  schneidet damit die ganze Seite zu. So sind auch große, geglättete Rundungen möglich (Apple),
+  die Windows nativ nicht kann.
 
 ---
 

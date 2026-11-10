@@ -1,7 +1,7 @@
 import unittest
 from unittest import mock
 
-from PyQt5.QtCore import QPoint
+from PyQt5.QtCore import QPoint, Qt
 from PyQt5.QtGui import QCloseEvent, QCursor, QGuiApplication
 from PyQt5.QtWidgets import QLabel
 
@@ -20,6 +20,11 @@ class PopupWindowTest(unittest.TestCase):
 
     def tearDown(self):
         self.popup.hide()
+
+    def test_window_is_translucent_without_shadow(self):
+        # Die Seite zeichnet die Ecken je Design selbst (frontend/popup.css, --window-radius).
+        self.assertTrue(self.popup.testAttribute(Qt.WA_TranslucentBackground))
+        self.assertTrue(self.popup.windowFlags() & Qt.NoDropShadowWindowHint)
 
     def test_content_is_embedded(self):
         self.assertIs(self.popup.content, self.content)
