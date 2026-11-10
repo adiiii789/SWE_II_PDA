@@ -33,6 +33,7 @@ bleibt die Freigabeliste in mailer.py, die fremde Empfänger gar nicht erst zul�
 """
 from __future__ import annotations
 
+import datetime as dt
 import email
 import email.policy
 import imaplib
@@ -606,9 +607,18 @@ def _subject(message: Message) -> str:
 
 
 def _format_date(value) -> str:
+    """Datum der Kopfzeile in der lokalen Zeit des Nutzers.
+
+    Die Kopfzeile trägt die Zeitzone des Absenders ("Mon, 10 Nov 2026 02:08:00 -0800"); ohne
+    Umrechnung stünde dort dessen Uhrzeit (hier 02:08 statt 11:08 MEZ). Ohne Zeitzone ("-0000")
+    gilt laut RFC 5322 UTC.
+    """
     try:
-        return parsedate_to_datetime(str(value)).strftime("%d.%m.%Y %H:%M")
-    except (TypeError, ValueError, IndexError):
+        sent = parsedate_to_datetime(str(value))
+        if sent.tzinfo is None:
+            sent = sent.replace(tzinfo=dt.timezone.utc)
+        return sent.astimezone().strftime("%d.%m.%Y %H:%M")
+    except (TypeError, ValueError, IndexError, OverflowError, OSError):
         return _clean(value) or "(ohne Datum)"
 
 
