@@ -34,12 +34,42 @@ const CHAT_MIN_PX = 190;   // wie min-height von #chat-panel in popup.css
 
 let speaking = false;       // liest gerade vor (nur für den Avatar)
 let viewHtml = "";          // zuletzt gezeigte Ansicht - bei Design-Wechsel neu eingefärbt
+let viewTaskState = {};     // in dieser Ansicht abgehakt/geöffnet: Aufgaben-ID -> erledigt
 
 // Zeigt fertig gerendertes HTML (aus frontend/templates/, vom Backend gerendert) im iframe an,
-// in den Farben des gewählten Designs (appearance.js).
+// in den Farben des gewählten Designs (appearance.js). Neues HTML = neue Ansicht, frische Daten.
 function showView(html) {
+  if (html !== viewHtml) viewTaskState = {};
   viewHtml = html;
-  viewFrame.srcdoc = Appearance.themedHtml(html);
+  viewFrame.srcdoc = withTaskState(Appearance.themedHtml(html));
+}
+
+// Abgehakte Aufgaben bleiben abgehakt, wenn die Ansicht neu gezeichnet wird (Design-Wechsel).
+function withTaskState(html) {
+  if (!Object.keys(viewTaskState).length) return html;
+  const json = JSON.stringify(viewTaskState).replace(/</g, "\\u003c");
+  const script = `<script>window.EVE_TASK_STATE = ${json};</script>`;
+  return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${script}</head>`) : script + html;
+}
+
+// Klicks in der Ansicht (frontend/templates/dashboard.html.j2): Das iframe ist abgeschottet und
+// meldet sie per postMessage. Nur Nachrichten aus dem eigenen iframe und nur diese Aktionen.
+async function onViewMessage(event) {
+  const message = event.data;
+  if (event.source !== viewFrame.contentWindow || !message || message.source !== "eve-view") return;
+  if (message.action === "complete_task" && typeof message.id === "string" && typeof message.done === "boolean") {
+    let ok = true;
+    try {
+      await complete_task_from_view(message.id, message.done);
+      viewTaskState[message.id] = message.done;
+    } catch (error) {
+      ok = false;
+      addMessage(`Aufgabe nicht geändert: ${error.message}`, "error");
+    }
+    if (event.source) event.source.postMessage({source: "eve-host", request: message.request, ok}, "*");
+  } else if (message.action === "open_mail" && /^\d{1,10}$/.test(String(message.uid)) && !replyPending) {
+    submitText(`Zeig mir die E-Mail mit der UID ${message.uid}.`);
+  }
 }
 
 // Avatar (avatar.js) zeigt, was der Assistent gerade tut.
@@ -418,6 +448,7 @@ async function changeModel() {
 
 inputForm.addEventListener("submit", sendMessage);
 document.addEventListener("appearancechange", () => { if (viewHtml) showView(viewHtml); });
+window.addEventListener("message", onViewMessage);   // Klicks in der Ansicht (Aufgaben, Mails)
 modelSelect.addEventListener("change", changeModel);
 window.addEventListener("focus", () => {
   if (!modelSelect.disabled && !replyPending) loadModels();

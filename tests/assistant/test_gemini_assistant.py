@@ -136,8 +136,7 @@ class ReplyTest(unittest.TestCase):
         second_round = model.calls[1][0]
         self.assertEqual(second_round[-2:], [ChatMessage("tool", "echo: a", tool_name="echo"),
                                              ChatMessage("tool", "echo: b", tool_name="echo")])
-        self.assertEqual(reply.view.data["title"], "Verwendete Werkzeuge")
-        self.assertEqual(reply.view.data["rows"][0], ["echo", '{"text": "a"}', "echo: a"])
+        self.assertIsNone(reply.view)   # Werkzeuge ohne grafische Ansicht zeigen oben nichts
         self.assertEqual(reply.attachments, ())
 
     def test_attachments_of_all_tool_calls_once(self):
@@ -159,7 +158,6 @@ class ReplyTest(unittest.TestCase):
         tool_message = model.calls[1][0][-1]
         self.assertEqual(tool_message.role, "tool")
         self.assertIn("Fehler: Unbekanntes Werkzeug", tool_message.content)
-        self.assertIn("Fehler:", reply.view.data["rows"][0][2])
 
     def test_stops_after_max_rounds_and_forces_answer(self):
         loop = calls(ToolCall("echo", {"text": "x"}))
@@ -317,21 +315,24 @@ class SettingsTest(unittest.TestCase):
         self.assertIn("abgeschaltet", model.calls[1][0][-1].content)
         self.assertEqual(reply.text, "Geht nicht")
 
-    def test_view_off_hides_table(self):
-        model = FakeModel(calls(ToolCall("echo", {"text": "a"})), text("Fertig"))
-        reply = self.make_with(model, tool_settings={"tool:echo": {"view": "aus"}}).reply("x")
-        self.assertIsNone(reply.view)
-
-    def test_full_view_does_not_shorten(self):
-        class LongTools(EchoTools):
+    def visual_reply(self, tool_settings=None):
+        class VisualTools(EchoTools):
             def call_tool(self, name, arguments):
-                return ToolResult("x" * 1000)
+                if name == "list_tasks":
+                    return ToolResult("Offene Aufgaben: ...", data={
+                        "type": "tasks", "tasks": [{"id": "l::t", "title": "Steuer", "due": "", "depth": 0}]})
+                return super().call_tool(name, arguments)
 
-        model = FakeModel(calls(ToolCall("echo")), text("Fertig"))
-        short = make(FakeModel(calls(ToolCall("echo")), text("Fertig")), LongTools()).reply("x")
-        full = self.make_with(model, LongTools(), tool_settings={"tool:echo": {"view": "voll"}}).reply("x")
-        self.assertEqual(len(short.view.data["rows"][0][2]), 300 + len(" …"))
-        self.assertEqual(full.view.data["rows"][0][2], "x" * 1000)
+        model = FakeModel(calls(ToolCall("list_tasks"), ToolCall("echo", {"text": "a"})), text("Fertig"))
+        return self.make_with(model, VisualTools(), tool_settings=tool_settings).reply("x")
+
+    def test_visual_data_becomes_dashboard_without_other_tools(self):
+        view = self.visual_reply().view
+        self.assertEqual(view.template, "dashboard")
+        self.assertEqual([part["kind"] for part in view.data["components"]], ["tasks"])
+
+    def test_view_off_shows_nothing(self):
+        self.assertIsNone(self.visual_reply({"tasks": {"view": "aus"}}).view)
 
     def test_announce_uses_answer_wishes(self):
         model = FakeModel(text("Hallo"))

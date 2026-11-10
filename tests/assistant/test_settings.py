@@ -84,15 +84,23 @@ class ValuesTest(unittest.TestCase):
         settings = AssistantSettings(MemoryStore())
         group = settings.group_of("get_weather")
         self.assertEqual((group.id, group.title, group.tools), ("tool:get_weather", "get_weather", ("get_weather",)))
-        settings.save(tools={"tool:get_weather": {"view": "aus", "notes": "Temperatur fett"}})
-        self.assertIsNone(settings.view_limit("get_weather"))
+        settings.save(tools={"tool:get_weather": {"notes": "Temperatur fett"}})
+        self.assertFalse(settings.view_shown("get_weather"))   # keine grafische Ansicht für fremde Werkzeuge
         self.assertEqual(settings.tool_values("get_weather")["notes"], "Temperatur fett")
 
-    def test_view_limit(self):
+    def test_view_shown_for_visual_groups(self):
         settings = AssistantSettings(MemoryStore())
-        self.assertEqual(settings.view_limit("calculate"), 300)
-        settings.save(tools={"basics": {"view": "voll"}})
-        self.assertEqual(settings.view_limit("calculate"), 8000)
+        self.assertTrue(settings.view_shown("list_tasks"))
+        self.assertFalse(settings.view_shown("calculate"))
+        settings.save(tools={"tasks": {"view": "aus"}})
+        self.assertFalse(settings.view_shown("list_tasks"))
+
+    def test_old_table_values_fall_back(self):
+        store = MemoryStore()
+        store.set(TOOLS_KEY, {"mail": {"view": "voll"}, "calendar": {"view": "aus"}})
+        settings = AssistantSettings(store)
+        self.assertTrue(settings.view_shown("list_emails"))
+        self.assertFalse(settings.view_shown("list_calendar_events"))
 
 
 class SaveTest(unittest.TestCase):
@@ -189,7 +197,7 @@ class FormTest(unittest.TestCase):
         self.assertIn("max", [field["key"] for field in groups["mail"]["fields"]])
         weather = groups["tool:get_weather"]
         self.assertEqual(weather["description"], "Wetter von einem neuen Server")
-        self.assertEqual([field["key"] for field in weather["fields"]], ["enabled", "detail", "view", "notes"])
+        self.assertEqual([field["key"] for field in weather["fields"]], ["enabled", "detail", "notes"])
 
     def test_known_group_without_tools_is_marked_unavailable(self):
         groups = {group["id"]: group for group in AssistantSettings(MemoryStore()).form([])["tools"]}
@@ -206,3 +214,22 @@ class FormTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VisualHintTest(unittest.TestCase):
+    """Kalender, Aufgaben und Mails sieht der Nutzer grafisch - das Modell soll nur zusammenfassen."""
+
+    def instructions(self, tools=None):
+        settings = AssistantSettings(MemoryStore())
+        if tools:
+            settings.save(None, tools)
+        return settings.instructions(["list_tasks", "get_current_time"])
+
+    def test_hint_for_visual_group_only(self):
+        text = self.instructions()
+        self.assertEqual(text.count("grafisch"), 1)
+        self.assertIn("Google Tasks:", text.split("Die Liste sieht der Nutzer")[0].splitlines()[-1])
+
+    def test_no_hint_when_view_off_or_full_detail_wanted(self):
+        self.assertNotIn("grafisch", self.instructions({"tasks": {"view": "aus"}}))
+        self.assertNotIn("grafisch", self.instructions({"tasks": {"detail": "vollstaendig"}}))

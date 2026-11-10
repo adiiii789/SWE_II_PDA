@@ -1,0 +1,194 @@
+{#- Kalender-, Aufgaben- und Mail-Ansichten (backend/business_views.py), mehrere auf einmal.
+    Aufruf: {"template": "dashboard", "data": {"components": [...]}} - die Komponenten baut
+    business_views.components(); jede hat kind, title und subtitle:
+      day / week  Zeitleiste: columns (Tage mit blocks, all_day, now), hours, hour_px, height, scroll
+      month       Monatsraster: weekdays, weeks (Zellen mit events und more)
+      tasks       Aufgaben zum Abhaken: tasks, completed
+      mails       Postfach: mails
+    Abhaken und Mail öffnen meldet das iframe per postMessage ans Popup (frontend/popup.js). -#}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <style>
+{% include "theme.css" %}
+{% include "view.css" %}
+{% include "dashboard.css" %}
+  </style>
+</head>
+<body class="dashboard">
+<div class="board">
+{% for c in components %}
+  <section class="card card-{{ c.kind }}{% if c.kind in ('week', 'month') %} wide{% endif %}">
+    <header class="card-head">
+      <h3>{{ c.title }}</h3>
+      {% if c.subtitle %}<span class="card-sub">{{ c.subtitle }}</span>{% endif %}
+    </header>
+
+    {% if c.kind in ('day', 'week') %}
+    <div class="tl">
+      {% if c.kind == 'week' %}
+      <div class="tl-row tl-head">
+        <div class="tl-gutter"></div>
+        {% for col in c.columns %}<div class="tl-dayhead{% if col.today %} today{% endif %}{% if col.weekend %} weekend{% endif %}">{{ col.label }}</div>{% endfor %}
+      </div>
+      {% endif %}
+      {% if c.has_all_day %}
+      <div class="tl-row tl-allday">
+        <div class="tl-gutter">ganztägig</div>
+        {% for col in c.columns %}
+        <div class="tl-allcol">
+          {% for chip in col.all_day %}<div class="chip{% if chip.declined %} declined{% endif %}" style="background: {{ chip.tint }}; border-left-color: {{ chip.color }};" title="{{ chip.title }}{% if chip.details %} · {{ chip.details }}{% endif %}">{{ chip.title }}</div>{% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="tl-scroll" data-scroll="{{ c.scroll }}">
+        <div class="tl-row tl-body" style="height: {{ c.height }}px;">
+          <div class="tl-gutter tl-hours">
+            {% for hour in c.hours %}<div class="tl-hour" style="height: {{ c.hour_px }}px;"><span>{{ hour }}</span></div>{% endfor %}
+          </div>
+          {% for col in c.columns %}
+          <div class="tl-col{% if col.today %} today{% endif %}{% if col.weekend %} weekend{% endif %}" style="background-size: 100% {{ c.hour_px }}px;">
+            {% for b in col.blocks %}
+            <div class="ev{% if b.compact %} compact{% endif %}{% if b.declined %} declined{% endif %}"
+                 style="top: {{ b.top }}px; height: {{ b.height }}px; left: calc({{ b.left }}% + 2px); width: calc({{ b.width }}% - 4px); background: {{ b.tint }}; border-left-color: {{ b.color }};"
+                 title="{{ b.time }} {{ b.title }}{% if b.details %} · {{ b.details }}{% endif %}">
+              <div class="ev-title">{{ b.title }}</div>
+              <div class="ev-meta">{{ b.time }}{% if b.location and not b.compact %} · {{ b.location }}{% endif %}</div>
+            </div>
+            {% endfor %}
+            {% if col.now is not none %}<div class="tl-now" style="top: {{ col.now }}px;"></div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    {% elif c.kind == 'month' %}
+    <div class="mo">
+      <div class="mo-row mo-head">{% for weekday in c.weekdays %}<div>{{ weekday }}</div>{% endfor %}</div>
+      {% for week in c.weeks %}
+      <div class="mo-row">
+        {% for cell in week %}
+        <div class="mo-cell{% if not cell.in_range %} out{% endif %}{% if cell.today %} today{% endif %}{% if cell.weekend %} weekend{% endif %}">
+          <div class="mo-day">{{ cell.label }}</div>
+          {% for chip in cell.events %}<div class="mo-ev{% if chip.declined %} declined{% endif %}" style="background: {{ chip.tint }}; border-left-color: {{ chip.color }};" title="{% if chip.time %}{{ chip.time }} {% endif %}{{ chip.title }}{% if chip.details %} · {{ chip.details }}{% endif %}">{% if chip.time %}<b>{{ chip.time }}</b> {% endif %}{{ chip.title }}</div>{% endfor %}
+          {% if cell.more %}<div class="mo-more">+{{ cell.more }} weitere</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+
+    {% elif c.kind == 'tasks' %}
+    {% if c.tasks %}
+    <ul class="tasks">
+      {% for t in c.tasks %}
+      <li class="task depth-{{ t.depth }}{% if t.done %} done{% endif %}" data-id="{{ t.id }}">
+        <label>
+          <input type="checkbox" class="task-check"{% if t.done %} checked{% endif %}>
+          <span class="task-box" aria-hidden="true"></span>
+          <span class="task-body">
+            <span class="task-title">{{ t.title }}</span>
+            {% if t.due or t.time or t.list %}
+            <span class="task-meta">
+              {% if t.due %}<span class="tag due {{ t.due_state }}">{{ t.due }}</span>{% endif %}
+              {% if t.time %}<span class="tag time">{{ t.time }}</span>{% endif %}
+              {% if t.list %}<span class="tag list">{{ t.list }}</span>{% endif %}
+            </span>
+            {% endif %}
+            {% if t.notes %}<span class="task-notes">{{ t.notes }}</span>{% endif %}
+          </span>
+        </label>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">{% if c.completed %}Nichts erledigt in diesem Zeitraum.{% else %}Alles erledigt.{% endif %}</p>
+    {% endif %}
+
+    {% elif c.kind == 'mails' %}
+    {% if c.mails %}
+    <ul class="mails">
+      {% for m in c.mails %}
+      <li class="mail{% if m.unread %} unread{% endif %}" data-uid="{{ m.uid }}" tabindex="0" title="Öffnen: {{ m.address }}">
+        <span class="mail-dot" aria-hidden="true"></span>
+        <span class="mail-from">{{ m.sender }}</span>
+        <span class="mail-date">{{ m.date }}</span>
+        <span class="mail-subject">{{ m.subject }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">Keine Mails.</p>
+    {% endif %}
+
+    {% endif %}
+  </section>
+{% endfor %}
+</div>
+
+<script>
+// Läuft im iframe (sandbox, ohne Zugriff aufs Popup): Klicks gehen per postMessage nach oben,
+// popup.js führt sie aus und meldet das Ergebnis zurück.
+(function () {
+  var pending = {}, nextRequest = 0;
+  function send(message) {
+    message.source = "eve-view";
+    window.parent.postMessage(message, "*");
+  }
+  function setDone(item, done) {
+    item.classList.toggle("done", done);
+    item.querySelector(".task-check").checked = done;
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll(".tl-scroll"), function (element) {
+    element.scrollTop = Number(element.getAttribute("data-scroll")) || 0;
+  });
+  // Seit dem Laden abgehakt (z. B. vor einem Design-Wechsel) - setzt popup.js
+  var state = window.EVE_TASK_STATE || {};
+  Array.prototype.forEach.call(document.querySelectorAll(".task"), function (item) {
+    var id = item.getAttribute("data-id");
+    if (Object.prototype.hasOwnProperty.call(state, id)) setDone(item, state[id]);
+  });
+
+  document.addEventListener("change", function (event) {
+    var box = event.target;
+    if (!box.classList || !box.classList.contains("task-check")) return;
+    var item = box.closest(".task");
+    var request = ++nextRequest;
+    pending[request] = {item: item, done: box.checked};
+    setDone(item, box.checked);
+    item.classList.add("busy");
+    send({action: "complete_task", id: item.getAttribute("data-id"), done: box.checked, request: request});
+  });
+
+  window.addEventListener("message", function (event) {
+    var message = event.data;
+    if (event.source !== window.parent || !message || message.source !== "eve-host") return;
+    var entry = pending[message.request];
+    if (!entry) return;
+    delete pending[message.request];
+    entry.item.classList.remove("busy");
+    if (!message.ok) setDone(entry.item, !entry.done);   // nicht geklappt: zurück
+  });
+
+  function openMail(item) {
+    send({action: "open_mail", uid: item.getAttribute("data-uid")});
+  }
+  document.addEventListener("click", function (event) {
+    var item = event.target.closest && event.target.closest(".mail");
+    if (item) openMail(item);
+  });
+  document.addEventListener("keydown", function (event) {
+    var item = event.target.closest && event.target.closest(".mail");
+    if (item && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      openMail(item);
+    }
+  });
+})();
+</script>
+</body>
+</html>

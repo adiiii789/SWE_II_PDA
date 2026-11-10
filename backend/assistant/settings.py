@@ -2,8 +2,8 @@
 
 Zwei Bereiche:
   Antworten   Wünsche an das Sprachmodell: Länge, Tiefe, Darstellung, Ton, Anrede, Sprache …
-  Werkzeuge   je Werkzeuggruppe: nutzen ja/nein, wie ausführlich im Chat, Tabelle oben,
-              eigene Darstellungswünsche - E-Mail zusätzlich: welche Angaben, wie viel Inhalt …
+  Werkzeuge   je Werkzeuggruppe: nutzen ja/nein, wie ausführlich im Chat, eigene Darstellungswünsche -
+              E-Mail, Kalender, Aufgaben zusätzlich: grafische Anzeige oben; E-Mail: welche Angaben …
 
 Jede Einstellung (Setting) beschreibt sich selbst: Art des Eingabefelds, erlaubte Werte,
 Standardwert und den Satz, den das Sprachmodell daraus bekommt. Das Popup baut sein Formular
@@ -169,16 +169,18 @@ TOOL_SETTINGS: tuple[Setting, ...] = (
         Choice("normal", "Normal"),
         Choice("vollstaendig", "Möglichst vollständig", "Gib Ergebnisse von {group} möglichst vollständig wieder."),
     )),
-    Setting("view", "Tabelle oben", "choice", "kurz", (
-        Choice("aus", "Nicht anzeigen"),
-        Choice("kurz", "Gekürzt"),
-        Choice("voll", "Vollständig"),
-    ), help="Aufrufe und Ergebnisse als Tabelle im Anzeigebereich über dem Chat"),
     Setting("notes", "Darstellung - eigene Wünsche", "text", "",
             help="z. B. \"als Tabelle\", \"Uhrzeit immer mit Sekunden\", \"nur Ergebnis, keine Rechenwege\"",
             instruction="Darstellung von {group}: {value}"),
 )
-VIEW_LIMITS = {"kurz": 300, "voll": 8000}   # Zeichen pro Ergebnis in der Tabelle; "aus" = keine Zeile
+# Nur für Gruppen, deren Listen die App grafisch zeigt (backend/business_views.py): Mail, Kalender, Aufgaben
+VIEW_SETTING = Setting("view", "Anzeige oben", "choice", "an", (
+    Choice("an", "Grafisch anzeigen"),
+    Choice("aus", "Nicht anzeigen"),
+), help="Im Anzeigebereich über dem Chat: Termine als Kalender, Aufgaben zum Abhaken, Mails als Postfach")
+# Steht die Anzeige an, muss das Modell die Liste nicht abschreiben
+VISUAL_HINT = ("Die Liste sieht der Nutzer zusätzlich grafisch über dem Chat (Kalender, Aufgaben zum Abhaken, "
+               "Postfach). Fasse im Text zusammen, statt jeden Eintrag zu wiederholen.")
 
 
 @dataclass(frozen=True)
@@ -197,6 +199,7 @@ class ToolGroup:
 
 
 MAIL_SETTINGS: tuple[Setting, ...] = (
+    VIEW_SETTING,
     Setting("fields", "Angaben je Mail", "multi", ["sender", "subject", "date"], (
         Choice("sender", "Absender"),
         Choice("subject", "Betreff"),
@@ -224,12 +227,14 @@ MAIL_SETTINGS: tuple[Setting, ...] = (
 )
 
 CALENDAR_SETTINGS: tuple[Setting, ...] = (
+    VIEW_SETTING,
     Setting("confirm_create", "Vor dem Erstellen nachfragen", "bool", True,
             instruction="Nenne vor dem Erstellen eines Termins Titel, Datum und Uhrzeit "
                         "und erstelle ihn erst nach Bestätigung des Nutzers."),
 )
 
 TASKS_SETTINGS: tuple[Setting, ...] = (
+    VIEW_SETTING,
     Setting("confirm_create", "Vor dem Erstellen nachfragen", "bool", True,
             instruction="Nenne vor dem Erstellen einer Aufgabe Titel und Fälligkeitsdatum "
                         "und erstelle sie erst nach Bestätigung des Nutzers."),
@@ -284,9 +289,9 @@ class AssistantSettings:
     def tool_enabled(self, tool: str) -> bool:
         return self.tool_values(tool)["enabled"]
 
-    def view_limit(self, tool: str) -> int | None:
-        """Zeichen pro Ergebnis in der Tabelle oben; None = dieses Werkzeug nicht zeigen."""
-        return VIEW_LIMITS.get(self.tool_values(tool)["view"])
+    def view_shown(self, tool: str) -> bool:
+        """Ergebnis grafisch oben zeigen? Nur Gruppen mit VIEW_SETTING (Mail, Kalender, Aufgaben)."""
+        return self.tool_values(tool).get("view") == "an"
 
     # --- fürs Sprachmodell ---------------------------------------------------------------
     def instructions(self, tools: Iterable[str] = ()) -> str:
@@ -302,6 +307,8 @@ class AssistantSettings:
             label = f"{group.title} ({', '.join(group.tools)})" if group.id.startswith("tool:") else group.title
             texts = [text for setting in group.settings
                      if (text := setting.instruction_for(values[setting.key], f'"{group.title}"'))]
+            if values.get("view") == "an" and values["detail"] != "vollstaendig":
+                texts.append(VISUAL_HINT)
             if texts:
                 tool_lines.append(f"- {label}: " + " ".join(texts))
         if tool_lines:

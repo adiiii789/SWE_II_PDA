@@ -10,6 +10,7 @@ das Popup nicht ein.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import webbrowser
 from functools import cache
@@ -59,6 +60,24 @@ def render_view(request: dict[str, Any]) -> str:
 def start_view() -> str:
     """HTML der Startansicht fürs iframe."""
     return renderer().render(START_VIEW)
+
+
+_TASK_REF = re.compile(r"[^\s:]{1,200}::[^\s:]{1,200}")   # Liste::Aufgabe, wie google_tasks.make_ref
+
+
+def complete_task_from_view(task_id: str, done: bool = True) -> str:
+    """Aufgabe abhaken (oder wieder öffnen), weil der Nutzer sie in der Aufgabenansicht angeklickt hat
+    (frontend/templates/dashboard.html.j2). Läuft ohne Sprachmodell direkt über das Werkzeug complete_task."""
+    if not isinstance(task_id, str) or not _TASK_REF.fullmatch(task_id):
+        raise ValueError("Ungültige Aufgaben-ID")
+    tools = getattr(_assistant(), "tools", None)
+    if tools is None:
+        raise RuntimeError("Aufgaben sind nicht verfügbar")
+    with _assistant_lock:   # MCP-Clients teilt der Assistent - nicht gleichzeitig benutzen
+        result = tools.call_tool("complete_task", {"task_id": task_id, "done": bool(done)})
+    if result.is_error:
+        raise RuntimeError(result.content)
+    return result.content
 
 
 def list_models() -> dict[str, Any]:

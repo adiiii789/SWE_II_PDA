@@ -16,6 +16,7 @@ import re
 from collections.abc import Callable
 from dataclasses import replace
 
+from backend import business_views
 from backend.assistant.base import AssistantReply, ModelSelection
 from backend.assistant.commands import COMMANDS
 from backend.assistant.llm import ChatMessage, LanguageModelError, SelectableLanguageModel, ToolCall
@@ -117,7 +118,7 @@ class ModelAssistant:
             del self.history[start:]   # misslungene Runde nicht im Verlauf behalten
             return AssistantReply(f"Fehler von {self.provider} ({self.model.name}): {error}")
         self._trim_history()
-        return AssistantReply(text, _tool_view(tool_log, self.settings), _attachments(tool_log))
+        return AssistantReply(text, _tool_view(tool_log, self.settings, self.clock()), _attachments(tool_log))
 
     # --- ProactiveAssistant ------------------------------------------------------------
     def announce(self, instruction: str) -> str | None:
@@ -275,15 +276,14 @@ def model_select_reply(selection: ModelSelection, name: str) -> AssistantReply:
     return AssistantReply(f"Ich nutze jetzt {selection.current_model()}.")
 
 
-def _tool_view(tool_log: list[tuple[ToolCall, ToolResult]], settings: AssistantSettings) -> TemplateView | None:
-    """Tabelle der Aufrufe - nur Werkzeuge, deren Einstellung "Tabelle oben" nicht aus ist."""
-    rows = [[call.name, json.dumps(call.arguments, ensure_ascii=False),
-             ("Fehler: " if result.is_error else "") + _shorten(result.content, limit)]
-            for call, result in tool_log if (limit := settings.view_limit(call.name)) is not None]
-    if not rows:
-        return None
-    return TemplateView("default", {"title": "Verwendete Werkzeuge",
-                                    "columns": ["Werkzeug", "Argumente", "Ergebnis"], "rows": rows})
+def _tool_view(tool_log: list[tuple[ToolCall, ToolResult]], settings: AssistantSettings,
+               now: datetime.datetime) -> TemplateView | None:
+    """Anzeige oben: Termine, Aufgaben und Mails grafisch (backend/business_views.py) - nur für
+    Gruppen, deren Einstellung "Anzeige oben" an ist. Andere Werkzeuge zeigen nichts an."""
+    data = [result.data for call, result in tool_log
+            if not result.is_error and result.data and settings.view_shown(call.name)]
+    parts = business_views.components(data, now)
+    return TemplateView("dashboard", {"components": parts}) if parts else None
 
 
 def _attachments(tool_log: list[tuple[ToolCall, ToolResult]]) -> tuple[Attachment, ...]:
@@ -291,6 +291,3 @@ def _attachments(tool_log: list[tuple[ToolCall, ToolResult]]) -> tuple[Attachmen
     unique = {attachment.uri: attachment for _, result in tool_log for attachment in result.attachments}
     return tuple(unique.values())
 
-
-def _shorten(text: str, limit: int = 300) -> str:
-    return text if len(text) <= limit else text[:limit] + " …"
