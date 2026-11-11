@@ -313,11 +313,12 @@ function onChatClick(event) {
 }
 
 function onBriefingLink(event) {
-  if (!briefingActive || event.source !== viewFrame.contentWindow || event.data?.type !== "eve:spotify-track") return;
-  const {url} = event.data;
-  if (typeof url === "string" && /^https:\/\/open\.spotify\.com\/track\/[a-z0-9]{22}$/i.test(url)) {
-    openLinkInBrowser(url);
-  }
+  if (!briefingActive || event.source !== viewFrame.contentWindow || !event.data) return;
+  const {type, url} = event.data;
+  if (typeof url !== "string") return;
+  const spotify = type === "eve:spotify-track" && /^https:\/\/open\.spotify\.com\/track\/[a-z0-9]{22}$/i.test(url);
+  const weather = type === "eve:weather-source" && url === "https://open-meteo.com/";
+  if (spotify || weather) openLinkInBrowser(url);
 }
 
 async function openLinkInBrowser(url) {

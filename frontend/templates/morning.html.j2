@@ -23,7 +23,45 @@
   </header>
 
   <main class="briefing-grid">
-    <section class="card" aria-labelledby="calendar-heading">
+    <section class="card weather" aria-labelledby="weather-heading">
+      <h2 id="weather-heading">Wetter heute</h2>
+      {% if weather.status is defined %}
+      {% if weather.location %}<p class="weather-place">{{ weather.location }}</p>{% endif %}
+      <p class="secondary">{{ weather.status }}</p>
+      {% else %}
+      <div class="weather-overview">
+        <div>
+          <p class="weather-place">{{ weather.location }}</p>
+          <p class="temperature">{{ weather.low }} bis {{ weather.high }} <span>°C</span></p>
+          <p class="secondary">{{ weather.condition }}</p>
+        </div>
+        {% if weather.icon %}{{ weather_icon(weather.icon) }}{% endif %}
+      </div>
+      {% if weather.hours %}
+      <h3 class="weather-hours-title" id="weather-hours-heading">Stundenverlauf</h3>
+      <ul class="weather-hours" tabindex="0" aria-labelledby="weather-hours-heading">
+        {% for hour in weather.hours %}
+        <li title="{{ hour.condition }}">
+          <span class="weather-hour-time">{{ hour.time }}</span>
+          {% if hour.icon %}
+          {{ weather_icon(hour.icon) }}
+          {% else %}
+          <span class="weather-hour-unknown" aria-hidden="true">–</span>
+          {% endif %}
+          <span class="weather-hour-condition">{{ hour.condition }}</span>
+          <strong>{% if hour.temp is not none %}{{ hour.temp }}°{% else %}–{% endif %}</strong>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <p class="weather-source">
+        Daten von <a href="https://open-meteo.com/"
+          onclick="if (event.isTrusted) parent.postMessage({type: 'eve:weather-source', url: this.href}, '*'); return false">Open-Meteo</a>
+      </p>
+      {% endif %}
+    </section>
+
+    <section class="card calendar" aria-labelledby="calendar-heading">
       <h2 id="calendar-heading">Termine{% if calendar.total is defined %}<span class="count">{{ calendar.total }}</span>{% endif %}</h2>
       {% if calendar.status is defined %}
       <p class="secondary">{{ calendar.status }}</p>
@@ -36,20 +74,6 @@
       {% if calendar.remaining %}
       <p class="secondary more">+ {{ calendar.remaining }} weitere</p>
       {% endif %}
-      {% endif %}
-    </section>
-
-    <section class="card" aria-labelledby="weather-heading">
-      <h2 id="weather-heading">
-        Wetter{% if weather.icon is defined and weather.icon %}{{ weather_icon(weather.icon) }}{% endif %}
-      </h2>
-      {% if weather.status is defined %}
-      {% if weather.location %}<p class="weather-place">{{ weather.location }}</p>{% endif %}
-      <p class="secondary">{{ weather.status }}</p>
-      {% else %}
-      <p class="temperature">{{ weather.low }} bis {{ weather.high }} <span>°C</span></p>
-      <p class="weather-place">{{ weather.location }}</p>
-      <p class="secondary">{{ weather.condition | capitalize }} gegen {{ weather.time }} Uhr</p>
       {% endif %}
     </section>
 

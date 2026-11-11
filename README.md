@@ -288,10 +288,11 @@ das heutige Briefing jederzeit manuell ab und steht auch in der Übersicht `hilf
 
 - **Termine** kommen aus den eingeblendeten Google-Kalendern. Die bestehende Google-Anmeldung
   genügt. Ganztägige und laufende mehrtägige Termine zählen ebenfalls.
-- **Wetter** verwendet die verbleibenden Vorhersagepunkte für den Tag am eingestellten Wetterort
-  (z. B. `Berlin,DE`). Das Symbol zeigt die Wetterlage zur angezeigten Uhrzeit.
-  Den [OpenWeather-Schlüssel](https://openweathermap.org/api/forecast5)
-  als einzige Zeile in `openweather-api-key.txt` im App-Datenordner ablegen.
+- **Wetter** zeigt die Tiefst- und Höchsttemperatur sowie die vorherrschende Wetterlage
+  tagsüber für den eingestellten Ort (z. B. "Berlin,DE"). Darunter stehen Temperatur
+  und Wettersymbol für jede Stunde des Ortsdatums. Die Werte stammen von
+  [Open-Meteo](https://open-meteo.com/en/docs) und sind für den privaten Gebrauch ohne
+  API-Schlüssel abrufbar.
 - **Aktien** zeigt bis zu fünf eingetragene Kürzel, z. B. `AAPL, MSFT, IBM`. EVE zeigt
   den Schlusskurs und die Veränderung gegenüber dem vorherigen Handelstag. War gestern
   die Börse geschlossen, steht das Datum des letzten verfügbaren Handelstags dabei.

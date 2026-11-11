@@ -4,10 +4,11 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
+import re
+from collections import Counter
 from collections.abc import Callable
 from time import sleep
 from typing import Any
-from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -17,7 +18,8 @@ from backend.assistant.tools import ToolResult
 from backend.proactive import Occasion
 from backend.views import TemplateView
 
-_OPENWEATHER = "https://api.openweathermap.org"
+_WEATHER_SEARCH = "https://geocoding-api.open-meteo.com/v1/search"
+_WEATHER_FORECAST = "https://api.open-meteo.com/v1/forecast"
 _ALPHA_VANTAGE = "https://www.alphavantage.co/query"
 _MAX_EVENTS = 5
 _MAX_SYMBOLS = 5
@@ -26,10 +28,25 @@ _TIMEOUT_S = 5
 _STOCK_REQUEST_GAP_S = 1.2
 _SOURCE_ERRORS = (OSError, ValueError, TypeError, KeyError, IndexError, OverflowError)
 _WEEKDAYS = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
-_WEATHER_ICONS = {
-    "01": "sun", "01n": "moon", "02": "partly-cloudy", "02n": "cloud",
-    "03": "cloud", "04": "cloud", "09": "rain", "10": "rain",
-    "11": "storm", "13": "snow", "50": "fog",
+_STORM_GUST_KMH = 62  # Untergrenze von Beaufort 8
+_WEATHER_CONDITIONS = {
+    0: ("Sonnig", "sun"), 1: ("Meist sonnig", "sun"),
+    2: ("Teilweise bewölkt", "partly-cloudy"), 3: ("Bedeckt", "cloud"),
+    **dict.fromkeys((45, 48), ("Nebel", "fog")),
+    **dict.fromkeys((51, 53, 55), ("Nieselregen", "rain")),
+    **dict.fromkeys((56, 57, 66, 67), ("Gefrierender Regen", "rain")),
+    **dict.fromkeys((61, 63, 65), ("Regen", "rain")),
+    **dict.fromkeys((71, 73, 75, 77), ("Schneefall", "snow")),
+    **dict.fromkeys((80, 81, 82), ("Regenschauer", "rain")),
+    **dict.fromkeys((85, 86), ("Schneeschauer", "snow")),
+    95: ("Gewitter", "storm"),
+    **dict.fromkeys((96, 99), ("Gewitter mit Hagel", "storm")),
+}
+_DAILY_CONDITIONS = {
+    "sun": "Überwiegend sonnig", "partly-cloudy": "Sonne und Wolken",
+    "cloud": "Überwiegend bewölkt", "rain": "Überwiegend regnerisch",
+    "fog": "Überwiegend neblig", "snow": "Schneefall",
+    "storm": "Gewitter", "wind": "Stürmische Böen",
 }
 
 
@@ -52,7 +69,7 @@ def compose(now: dt.datetime, options: dict[str, Any], events: list[dict] | None
     day = now.date()
     title, artist, spotify_url, cover = song_for(day, options.get("music_genre", "mixed"))
     calendar = _calendar(events, day)
-    weather = _weather(options["weather_location"], now)
+    weather = _weather(options["weather_location"])
     weather.setdefault("location", options["weather_location"])
     stocks = _stocks(options["stock_symbols"], day)
     view = TemplateView("morning", {
@@ -100,39 +117,66 @@ def _calendar(events: list[dict] | None, day: dt.date) -> dict[str, Any]:
             "total": len(items), "remaining": max(0, len(items) - _MAX_EVENTS)}
 
 
-def _weather(location: str, now: dt.datetime) -> dict[str, str]:
+def _weather(location: str) -> dict[str, Any]:
     if not location:
         return {"status": "Wetterort in den Einstellungen eintragen."}
     try:
-        key = _read_key("openweather")
-        if not key:
-            return {"status": "OpenWeather-Schlüssel hinterlegen."}
-        places = _get_json(f"{_OPENWEATHER}/geo/1.0/direct", q=location, limit=1, appid=key)
+        name, _, country = location.rpartition(",")
+        query = {"name": location}
+        if name.strip() and re.fullmatch(r"[A-Za-z]{2}", country.strip()):
+            query = {"name": name.strip(), "countryCode": country.strip().upper()}
+        places = _get_json(_WEATHER_SEARCH, count=1, language="de", **query).get("results")
         if not places:
-            return {"status": "OpenWeather hat den Ort nicht gefunden."}
+            return {"status": "Open-Meteo hat den Ort nicht gefunden."}
         place = places[0]
-        forecast = _get_json(f"{_OPENWEATHER}/data/2.5/forecast", lat=place["lat"], lon=place["lon"],
-                             appid=key, units="metric", lang="de")
-        zone = dt.timezone(dt.timedelta(seconds=forecast["city"]["timezone"]))
-        local_day = now.astimezone(zone).date()
-        hours = [(dt.datetime.fromtimestamp(item["dt"], zone), item) for item in forecast["list"]]
-        today = [(hour, item) for hour, item in hours if hour.date() == local_day]
-        if not today:
-            return {"status": "Keine Wettervorhersage mehr für heute verfügbar."}
-        temps = [_number(item["main"]["temp"]) for _, item in today]
-        hour, midday = min(today, key=lambda point: abs(point[0].hour * 60 + point[0].minute - 13 * 60))
-        condition = midday["weather"][0]
-        code = _text(condition.get("icon"))
-        return {"location": _text(place["name"]), "low": f"{min(temps):.0f}", "high": f"{max(temps):.0f}",
-                "condition": _text(condition["description"]), "time": f"{hour:%H:%M}",
-                "icon": _WEATHER_ICONS.get(code, _WEATHER_ICONS.get(code[:2], ""))}
-    except HTTPError as error:
-        with error:
-            if error.code == 401:
-                return {"status": "OpenWeather akzeptiert den hinterlegten Schlüssel derzeit nicht."}
-        return {"status": "OpenWeather ist gerade nicht verfügbar."}
+        forecast = _get_json(
+            _WEATHER_FORECAST, latitude=place["latitude"], longitude=place["longitude"],
+            hourly="temperature_2m,weather_code,is_day,wind_gusts_10m",
+            daily="temperature_2m_min,temperature_2m_max,weather_code",
+            timezone="auto", forecast_days=1, wind_speed_unit="kmh",
+        )
+        return _weather_day(_text(place["name"]), forecast)
     except _SOURCE_ERRORS:
-        return {"status": "OpenWeather ist gerade nicht verfügbar."}
+        return {"status": "Open-Meteo ist gerade nicht verfügbar."}
+
+
+def _weather_day(location: str, forecast: dict[str, Any]) -> dict[str, Any]:
+    daily = forecast["daily"]
+    today = dt.date.fromisoformat(daily["time"][0])
+    hourly = forecast["hourly"]
+    hours = []
+    daylight_icons = []
+    for stamp, temp, code, is_day, gusts in zip(
+        hourly["time"], hourly["temperature_2m"], hourly["weather_code"],
+        hourly["is_day"], hourly["wind_gusts_10m"], strict=True,
+    ):
+        time = dt.datetime.fromisoformat(stamp)
+        if time.date() != today:
+            continue
+        condition, icon = _weather_condition(code, bool(is_day), gusts)
+        hours.append({"time": f"{time:%H:%M}", "temp": f"{_number(temp):.0f}" if temp is not None else None,
+                      "condition": condition, "icon": icon})
+        if is_day and icon:
+            daylight_icons.append(icon)
+    if daylight_icons:
+        icon = Counter(daylight_icons).most_common(1)[0][0]
+        condition = _DAILY_CONDITIONS[icon]
+    else:
+        condition, icon = _weather_condition(daily["weather_code"][0], False, None)
+    return {"location": location, "low": f"{_number(daily['temperature_2m_min'][0]):.0f}",
+            "high": f"{_number(daily['temperature_2m_max'][0]):.0f}", "condition": condition,
+            "icon": icon, "hours": hours}
+
+
+def _weather_condition(code: int | None, is_day: bool, gusts: float | None) -> tuple[str, str]:
+    condition, icon = _WEATHER_CONDITIONS.get(code, ("Wetterlage unbekannt", ""))
+    if not is_day and icon == "sun":
+        condition, icon = "Klar", "moon"
+    elif not is_day and icon == "partly-cloudy":
+        icon = "partly-cloudy-night"
+    if icon != "storm" and gusts is not None and _number(gusts) >= _STORM_GUST_KMH:
+        return (f"{condition}, stürmische Böen" if icon else "Stürmische Böen"), "wind"
+    return condition, icon
 
 
 def _stocks(watchlist: str, day: dt.date) -> dict[str, Any]:
@@ -203,11 +247,10 @@ def _calendar_text(calendar: dict[str, Any]) -> str:
     return " ".join(entries)
 
 
-def _weather_text(weather: dict[str, str]) -> str:
+def _weather_text(weather: dict[str, Any]) -> str:
     if "status" in weather:
         return weather["status"]
-    return (f"{weather['location']}, {weather['low']} bis {weather['high']} Grad, "
-            f"gegen {weather['time']} Uhr {weather['condition']}.")
+    return f"{weather['location']}, {weather['low']} bis {weather['high']} Grad. {weather['condition']}."
 
 
 def _stock_text(stocks: dict[str, Any]) -> str:

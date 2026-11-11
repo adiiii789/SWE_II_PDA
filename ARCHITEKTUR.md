@@ -39,7 +39,7 @@ deckt drei Aufgabenbereiche ab, im Code **Fähigkeiten** (Skills) genannt:
 
 | Fähigkeit | Wofür | Integrationen |
 |---|---|---|
-| `morning` | kurzes Briefing über den Tag | Google Calendar, OpenWeather, Aktien-API, Musik |
+| `morning` | kurzes Briefing über den Tag | Google Calendar, Open-Meteo, Aktien-API, Musik |
 | `travel` | wie komme ich zum nächsten Termin? | Google Calendar, Google Routes, Tankerkönig |
 | `organization` („Assistant²“) | Nachrichten verfassen, Tag organisieren | Google Calendar, Gmail, Google Keep |
 

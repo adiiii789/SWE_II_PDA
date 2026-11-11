@@ -7,9 +7,13 @@
   {% elif kind == "moon" %}
   <path d="M24.5 20.5A10 10 0 0 1 11.5 7a10 10 0 1 0 13 13.5Z"/>
   <path d="M23 5v4m-2-2h4"/>
+  {% elif kind == "wind" %}
+  <path d="M5 10h14a3 3 0 1 0-3-3M3 16h24a3 3 0 1 0-3-3M6 22h14a3 3 0 1 1-3 3"/>
   {% else %}
   {% if kind == "partly-cloudy" %}
   <path class="weather-sun" d="M8 15a5 5 0 1 1 8-4M11 2v2.5M3 6l2 1.5m-3 5h2.5M19 4l-2 2"/>
+  {% elif kind == "partly-cloudy-night" %}
+  <path d="M8 14a5.5 5.5 0 0 1 1-9.5A5.5 5.5 0 0 0 17 10"/>
   {% endif %}
   <path class="weather-cloud" d="M8 22h15a4.5 4.5 0 0 0 .5-9 7 7 0 0 0-13.5 1.2A4.1 4.1 0 1 0 8 22Z"/>
   {% if kind == "rain" %}

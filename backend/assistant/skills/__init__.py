@@ -7,7 +7,7 @@ er für einen Aufgabenbereich braucht. Der Morning Assistant liefert sein Briefi
 
   Fähigkeit           Wofür                                  Integrationen (backend/integrations/)
   ------------------  -------------------------------------  -------------------------------------
-  morning             kurzes Briefing über den Tag           Calendar, OpenWeather, Aktien-API, Musik
+  morning             kurzes Briefing über den Tag           Calendar, Open-Meteo, Aktien-API, Musik
   travel              wie komme ich zum nächsten Termin?     Calendar, Google Routes, Tankerkönig
   organization        Nachrichten verfassen, Tag planen      Calendar, Gmail, Google Keep
                       (im Projektplan: "Assistant²")

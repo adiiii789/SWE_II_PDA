@@ -3,7 +3,6 @@ import datetime as dt
 import io
 import json
 from unittest import mock
-from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
 from backend import api, config, watcher as watcher_module
@@ -120,8 +119,7 @@ def test_weather_location_local_day_and_stock_previous_trading_day(tmp_path, mon
     monkeypatch.setattr(config, "APP_DATA_DIR", tmp_path)
     wait = mock.Mock()
     monkeypatch.setattr(morning, "sleep", wait)
-    for provider in ("openweather", "alphavantage"):
-        (tmp_path / f"{provider}-api-key.txt").write_text("test-key\n", encoding="utf-8")
+    (tmp_path / "alphavantage-api-key.txt").write_text("test-key\n", encoding="utf-8")
     requests = []
 
     def respond(url, *, timeout):
@@ -129,15 +127,23 @@ def test_weather_location_local_day_and_stock_previous_trading_day(tmp_path, mon
         params = parse_qs(request.query)
         requests.append(params)
         assert timeout > 0
-        if request.path == "/geo/1.0/direct":
-            data = [{"name": "Berlin", "lat": 52.52, "lon": 13.405}]
-        elif request.path == "/data/2.5/forecast":
-            start = dt.datetime(2026, 11, 9, 8, tzinfo=dt.timezone.utc)
-            data = {"city": {"timezone": 3600}, "list": [
-                {"dt": (start + dt.timedelta(hours=offset)).timestamp(), "main": {"temp": temperature},
-                 "weather": [{"description": "bewölkt", "icon": "04d"}]}
-                for offset, temperature in ((0, 6), (3, 11), (16, 99))
-            ]}
+        if request.path == "/v1/search":
+            data = {"results": [{"name": "Berlin", "latitude": 52.52, "longitude": 13.405}]}
+        elif request.path == "/v1/forecast":
+            codes = [0] * 8 + [3] * 10 + [0] * 7
+            codes[9], codes[13], codes[14], codes[15] = 0, 61, 95, 2
+            gusts = [12] * 25
+            gusts[16] = 71
+            data = {
+                "daily": {"time": ["2026-11-09"], "temperature_2m_min": [6],
+                          "temperature_2m_max": [11], "weather_code": [95]},
+                "hourly": {
+                    "time": [f"2026-11-09T{hour:02d}:00" for hour in range(24)] + ["2026-11-10T00:00"],
+                    "temperature_2m": [6] * 12 + [11] * 12 + [99],
+                    "weather_code": codes, "is_day": [0] * 8 + [1] * 10 + [0] * 7,
+                    "wind_gusts_10m": gusts,
+                },
+            }
         elif params["symbol"] == ["AAPL"]:
             data = {"Time Series (Daily)": {
                 "2026-11-05": {"4. close": "100"},
@@ -151,8 +157,15 @@ def test_weather_location_local_day_and_stock_previous_trading_day(tmp_path, mon
     monkeypatch.setattr(morning, "urlopen", respond)
     now = MONDAY.replace(tzinfo=dt.timezone.utc)
     view = morning.compose(now, OPTIONS, []).view
-    assert view.data["weather"] == {"location": "Berlin", "low": "6", "high": "11",
-                                   "condition": "bewölkt", "time": "12:00", "icon": "cloud"}
+    weather = view.data["weather"]
+    assert (weather["location"], weather["low"], weather["high"]) == ("Berlin", "6", "11")
+    assert (weather["condition"], weather["icon"]) == ("Überwiegend bewölkt", "cloud")
+    hours = weather["hours"]
+    assert [hour["time"] for hour in hours] == [f"{hour:02d}:00" for hour in range(24)]
+    assert [hours[hour]["icon"] for hour in (0, 9, 13, 14, 15, 16)] == [
+        "moon", "sun", "rain", "storm", "partly-cloudy", "wind",
+    ]
+    assert hours[16]["temp"] == "11" and "stürmische Böen" in hours[16]["condition"]
     assert view.data["stocks"]["quotes"] == [
         {"symbol": "AAPL", "close": "102,00", "change": "+2,00", "direction": "up", "day": "06.11.",
          "trend": {"points": "2.0,22.0 62.0,2.0", "last_y": "2.0", "sessions": 2}},
@@ -160,9 +173,11 @@ def test_weather_location_local_day_and_stock_previous_trading_day(tmp_path, mon
     ]
     html = api.renderer().render(view)
     assert 'class="weather-icon cloud"' in html
+    assert "Stundenverlauf" in html and 'href="https://open-meteo.com/"' in html
     assert 'aria-label="Kursverlauf über 2 Handelstage"' in html
-    assert requests[0]["q"] == ["Berlin,DE"]
-    assert requests[1]["units"] == ["metric"]
+    assert requests[0]["name"] == ["Berlin"] and requests[0]["countryCode"] == ["DE"]
+    assert requests[1]["timezone"] == ["auto"] and requests[1]["forecast_days"] == ["1"]
+    assert "appid" not in requests[0] and "appid" not in requests[1]
     assert [request["symbol"] for request in requests[2:]] == [["AAPL"], ["MSFT"]]
     wait.assert_called_once_with(morning._STOCK_REQUEST_GAP_S)
 
@@ -181,7 +196,6 @@ def test_stock_trend_uses_seven_chronological_closes_ending_yesterday(monkeypatc
 
 def test_failed_sources_still_deliver_and_respect_quiet_time(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APP_DATA_DIR", tmp_path)
-    (tmp_path / "openweather-api-key.txt").write_text("test-key", encoding="utf-8")
     monkeypatch.setattr(morning, "urlopen", mock.Mock(side_effect=TimeoutError))
     watcher = harness(MONDAY.replace(hour=6), time="06:00", **OPTIONS)
     watcher.errors["watch_calendar_events"] = "Google nicht erreichbar"
@@ -189,14 +203,13 @@ def test_failed_sources_still_deliver_and_respect_quiet_time(tmp_path, monkeypat
     watcher.now = MONDAY
     assert watcher.check() == 1
     assert "Google Kalender ist gerade nicht verfügbar" in watcher.texts[0]
-    assert "OpenWeather ist gerade nicht verfügbar" in watcher.texts[0]
+    assert "Open-Meteo ist gerade nicht verfügbar" in watcher.texts[0]
     assert "Alpha-Vantage-Schlüssel hinterlegen" in watcher.texts[0]
     assert "Songvorschlag" in watcher.texts[0]
 
 
-def test_rejected_weather_key_gets_specific_message(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "APP_DATA_DIR", tmp_path)
-    (tmp_path / "openweather-api-key.txt").write_text("test-key", encoding="utf-8")
-    error = HTTPError("https://example.test", 401, "Unauthorized", {}, io.BytesIO())
-    monkeypatch.setattr(morning, "urlopen", mock.Mock(side_effect=error))
-    assert "akzeptiert den hinterlegten Schlüssel derzeit nicht" in morning.compose(MONDAY, OPTIONS, []).fallback
+def test_weather_reports_unknown_location_without_fetching_forecast(monkeypatch):
+    query = mock.Mock(return_value={})
+    monkeypatch.setattr(morning, "_get_json", query)
+    assert morning._weather("Unbekannt") == {"status": "Open-Meteo hat den Ort nicht gefunden."}
+    query.assert_called_once_with(morning._WEATHER_SEARCH, count=1, language="de", name="Unbekannt")

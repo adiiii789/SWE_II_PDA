@@ -5,7 +5,7 @@ Noch leer. Geplante Integrationen und welche Fähigkeit (backend/assistant/skill
   Integration          Fähigkeit
   -------------------  ---------------------------------------------
   Google Calendar      morning, travel, organization  (lesen, erstellen)
-  OpenWeather          morning
+  Open-Meteo          morning
   Aktien-API           morning  (Recap des Vortages)
   Musik                morning  (Songvorschlag, Abspielen)
   Google Routes        travel   (Fahrzeit Auto / ÖPNV)
