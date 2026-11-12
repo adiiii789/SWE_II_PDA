@@ -5,6 +5,9 @@ JavaScript -> Python: Aufrufe laufen in einem Hintergrund-Thread, damit langsame
     kommt über das Signal  finished(call_id, json)  zurück.
 Python -> JavaScript: Ereignisse aus backend.events gehen über das Signal
     event(name, json)  an  onPythonEvent(name, handler)  im Frontend.
+JavaScript -> EventBus: notifyPython(name, payload) veröffentlicht sofort ein Ereignis, ohne
+    Hintergrund-Thread - z. B. damit der 3D-Begleiter den Zustand des Popups mitbekommt, auch
+    während ein Aufruf (Sprachmodell) läuft. Nur Namen, die die Seite freigegeben hat (notifications).
 """
 from __future__ import annotations
 
@@ -36,11 +39,26 @@ class WebBridge(QObject):
     finished = pyqtSignal(int, str)   # call_id, {"ok": ..., "result"/"error": ...}
     event = pyqtSignal(str, str)      # Ereignisname, Payload als JSON
 
-    def __init__(self, registry: FunctionRegistry, executor: Executor, parent: QObject | None = None):
+    def __init__(self, registry: FunctionRegistry, executor: Executor, parent: QObject | None = None,
+                 event_bus: EventBus | None = None, notifications: frozenset[str] = frozenset()):
         super().__init__(parent)
         self._registry = registry
         self._executor = executor
+        self._event_bus = event_bus
+        self._notifications = notifications
         self._closed = False
+
+    @pyqtSlot(str, str)
+    def notify(self, name: str, payload_json: str) -> None:
+        """Ereignis der Seite sofort auf dem EventBus veröffentlichen (wirft nie, siehe call)."""
+        if self._closed or self._event_bus is None or name not in self._notifications:
+            return
+        try:
+            payload = json.loads(payload_json or "null")
+        except ValueError:
+            log.warning("Ungültige Nachricht %r von der Seite", name)
+            return
+        self._event_bus.publish(name, payload)
 
     @pyqtSlot(int, str, str)
     def call(self, call_id: int, name: str, args_json: str) -> None:
@@ -105,11 +123,13 @@ class BridgeConnection:
         self.executor.shutdown(wait=False, cancel_futures=True)
 
 
-def attach(page: QWebEnginePage, registry: FunctionRegistry, event_bus: EventBus) -> BridgeConnection:
-    """Registriert die Bridge auf der Seite und injiziert das Client-Skript in jedes Dokument."""
+def attach(page: QWebEnginePage, registry: FunctionRegistry, event_bus: EventBus,
+           notifications: frozenset[str] = frozenset()) -> BridgeConnection:
+    """Registriert die Bridge auf der Seite und injiziert das Client-Skript in jedes Dokument.
+    notifications: Ereignisnamen, die die Seite per notifyPython selbst veröffentlichen darf."""
     # Ein Worker: Aufrufe laufen nacheinander - der Assistent muss nicht thread-sicher sein.
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="bridge")
-    bridge = WebBridge(registry, executor, page)
+    bridge = WebBridge(registry, executor, page, event_bus, frozenset(notifications))
     channel = QWebChannel(page)
     channel.registerObject(CHANNEL_OBJECT_NAME, bridge)
     page.setWebChannel(channel)

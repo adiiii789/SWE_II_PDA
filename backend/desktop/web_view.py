@@ -13,11 +13,15 @@ from backend.events import EventBus
 
 
 class WebView(QWebEngineView):
-    def __init__(self, page_path: Path, registry: FunctionRegistry, event_bus: EventBus, background: str):
+    def __init__(self, page_path: Path, registry: FunctionRegistry, event_bus: EventBus, background: str,
+                 notifications: frozenset[str] = frozenset(), query: str = ""):
         super().__init__()
         self.page().setBackgroundColor(QColor(background))  # kein weißes Aufblitzen beim Laden
-        self._connection = web_bridge.attach(self.page(), registry, event_bus)
-        self.load(QUrl.fromLocalFile(str(page_path)))
+        self._connection = web_bridge.attach(self.page(), registry, event_bus, notifications)
+        url = QUrl.fromLocalFile(str(page_path))
+        if query:
+            url.setQuery(query)   # z. B. model=file:///... für den Begleiter
+        self.load(url)
 
     def close_bridge(self) -> None:
         """Hintergrund-Thread beenden und keine Ereignisse mehr annehmen."""
