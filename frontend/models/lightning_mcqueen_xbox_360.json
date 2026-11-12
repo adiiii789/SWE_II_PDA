@@ -1,0 +1,9 @@
+{
+  "title": "Lightning McQueen",
+  "yaw": 35,
+  "size": 0.85,
+  "lift": -0.17,
+  "hover": false,
+  "eyes": "iris",
+  "iris_hue": [160, 260]
+}
