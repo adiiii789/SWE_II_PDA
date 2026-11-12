@@ -157,9 +157,48 @@ function tellCompanion(kind, details = {}) {
   notifyPython("companion", Object.assign({kind}, details));
 }
 
+// Welche Figur der Begleiter zeigt (Einstellungen → Begleiter): Kennung aus companion_models() oder
+// "builtin"; leer = das Startmodell (backend/config.py). Nur im Browser-Speicher, wie das Design.
+const COMPANION_MODEL_KEY = "pda.companionModel";
+let companionModels = null;   // Antwort von companion_models()
+
+function storedCompanionModel() {
+  try { return localStorage.getItem(COMPANION_MODEL_KEY) || ""; } catch (error) { return ""; }
+}
+
+async function loadCompanionModels() {
+  if (!companionModels) {
+    try { companionModels = await companion_models(); } catch (error) { companionModels = {models: [], start: "builtin"}; }
+  }
+  return companionModels;
+}
+
+// Die gewählte Figur: Kennung, die gerade gilt (gespeichert oder Startmodell)
+async function currentCompanionModel() {
+  const {models, start} = await loadCompanionModels();
+  const stored = storedCompanionModel();
+  return stored === "builtin" || models.some(model => model.id === stored) ? stored : start;
+}
+
+async function sendCompanionModel() {
+  const {models} = await loadCompanionModels();
+  const model = models.find(item => item.id === (storedCompanionModel() || null));
+  if (model) tellCompanion("model", {url: model.url, options: model.options});
+  else if (storedCompanionModel() === "builtin") tellCompanion("model", {url: ""});
+  // sonst: nichts schicken - der Begleiter zeigt schon das Startmodell
+}
+
+async function chooseCompanionModel(id) {
+  try { localStorage.setItem(COMPANION_MODEL_KEY, id); } catch (error) { /* nur für diese Sitzung */ }
+  const {models} = await loadCompanionModels();
+  const model = models.find(item => item.id === id);
+  tellCompanion("model", model ? {url: model.url, options: model.options} : {url: ""});
+}
+
 // Der Begleiter ist (neu) geladen: alles schicken, was er wissen muss
 function syncCompanion() {
   companionState = "";
+  sendCompanionModel();
   tellCompanion("side", {value: Appearance.companionSide});
   tellCompanion("visible", {value: Appearance.companionShown});
   tellCompanion("theme", {accent: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()});

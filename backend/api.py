@@ -20,6 +20,7 @@ from backend import config, proactive
 from backend.assistant import Assistant, ConsultingAssistant, ModelPreloading, ModelSelection, create_assistant
 from backend.assistant.settings import AssistantSettings, is_internal_tool
 from backend.assistant.tools import ToolResult
+from backend.companion_models import BUILT_IN, is_model, list_models as list_companion_models
 from backend.preferences import JsonPreferenceStore, default_store
 from backend.events import POPUP_ENLARGED, events
 from backend.presenter import attachment_store, present, renderer
@@ -250,6 +251,15 @@ def _available_tools() -> list[tuple[str, str]]:
     except Exception:  # noqa: BLE001  # Einstellungen sollen sich trotzdem öffnen lassen
         log.exception("Werkzeuge für die Einstellungen nicht abrufbar")
         return []
+
+
+def companion_models() -> dict[str, Any]:
+    """3D-Modelle für den Begleiter (frontend/models, backend/companion_models.py):
+    {"models": [{"id", "title", "url", "options"}], "start": Kennung des Startmodells oder "builtin"}.
+    Die eingebaute Figur steht nicht in "models"."""
+    models = list_companion_models(config.COMPANION_MODELS_DIR)
+    start = config.COMPANION_MODEL.name if is_model(config.COMPANION_MODEL) else BUILT_IN
+    return {"models": models, "start": start}
 
 
 def get_settings() -> dict[str, Any]:

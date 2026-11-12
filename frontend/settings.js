@@ -12,7 +12,7 @@ const settingsResetButton = document.getElementById("settings-reset");
 const settingsTabs = Array.from(document.querySelectorAll("#settings-tabs button"));
 
 let settingsForm = null;       // letzte Antwort von get_settings()
-let settingsTab = "answer";    // "answer" | "tools" | "proactive"
+let settingsTab = "answer";    // "answer" | "tools" | "proactive" | "companion"
 let resetArmed = false;        // Zurücksetzen braucht einen zweiten Klick
 
 function element(tag, className, text) {
@@ -107,6 +107,20 @@ function buildFields(container, fields, values, idPrefix) {
 
 let readSettings = () => ({});
 
+let companionChoice = {models: [], value: "builtin"};   // für das Feld "Figur", siehe openSettings
+
+function companionFields() {
+  return [
+    {key: "shown", kind: "bool", label: "3D-Begleiter anzeigen"},
+    {key: "model", kind: "choice", label: "Figur",
+      help: "Modelle aus dem Ordner frontend/models. Anpassen lässt sich jedes über eine gleichnamige .json-Datei.",
+      choices: [...companionChoice.models.map(model => ({value: model.id, label: model.title})),
+        {value: "builtin", label: "Eingebaute Figur"}]},
+    {key: "side", kind: "choice", label: "Position", help: "Auf welcher Seite des Fensters die Figur steht.",
+      choices: [{value: "left", label: "Links vom Fenster"}, {value: "right", label: "Rechts vom Fenster"}]},
+  ];
+}
+
 function renderSettings() {
   // nicht replaceChildren(): das Chromium von Qt 5 kennt es noch nicht
   while (settingsBody.firstChild) settingsBody.removeChild(settingsBody.firstChild);
@@ -133,9 +147,18 @@ function renderSettings() {
     "Wann sich der PDA von selbst meldet. Gilt ab der nächsten Prüfung."));
   const proactiveReaders = buildGroups(proactiveSection, proactive, "proactive");
 
-  settingsBody.append(answerSection, toolSection, proactiveSection);
+  // Begleiter: nur im Browser gespeichert (appearance.js), deshalb nicht im Schema von get_settings()
+  const companionSection = element("section", "settings-section");
+  companionSection.dataset.tab = "companion";
+  companionSection.appendChild(element("p", "settings-intro",
+    "Die 3D-Figur neben dem Fenster. Sie zeigt mit Augen und Licht, ob der Assistent zuhört, nachdenkt oder spricht."));
+  const readCompanion = buildFields(companionSection, companionFields(),
+    {shown: Appearance.companionShown, side: Appearance.companionSide, model: companionChoice.value}, "companion");
+
+  settingsBody.append(answerSection, toolSection, proactiveSection, companionSection);
   const readAll = readers => Object.fromEntries(Object.entries(readers).map(([id, read]) => [id, read()]));
-  readSettings = () => ({answer: readAnswer(), tools: readAll(toolReaders), proactive: readAll(proactiveReaders)});
+  readSettings = () => ({answer: readAnswer(), tools: readAll(toolReaders), proactive: readAll(proactiveReaders),
+    companion: readCompanion()});
   showSettingsTab(settingsTab);
 }
 
@@ -177,7 +200,9 @@ async function openSettings() {
   settingsButton.classList.add("active");
   setSettingsStatus("lädt …");
   try {
-    settingsForm = await get_settings();
+    const [form, models, current] = await Promise.all([get_settings(), loadCompanionModels(), currentCompanionModel()]);
+    settingsForm = form;
+    companionChoice = {models: models.models, value: current};
     renderSettings();
     setSettingsStatus("");
   } catch (error) {
@@ -194,7 +219,13 @@ function closeSettings() {
 async function saveSettings() {
   settingsSaveButton.disabled = true;
   try {
-    settingsForm = await save_settings(readSettings());
+    const {companion, ...values} = readSettings();
+    settingsForm = await save_settings(values);
+    Appearance.applyCompanion(companion.shown ? companion.side : "off");
+    if (companion.model !== companionChoice.value) {
+      companionChoice.value = companion.model;
+      chooseCompanionModel(companion.model);
+    }
     closeSettings();
     addMessage("Einstellungen gespeichert - sie gelten ab sofort.", "assistant");
   } catch (error) {
@@ -217,6 +248,7 @@ async function resetSettings() {
   }
   try {
     settingsForm = await reset_settings();
+    Appearance.applyCompanion("left");
     renderSettings();
     setSettingsStatus("Standardwerte wiederhergestellt.");
   } catch (error) {
