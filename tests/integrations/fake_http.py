@@ -24,6 +24,10 @@ class FakeHttp:
         self.calls.append(("POST", url, body, headers))
         return self._answer(url)
 
+    def get_bytes(self, url, headers=None):
+        self.calls.append(("GET", url, None, headers))
+        return self._answer(url)
+
     def _answer(self, url):
         for key, response in self.responses.items():
             if key in url:

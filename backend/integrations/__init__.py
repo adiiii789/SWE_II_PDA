@@ -6,11 +6,15 @@ Integrationen und welche Fähigkeit (backend/assistant/skills/) sie nutzt:
   Integration          Fähigkeit
   -------------------  ---------------------------------------------
   Google Calendar      morning, travel, organization  (google_calendar.py: lesen)
-  OpenWeather          morning
+  Open-Meteo           travel, morning  (weather.py: stündliche Vorhersage, ohne Key)
   Aktien-API           morning  (Recap des Vortages)
   Musik                morning  (Songvorschlag, Abspielen)
   openrouteservice     travel   (openrouteservice.py: Adressen, Routen Auto/Rad/zu Fuß)
-  DB Timetables        travel   (db_timetables.py: Direktverbindungen aus dem Fahrplan)
+  VVS (EFA)             travel   (vvs.py: Verbindungen im VVS-Gebiet mit Echtzeit und Preis, ohne Key)
+  Transitous           travel   (transitous.py: Bahn/ÖPNV-Verbindungen mit Bus und Tram, ohne Key)
+                                (transit.py: gemeinsames Format beider)
+  DB OpenBoards/Timetables travel (db_timetables.py: Ersatz - Züge mit bis zu drei Umstiegen, mit Echtzeit)
+  DB StaDa             travel   (db_stations.py: Bahnhof zur Adresse, Liste aller Bahnhöfe mit Koordinaten)
   Tankerkönig          travel   (tankerkoenig.py: aktuelle Spritpreise)
   Gmail                organization  (E-Mails verfassen, senden und lesen - als MCP-Server umgesetzt)
   Google Keep          organization  (Notizen, To-do-Listen)

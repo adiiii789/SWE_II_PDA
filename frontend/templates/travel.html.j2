@@ -1,14 +1,45 @@
 {#- Reiseplan (backend/assistant/skills/travel/view.py, trip_view).
     Daten:
-      title, route, arrive_by   str
-      best           dict | None   label, detail, depart, arrive, duration, price, late
-      columns, rows  Tabelle aller Verkehrsmittel, nach Kosten sortiert
+      title, route   str
+      arrive_by      str           "Mi 21.10. 14:00 Uhr" oder leer (Heimweg)
+      depart_after   str           Heimweg: frühestens los um …, sonst leer
+      best           dict | None   die Empfehlung (= options[0])
+      free_note      str           steht die Empfehlung nur vorn, weil sie kostenlos ist: warum; sonst leer
+      options        list[dict]    je Verkehrsmittel, Empfehlung zuerst: index, recommended, free,
+                                   preferred (kostenlos und deshalb vorn), label, mode, detail, depart,
+                                   arrive, duration, price, late (Abfahrt vorbei), minutes_late (kommt
+                                   nach arrive_by an), weather_note, steps (Wegbeschreibung),
+                                   map (siehe unten; Auto und Taxi teilen sich eine), journey (nur Bus/Bahn)
+                     journey: depart, arrive, duration, transfers, realtime,
+                          no_ticket (Linien, für die das Deutschlandticket nicht gilt),
+                          bar (kind, line, background, text, percent, no_ticket) - Etappen-Balken,
+                          items - Zeitleiste, abwechselnd Halt und Etappe:
+                            Halt: name, kind (start/stop/transfer/end), arrive/depart/end_time
+                                  (planned, actual, late), platform, wait, line_in/line_out (kind,
+                                  color: Linienstück über/unter dem Punkt, damit die Leiste durchgeht),
+                                  no_ticket_in/no_ticket_out (Fernverkehr endet/beginnt hier)
+                            Etappe: kind ride (line, background, text, headsign, minutes, stops, messages,
+                                    no_ticket - rot hinterlegt: Deutschlandticket gilt nicht),
+                                    walk (label) oder transit (label, background)
+                     map: width, height, start, end, straight, attribution,
+                          lines (kind, color, label, points "x,y x,y"), stops (x, y, name, transfer),
+                          legend (wie lines, nur mit label), tiles (x, y, size, id → tiles)
+      tiles          list[dict]    Kartenkacheln aller Karten, jede einmal: id, size, href (data:-URI)
+      columns, rows  Tabelle aller Verkehrsmittel, nach Kosten sortiert (Zeile i = options[i])
       value_of_time  str           Zeitwert für die Fußnote
-      steps          list[str]     Wegbeschreibung der Empfehlung
-      map            dict | None   width, height, points ("x,y x,y"), start, end, straight
+      weather        str           Wetter am Start, z. B. "Regen, 8 °C, Wind 20 km/h"; leer = unbekannt
+      weather_attribution  str
       notes          list[str]     Hinweise, z. B. fehlende Keys
       attribution    str
-    Styles eingebettet wie in default.html.j2. -#}
+    Auswahl des Verkehrsmittels ohne Skript: je eins ein Radio-Button (versteckt, mit Pfeiltasten
+    bedienbar), Reiter und Tabellenzeilen sind <label> dafür; CSS zeigt das gewählte Panel.
+    Die Radio-Buttons müssen deshalb Geschwister vor .tabs, .panels und .compare bleiben.
+    Die Vergleichstabelle (.compare) ist zugeklappt (<details>).
+    Karte: oben im Reiter; die Checkbox .zoom direkt davor zeigt sie über die ganze Ansicht (reines
+    CSS), das Skript am Ende ergänzt Zoom und Verschieben.
+    Styles eingebettet wie in default.html.j2. Die App zeigt das in QtWebEngine 5.15 (Chromium 83):
+    kein gap bei Flexbox, kein inset, kein :has() - Abstände deshalb über margin. -#}
+{%- set icons = {"car": "🚗", "train": "🚆", "taxi": "🚕", "bike": "🚲", "foot": "🚶"} -%}
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -17,55 +48,314 @@
 {% include "theme.css" %}
 {% include "view.css" %}
     .route { margin-bottom: 12px; }
+    .pick { position: absolute; opacity: 0; pointer-events: none; }
+    .tabs { display: flex; flex-wrap: wrap; margin-bottom: 6px; }
+    .tabs label { display: flex; flex-direction: column; margin: 0 6px 6px 0; padding: 6px 10px; cursor: pointer;
+                  border: 1px solid var(--border); border-radius: 8px; background: var(--control); }
+    .tabs label:hover { background: var(--control-hover); }
+    .tabs .meta { color: var(--text-muted); font-size: 12px; }
+    .badge { font-size: 11px; color: #8ddb8c; }
+    .tabs .free { font-size: 11px; color: #57ab5a; }
+    .free-note { margin: -4px 0 12px; font-size: 12px; }
+    /* Bus und Bahn wie in der DB- oder VVS-App: Kopfkarte, Etappen-Balken, Zeitleiste */
+    .conn { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+    .conn-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; }
+    .conn-times { margin-right: 8px; }
+    .conn-times { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .conn-meta, .conn-foot { color: var(--text-muted); }
+    .conn-bar { display: flex; align-items: center; height: 20px; margin: 8px 0; }
+    .conn-bar span + span { margin-left: 3px; }
+    .conn-bar span { flex: 0 1 auto; min-width: 0; height: 20px; line-height: 20px; border-radius: 4px; overflow: hidden;
+                     white-space: nowrap; text-align: center; font-size: 11px; font-weight: 700; }
+    .conn-bar .bar-walk { height: 0; border-top: 3px dotted #8b949e; border-radius: 0; }
+    .conn-foot { display: flex; flex-wrap: wrap; }
+    .conn-foot span { margin-right: 12px; }
+    .conn-foot .price { color: var(--text); font-weight: 600; }
+    .conn-foot .price.free, .ontime, .rt { color: #57ab5a; }
+    .conn-foot .late, .tl .late { color: #e5534b; }
+    .tl { list-style: none; padding: 0; margin: 4px 0 8px; }
+    .tl > li { display: grid; grid-template-columns: 44px 16px 1fr; column-gap: 8px; margin: 0; }
+    .tl .time { text-align: right; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; }
+    .tl .time .actual { font-size: 12px; }
+    .tl .track { display: flex; justify-content: center; position: relative; }
+    /* Am Halt geht die Linie weiter: oben bis zur Mitte des Punkts (Etappe davor), darunter bis
+       zum Ende der Zeile (Etappe danach) - in Farbe und Art der Etappe */
+    .tl .halt .track::before, .tl .halt .track::after { content: ""; position: absolute; left: 50%;
+                                                        transform: translateX(-50%); }
+    .tl .halt .track::before { top: 0; height: 10px; }
+    .tl .halt .track::after { top: 10px; bottom: 0; }
+    .tl .in-ride .track::before { width: 6px; background: var(--in); }
+    .tl .out-ride .track::after { width: 6px; background: var(--out); }
+    .tl .in-walk .track::before, .tl .out-walk .track::after { border-left: 3px dotted #8b949e; }
+    .tl .in-transit .track::before { border-left: 4px dashed var(--in); }
+    .tl .out-transit .track::after { border-left: 4px dashed var(--out); }
+    .tl .dot { position: relative; z-index: 1; width: 8px; height: 8px; margin-top: 3px; border-radius: 50%;
+               background: var(--background);
+               border: 3px solid #d0d7de; flex: none; }
+    .tl .halt-start .dot { border-color: #57ab5a; }
+    .tl .halt-end .dot { border-color: #e5534b; }
+    .tl .halt-transfer .dot { border-color: #ffd43b; }
+    .tl .halt .what { padding-bottom: 2px; }
+    .tl .halt strong { font-weight: 600; }
+    .tl .platform { margin-left: 8px; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px;
+                    font-size: 12px; color: var(--text-muted); }
+    .tl .wait { color: #ffd43b; font-size: 12px; }
+    .tl .link .track span { width: 6px; background: var(--line); }
+    .tl .link-walk .track span { width: 0; border-left: 3px dotted #8b949e; border-radius: 0; background: none; }
+    .tl .link-transit .track span { width: 0; border-left: 4px dashed var(--line); border-radius: 0; background: none; }
+    .tl .link .what { padding: 6px 0 10px; color: var(--text-muted); }
+    .line-badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-weight: 700; font-size: 12px; }
+    .tl .dir { color: var(--text); margin-left: 4px; }
+    .tl details { margin-top: 4px; }
+    .tl summary { cursor: pointer; font-size: 12px; }
+    .tl .stops { list-style: none; padding: 2px 0 0 0; font-size: 12px; }
+    .tl .stops span { display: inline-block; width: 40px; font-variant-numeric: tabular-nums; }
+    .tl .msg { margin-top: 4px; font-size: 12px; color: #e3b341; }
+    /* Deutschlandticket gilt nicht (Fernverkehr): roter Bereich vom Einstieg bis zum Ausstieg */
+    .tl .no-ticket { background: rgba(229, 83, 75, .16); box-shadow: inset 3px 0 0 #e5534b; }
+    .tl .halt.no-ticket-start { border-top-left-radius: 6px; border-top-right-radius: 6px; padding-top: 4px; }
+    .tl .halt.no-ticket-end { border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; padding-bottom: 4px; }
+    .ticket-chip { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 11px;
+                   font-weight: 600; background: #e5534b; color: #ffffff; vertical-align: 1px; }
+    .conn-bar span.no-ticket { box-shadow: 0 3px 0 #e5534b; }
+    .conn-foot .no-ticket-note { color: #ff8b82; }
+    .panel { display: none; }
     .best { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
     .best strong { font-size: 16px; }
     .best .late { color: #e5534b; }
-    svg { display: block; width: 100%; max-width: 480px; margin: 12px 0; }
-    svg .line { fill: none; stroke: #4c9aff; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
-    svg .straight { stroke-dasharray: 6 5; }
-    svg .start { fill: #57ab5a; }
-    svg .end { fill: #e5534b; }
+    .tile-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .map { display: block; width: 100%; max-width: 480px; border-radius: 8px; background: var(--surface); --u: 2; }
+    .map .tile { filter: brightness(.85); }   /* helle Kacheln im dunklen Fenster etwas dämpfen */
+    .map .casing { fill: none; stroke: #ffffff; stroke-opacity: .8; stroke-width: 8; stroke-linejoin: round; stroke-linecap: round;
+                   vector-effect: non-scaling-stroke; }
+    .line { fill: none; stroke-width: 4; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+    .line.rail { stroke-width: 5; }
+    .line.walk { stroke-dasharray: 0.5 7; stroke-width: 5; }
+    .line.transit { stroke-dasharray: 9 6; }
+    .line.straight { stroke-dasharray: 6 5; }
+    /* Punkte immer gleich groß auf dem Bildschirm: --u = Kartenpixel je Bildschirmpixel (setzt das Skript) */
+    .map circle { stroke-width: 2; vector-effect: non-scaling-stroke; }
+    .map .start { fill: #57ab5a; stroke: #ffffff; r: calc(6px * var(--u)); }
+    .map .end { fill: #e5534b; stroke: #ffffff; r: calc(6px * var(--u)); }
+    .map .stop { fill: #ffffff; stroke: #333333; r: calc(4.5px * var(--u)); }
+    .map .stop.transfer { fill: #ffd43b; r: calc(5.5px * var(--u)); }
+    /* Karte oben im Reiter; Klick: über die ganze Ansicht, mit Zoom (Skript unten) */
+    .zoom { position: absolute; opacity: 0; pointer-events: none; }
+    .map-box { position: relative; margin: 0 0 12px; max-width: 480px; }
+    .map-open { display: block; position: relative; cursor: zoom-in; }
+    .map-hint { position: absolute; right: 8px; bottom: 8px; padding: 2px 6px; border-radius: 4px; font-size: 11px;
+                background: rgba(0, 0, 0, .6); color: #ffffff; pointer-events: none; }
+    .map-tools { display: none; }
+    .zoom:focus-visible + .map-box .map { outline: 2px solid #6c8ad8; outline-offset: 2px; }
+    .zoom:checked + .map-box { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 30;   /* kein inset: Qt-Chromium zu alt */
+                               margin: 0; max-width: none; padding: 8px;
+                               box-sizing: border-box; background: var(--background); }
+    .zoom:checked + .map-box .map-open { height: 100%; cursor: grab; }
+    .zoom:checked + .map-box .map { width: 100%; height: 100%; max-width: none; touch-action: none; }
+    .zoom:checked + .map-box .map-hint { display: none; }
+    .zoom:checked + .map-box .map-tools { display: flex; flex-direction: column; position: absolute; top: 16px; right: 16px; }
+    .map-tools > * + * { margin-top: 6px; }
+    .map-tools > * { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; padding: 0;
+                     border-radius: 6px; border: 1px solid var(--border); background: var(--control); color: var(--text);
+                     font: inherit; font-size: 18px; cursor: pointer; }
+    .map-tools > *:hover { background: var(--control-hover); }
+    body.map-zoomed { overflow: hidden; }   /* setzt das Skript (:has() kennt Chromium 83 nicht) */
+    .legend { list-style: none; padding: 0; margin: 0 0 8px; color: var(--text-muted); }
+    .legend li { display: flex; align-items: center; margin: 2px 0; }
+    .legend svg { margin-right: 8px; }
+    .legend svg { flex: none; }
+    table .pick-row { cursor: pointer; }
+    .compare { margin-top: 16px; }
+    .compare summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+    .compare table { margin-top: 6px; }
     h3 { margin: 16px 0 6px; font-size: 14px; }
     ol, ul { margin: 0; padding-left: 20px; }
     li { margin: 2px 0; }
     small { display: block; margin-top: 8px; color: var(--text-muted); }
+    {%- for option in options %}
+    #mode-{{ option.index }}:checked ~ .panels #panel-{{ option.index }} { display: block; }
+    #mode-{{ option.index }}:checked ~ .tabs label[for="mode-{{ option.index }}"] { background: var(--accent); border-color: #6c8ad8; }
+    #mode-{{ option.index }}:focus-visible ~ .tabs label[for="mode-{{ option.index }}"] { outline: 2px solid #6c8ad8; outline-offset: 1px; }
+    #mode-{{ option.index }}:checked ~ .compare tr[data-row="{{ option.index }}"] td { background: var(--surface); }
+    {%- endfor %}
   </style>
 </head>
 <body>
   <h2>{{ title }}</h2>
-  <p class="route">{{ route }}<br>Ankunft bis {{ arrive_by }}</p>
+  <p class="route">{{ route }}<br>
+    {%- if depart_after %}Abfahrt ab {{ depart_after }}{% else %}Ankunft bis {{ arrive_by }}{% endif %}
+    {%- if weather %}<br>Wetter: {{ weather }}{% endif %}</p>
 
-  {% if best %}
-  <div class="best">
-    <strong>{{ best.label }}</strong>{% if best.detail %} – {{ best.detail }}{% endif %}<br>
-    <span{% if best.late %} class="late"{% endif %}>Los um {{ best.depart }}</span>,
-    an um {{ best.arrive }} · {{ best.duration }} · {{ best.price }}
+  {%- for option in options %}
+  <input class="pick" type="radio" name="mode" id="mode-{{ option.index }}" aria-label="{{ option.label }}"
+         {%- if option.recommended %} checked{% endif %}>
+  {%- endfor %}
+
+  {% if options|length > 1 %}
+  <div class="tabs" aria-label="Verkehrsmittel">
+    {%- for option in options %}
+    <label for="mode-{{ option.index }}">
+      <span>{{ icons.get(option.mode, "") }} {{ option.label }}</span>
+      <span class="meta">{{ option.duration }} · {{ option.price }}</span>
+      {%- if option.recommended %}<span class="badge">★ Empfehlung</span>
+      {%- elif option.free %}<span class="free">kostenlos</span>{% endif %}
+    </label>
+    {%- endfor %}
   </div>
   {% endif %}
 
-  {% if map %}
-  <svg viewBox="0 0 {{ map.width }} {{ map.height }}" role="img" aria-label="Skizze der Route">
-    <polyline class="line{% if map.straight %} straight{% endif %}" points="{{ map.points }}"/>
-    <circle class="start" cx="{{ map.start[0] }}" cy="{{ map.start[1] }}" r="5"/>
-    <circle class="end" cx="{{ map.end[0] }}" cy="{{ map.end[1] }}" r="5"/>
-  </svg>
+  {%- if free_note %}
+  <p class="free-note">{{ free_note }}</p>
+  {%- endif %}
+
+  {% if tiles %}
+  <svg class="tile-defs" aria-hidden="true"><defs>
+    {%- for tile in tiles %}
+    <image id="{{ tile.id }}" href="{{ tile.href }}" width="{{ tile.size + 0.5 }}" height="{{ tile.size + 0.5 }}"/>
+    {%- endfor %}
+  </defs></svg>
   {% endif %}
 
+  <div class="panels">
+  {%- for option in options %}
+  <section class="panel" id="panel-{{ option.index }}">
+    {%- set journey = option.journey %}
+    {%- set map = option.map %}
+    {%- if map %}
+    <input class="zoom" type="checkbox" id="zoom-{{ option.index }}" aria-label="Karte groß zeigen">
+    <div class="map-box" data-zoom="zoom-{{ option.index }}">
+      <label class="map-open" for="zoom-{{ option.index }}" title="Karte vergrößern">
+        <svg class="map" viewBox="0 0 {{ map.width }} {{ map.height }}" role="img" aria-label="Karte: {{ option.label }}">
+          {%- for tile in map.tiles %}
+          <use class="tile" href="#{{ tile.id }}" x="{{ tile.x }}" y="{{ tile.y }}"/>
+          {%- endfor %}
+          {%- if map.tiles %}
+          {%- for line in map.lines %}
+          <polyline class="casing" points="{{ line.points }}"/>
+          {%- endfor %}
+          {%- endif %}
+          {%- for line in map.lines %}
+          <polyline class="line {{ line.kind }}" style="stroke: {{ line.color }}" points="{{ line.points }}">
+            {%- if line.label %}<title>{{ line.label }}</title>{% endif %}</polyline>
+          {%- endfor %}
+          {%- for stop in map.stops %}
+          <circle class="stop{% if stop.transfer %} transfer{% endif %}" cx="{{ stop.x }}" cy="{{ stop.y }}" r="{{ 11 if stop.transfer else 9 }}">
+            {%- if stop.name %}<title>{% if stop.transfer %}Umstieg: {% endif %}{{ stop.name }}</title>{% endif %}</circle>
+          {%- endfor %}
+          <circle class="start" cx="{{ map.start[0] }}" cy="{{ map.start[1] }}" r="12"><title>Start</title></circle>
+          <circle class="end" cx="{{ map.end[0] }}" cy="{{ map.end[1] }}" r="12"><title>Ziel</title></circle>
+        </svg>
+        <span class="map-hint">⤢ groß</span>
+      </label>
+      <div class="map-tools">
+        <button type="button" data-step="1.6" title="Hineinzoomen">+</button>
+        <button type="button" data-step="0.625" title="Herauszoomen">−</button>
+        <label for="zoom-{{ option.index }}" title="Schließen (Esc)">✕</label>
+      </div>
+    </div>
+    {%- if map.legend and not journey %}
+    <ul class="legend">
+      {%- for line in map.legend %}
+      <li><svg width="28" height="10" aria-hidden="true"><line class="line {{ line.kind }}" style="stroke: {{ line.color }}" x1="4" y1="5" x2="24" y2="5"/></svg>{{ line.label }}</li>
+      {%- endfor %}
+    </ul>
+    {%- endif %}
+    {%- endif %}
+    {%- if journey %}
+    <div class="conn">
+      <div class="conn-head">
+        <span class="conn-times">{{ journey.depart }} – {{ journey.arrive }}</span>
+        <span class="conn-meta">{{ journey.duration }} · {{ journey.transfers }}</span>
+      </div>
+      <div class="conn-bar" aria-hidden="true">
+        {%- for part in journey.bar %}
+        <span class="bar-{{ part.kind }}{% if part.no_ticket %} no-ticket{% endif %}" style="flex-basis: {{ part.percent }}%
+          {%- if part.background %}; background: {{ part.background }}; color: {{ part.text }}{% endif %}">
+          {%- if part.kind != "walk" %}{{ part.line }}{% endif %}</span>
+        {%- endfor %}
+      </div>
+      <div class="conn-foot">
+        <span class="price{% if option.free %} free{% endif %}">{{ option.price }}</span>
+        {%- if journey.realtime %}<span class="rt">● Echtzeit</span>{% endif %}
+        {%- if journey.no_ticket %}<span class="no-ticket-note">{{ journey.no_ticket|join(", ") }}: nicht im Deutschlandticket</span>{% endif %}
+        {%- if option.minutes_late %}<span class="late">kommt {{ option.minutes_late }} Min. zu spät</span>
+        {%- elif option.late %}<span class="late">Du bist spät dran</span>{% endif %}
+      </div>
+    </div>
+    <ol class="tl">
+      {%- for item in journey["items"] %}
+      {%- if item.name is defined %}
+      <li class="halt halt-{{ item.kind }}{% if item.line_in.kind %} in-{{ item.line_in.kind }}{% endif %}
+          {%- if item.line_out.kind %} out-{{ item.line_out.kind }}{% endif %}
+          {%- if item.no_ticket_in or item.no_ticket_out %} no-ticket{% endif %}
+          {%- if item.no_ticket_out and not item.no_ticket_in %} no-ticket-start{% endif %}
+          {%- if item.no_ticket_in and not item.no_ticket_out %} no-ticket-end{% endif %}"
+          style="--in: {{ item.line_in.color or '#8b949e' }}; --out: {{ item.line_out.color or '#8b949e' }}">
+        <div class="time">
+          {%- for clock in (item.arrive, item.depart, item.end_time) if clock %}
+          <span>{{ clock.planned }}</span>
+          {%- if clock.actual %}<span class="actual {{ 'late' if clock.late else 'ontime' }}">{{ clock.actual }}</span>{% endif %}
+          {%- endfor %}
+        </div>
+        <div class="track"><span class="dot"></span></div>
+        <div class="what"><strong>{{ item.name }}</strong>
+          {%- if item.platform %}<span class="platform">{{ item.platform }}</span>{% endif %}
+          {%- if item.wait %}<div class="wait">{{ item.wait }}</div>{% endif %}</div>
+      </li>
+      {%- else %}
+      <li class="link link-{{ item.kind }}{% if item.no_ticket %} no-ticket{% endif %}" style="--line: {{ item.background or '#8b949e' }}">
+        <div class="time"></div>
+        <div class="track"><span></span></div>
+        <div class="what">
+          {%- if item.kind == "ride" %}
+          <span class="line-badge" style="background: {{ item.background }}; color: {{ item.text }}">{{ item.line }}</span>
+          {%- if item.headsign %}<span class="dir">→ {{ item.headsign }}</span>{% endif %} · {{ item.minutes }} Min.
+          {%- if item.no_ticket %}<span class="ticket-chip" title="Fernverkehr: Deutschlandticket gilt hier nicht">kein D-Ticket</span>{% endif %}
+          {%- if item.stops %}
+          <details><summary>{{ item.stops|length }} Zwischenhalt{{ "e" if item.stops|length > 1 }}</summary>
+            <ul class="stops">{% for stop in item.stops %}<li><span>{{ stop.time }}</span>{{ stop.name }}</li>{% endfor %}</ul>
+          </details>
+          {%- else %}<div>ohne Zwischenhalt</div>{% endif %}
+          {%- for message in item.messages %}<div class="msg">⚠ {{ message }}</div>{% endfor %}
+          {%- else %}{{ item.label }}{% endif %}
+        </div>
+      </li>
+      {%- endif %}
+      {%- endfor %}
+    </ol>
+    {%- else %}
+    <div class="best">
+      <strong>{{ option.label }}</strong>{% if option.detail %} – {{ option.detail }}{% endif %}<br>
+      <span{% if option.late %} class="late"{% endif %}>Los um {{ option.depart }}</span>,
+      an um {{ option.arrive }}{% if option.minutes_late %} <span class="late">({{ option.minutes_late }} Min. zu spät)</span>{% endif %}
+      · {{ option.duration }} · {{ option.price }}
+      {%- if option.weather_note %}<br>{{ option.weather_note }}{% endif %}
+    </div>
+    {%- endif %}
+
+    {%- if option.steps and not journey %}
+    <h3>Wegbeschreibung</h3>
+    <ol>{% for step in option.steps %}<li>{{ step }}</li>{% endfor %}</ol>
+    {%- endif %}
+  </section>
+  {%- endfor %}
+  </div>
+
   {% if rows %}
+  <details class="compare">
+  <summary>Vergleich aller Verkehrsmittel</summary>
   <table>
     <thead><tr>{% for column in columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
     <tbody>
       {% for row in rows %}
-      <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+      {%- set index = loop.index0 %}
+      <tr data-row="{{ index }}">{% for cell in row %}<td>
+        {%- if loop.first %}<label class="pick-row" for="mode-{{ index }}">{{ cell }}</label>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
       {% endfor %}
     </tbody>
   </table>
-  <small>¹ Kosten = Preis + Reisezeit × {{ value_of_time }}/h. ≈ = geschätzt.</small>
-  {% endif %}
-
-  {% if steps %}
-  <h3>Wegbeschreibung</h3>
-  <ol>{% for step in steps %}<li>{{ step }}</li>{% endfor %}</ol>
+  <small>¹ Kosten = Preis + Reisezeit × {{ value_of_time }}/h. ≈ = geschätzt. Klick auf ein Verkehrsmittel zeigt seine Karte.</small>
+  </details>
   {% endif %}
 
   {% if notes %}
@@ -73,6 +363,104 @@
   <ul>{% for note in notes %}<li>{{ note }}</li>{% endfor %}</ul>
   {% endif %}
 
-  <small>{{ attribution }}</small>
+  {%- set shown = options | map(attribute="map") | selectattr("attribution") | list %}
+  <small>{{ attribution }}{% if shown %} · {{ shown[0].attribution }}{% endif %}
+    {%- if weather_attribution %} · {{ weather_attribution }}{% endif %}</small>
+  <script>
+  // Karte groß (Checkbox .zoom): Mausrad/Pinch/± zoomen, ziehen verschiebt, Doppelklick zurück,
+  // ✕ oder Escape schließt. Ändert nur viewBox der Karte - das iframe lädt nichts nach.
+  (function () {
+    const MAX_ZOOM = 8;
+    const viewers = [];
+    for (const box of document.querySelectorAll(".map-box")) {
+      const toggle = document.getElementById(box.dataset.zoom);
+      const svg = box.querySelector("svg.map");
+      const full = svg.viewBox.baseVal;
+      const W = full.width, H = full.height;
+      let view = {x: 0, y: 0, w: W, h: H};
+      const pointers = new Map();
+      let pinch = 0;
+
+      const unit = () => {
+        const scale = Math.min(svg.clientWidth / view.w, svg.clientHeight / view.h);
+        if (scale > 0) svg.style.setProperty("--u", String(1 / scale));
+      };
+      const apply = () => {
+        view.w = Math.min(W, Math.max(W / MAX_ZOOM, view.w));
+        view.h = view.w * H / W;
+        view.x = Math.min(W - view.w, Math.max(0, view.x));
+        view.y = Math.min(H - view.h, Math.max(0, view.y));
+        svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+        unit();
+      };
+      const toMap = (clientX, clientY) => {
+        const point = new DOMPoint(clientX, clientY).matrixTransform(svg.getScreenCTM().inverse());
+        return {x: point.x, y: point.y};
+      };
+      const zoomAt = (factor, x, y) => {
+        const w = Math.min(W, Math.max(W / MAX_ZOOM, view.w / factor));
+        view = {x: x - (x - view.x) * w / view.w, y: y - (y - view.y) * w / view.w, w, h: w * H / W};
+        apply();
+      };
+      const reset = () => { view = {x: 0, y: 0, w: W, h: H}; apply(); };
+
+      toggle.addEventListener("change", () => {
+        if (!toggle.checked) reset();
+        document.body.classList.toggle("map-zoomed", viewers.some(viewer => viewer.toggle.checked));
+        requestAnimationFrame(unit);
+      });
+      // Groß: ein Klick auf die Karte verschiebt nur, schließt sie aber nicht
+      box.querySelector(".map-open").addEventListener("click", event => { if (toggle.checked) event.preventDefault(); });
+      for (const button of box.querySelectorAll("[data-step]")) {
+        button.addEventListener("click", () => zoomAt(Number(button.dataset.step), view.x + view.w / 2, view.y + view.h / 2));
+      }
+      svg.addEventListener("wheel", event => {
+        if (!toggle.checked) return;
+        event.preventDefault();
+        const at = toMap(event.clientX, event.clientY);
+        zoomAt(event.deltaY < 0 ? 1.25 : 0.8, at.x, at.y);
+      }, {passive: false});
+      svg.addEventListener("dblclick", event => { if (toggle.checked) { event.preventDefault(); reset(); } });
+      svg.addEventListener("pointerdown", event => {
+        if (!toggle.checked) return;
+        svg.setPointerCapture(event.pointerId);
+        pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+      });
+      svg.addEventListener("pointermove", event => {
+        const last = pointers.get(event.pointerId);
+        if (!last || !toggle.checked) return;
+        pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+        if (pointers.size === 2) {   // zwei Finger: zoomen
+          const [a, b] = [...pointers.values()];
+          const distance = Math.hypot(a.x - b.x, a.y - b.y);
+          if (pinch) {
+            const middle = toMap((a.x + b.x) / 2, (a.y + b.y) / 2);
+            zoomAt(distance / pinch, middle.x, middle.y);
+          }
+          pinch = distance;
+          return;
+        }
+        const before = toMap(last.x, last.y), now = toMap(event.clientX, event.clientY);
+        view.x -= now.x - before.x;
+        view.y -= now.y - before.y;
+        apply();
+      });
+      const release = event => { pointers.delete(event.pointerId); if (pointers.size < 2) pinch = 0; };
+      svg.addEventListener("pointerup", release);
+      svg.addEventListener("pointercancel", release);
+      viewers.push({toggle, unit});
+    }
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      for (const {toggle} of viewers) {
+        if (toggle.checked) { toggle.checked = false; toggle.dispatchEvent(new Event("change")); }
+      }
+    });
+    const units = () => viewers.forEach(viewer => viewer.unit());
+    window.addEventListener("resize", units);
+    for (const input of document.querySelectorAll(".pick")) input.addEventListener("change", () => requestAnimationFrame(units));
+    units();
+  })();
+  </script>
 </body>
 </html>

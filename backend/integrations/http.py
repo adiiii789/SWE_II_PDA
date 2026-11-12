@@ -32,6 +32,9 @@ class Http(Protocol):
     def post_json(self, url: str, body: Any, headers: Mapping[str, str] | None = None) -> Any:
         ...
 
+    def get_bytes(self, url: str, headers: Mapping[str, str] | None = None) -> bytes:
+        ...
+
 
 class JsonHttp:
     def __init__(self, timeout_s: float = config.HTTP_TIMEOUT_S):
@@ -53,11 +56,18 @@ class JsonHttp:
             headers={"Content-Type": "application/json", "Accept": "application/json", **(headers or {})})
         return _parse(self._send(request), url)
 
+    def get_bytes(self, url: str, headers: Mapping[str, str] | None = None) -> bytes:
+        """Binärdaten, z. B. Kartenkacheln (map_tiles.py)."""
+        return self._send_raw(urllib.request.Request(url, headers=dict(headers or {})))
+
     def _send(self, request: urllib.request.Request) -> str:
+        return self._send_raw(request).decode("utf-8")
+
+    def _send_raw(self, request: urllib.request.Request) -> bytes:
         host = urllib.parse.urlsplit(request.full_url).netloc
         try:
             with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
-                return response.read().decode("utf-8")
+                return response.read()
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", "replace")[:300]
             raise IntegrationError(f"{host} antwortet mit {error.code}: {detail}") from None

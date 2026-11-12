@@ -1,9 +1,11 @@
-"""TravelReminder: meldet sich von selbst im Chat, kurz bevor man zum nächsten Termin losmuss.
+"""TravelReminder: meldet sich von selbst, kurz bevor man zum nächsten Termin - oder nach dem
+letzten Termin des Tages nach Hause - losmuss.
 
 Läuft in einem Hintergrund-Thread und schaut alle config.TRAVEL_CHECK_INTERVAL_S in den
-Kalender. Den Plan rechnet TravelService nur neu, wenn sich der Termin ändert. Öffnet nie
-den Browser zur Anmeldung: Wer sich noch nicht beim Kalender angemeldet hat, bekommt
-keine Erinnerung, bis er "reise" einmal benutzt hat.
+Kalender. Den Plan rechnet TravelService nur neu, wenn sich der Termin ändert. Ob, wie früh
+und wie (Popup, Benachrichtigung, nur Chat, vorlesen) er sich meldet, steht in den
+Einstellungen (⚙ → Reise) und wird bei jeder Prüfung neu gelesen. Öffnet nie den Browser zur
+Anmeldung: Wer sich noch nicht beim Kalender angemeldet hat, bekommt keine Erinnerung.
 """
 from __future__ import annotations
 
@@ -13,24 +15,31 @@ import threading
 from collections.abc import Callable
 
 from backend.assistant.base import AssistantReply
+from backend.assistant.skills.travel.planner import TravelSettings
 from backend.assistant.skills.travel.service import TravelService, TravelSetupError
 from backend.assistant.skills.travel.view import summary, trip_view
 from backend.integrations.http import IntegrationError
 
 log = logging.getLogger(__name__)
 
+HOME_GRACE = datetime.timedelta(minutes=30)   # Heimweg: höchstens so lange nach Terminende erinnern
+
+# notify(reply, settings): Meldung zeigen - wie, steht in settings (reminder_display, reminder_speak)
+Notify = Callable[[AssistantReply, TravelSettings], None]
+
 
 class TravelReminder:
-    def __init__(self, service: TravelService, push: Callable[[AssistantReply], None],
-                 lead_minutes: int, interval_s: float):
+    def __init__(self, service: TravelService, notify: Notify, interval_s: float):
         self.service = service
-        self.push = push
-        self.lead = datetime.timedelta(minutes=lead_minutes)
+        self.notify = notify
         self.interval_s = interval_s
-        self._reminded: set[tuple[str, datetime.datetime]] = set()
+        self._reminded: set[tuple[str, str, datetime.datetime]] = set()
 
     def check(self) -> bool:
         """Einmal prüfen; True, wenn eine Erinnerung verschickt wurde."""
+        settings = self.service.settings()
+        if not settings.reminder:
+            return False
         try:
             trip = self.service.next_trip(interactive=False)
         except TravelSetupError as error:   # z. B. noch nicht beim Kalender angemeldet
@@ -42,15 +51,21 @@ class TravelReminder:
         best = trip.plan.recommended if trip else None
         if best is None or best.depart_at is None:
             return False
-        key = (trip.event.id, trip.event.start)
+        key = ("home" if trip.home else "to", trip.event.id, trip.event.start)
         now = self.service.clock()
-        if key in self._reminded or not best.depart_at - self.lead <= now < trip.event.start:
+        until = trip.event.end + HOME_GRACE if trip.home else trip.event.start
+        lead = datetime.timedelta(minutes=settings.reminder_minutes)
+        if key in self._reminded or not best.depart_at - lead <= now < until:
             return False
         self._reminded.add(key)
         minutes = max(0, round((best.depart_at - now).total_seconds() / 60))
-        lead = f"In {minutes} Minuten" if minutes else "Jetzt"
-        self.push(AssistantReply(f"{lead} solltest du los zu „{trip.event.title}“. " + summary(trip.plan),
-                                 trip_view(trip.plan, trip.event.title)))
+        when = f"In {minutes} Minuten" if minutes else "Jetzt"
+        if trip.home:
+            text = f"{when} geht es nach Hause (nach „{trip.event.title}“). "
+        else:
+            text = f"{when} solltest du los zu „{trip.event.title}“. "
+        self.notify(AssistantReply(text + summary(trip.plan, trip.event.title, trip.home),
+                                   trip_view(trip.plan, trip.event.title, trip.home, self.service.tiles)), settings)
         return True
 
     def start(self) -> Callable[[], None]:

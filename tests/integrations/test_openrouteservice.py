@@ -53,7 +53,8 @@ class OpenRouteServiceTest(unittest.TestCase):
         method, _, body, headers = http.calls[0]
         self.assertEqual(method, "POST")
         self.assertEqual(body["coordinates"], [[8.466, 49.4875], [8.6724, 49.3988]])   # [Länge, Breite]
-        self.assertEqual(headers, {"Authorization": "key"})
+        self.assertEqual(headers["Authorization"], "key")
+        self.assertIn("application/geo+json", headers["Accept"])   # sonst 406
 
     def test_route_to_same_point_has_no_summary(self):
         http = FakeHttp({"/directions/": {"features": [{"properties": {}, "geometry": {"coordinates": []}}]}})

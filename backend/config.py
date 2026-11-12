@@ -70,10 +70,17 @@ GOOGLE_DIR = Path(_ENV.get("PDA_GOOGLE_DIR") or APP_DATA_DIR / "google")
 ORS_KEY = _ENV.get("PDA_ORS_KEY", "")                      # openrouteservice: Adressen, Routen
 DB_CLIENT_ID = _ENV.get("PDA_DB_CLIENT_ID", "")            # DB API Marketplace (Timetables)
 DB_API_KEY = _ENV.get("PDA_DB_API_KEY", "")
+DB_STATIONS_FILE = APP_DATA_DIR / "db_stations.json"       # Bahnhofsliste aus StaDa (einmal pro Woche geladen)
+STATIONS_TIMEOUT_S = 90                                    # der Download ist ≈ 9 MB groß
+TILE_DIR = APP_DATA_DIR / "map_tiles"                      # OpenStreetMap-Kacheln für die Routenkarte
+TILE_TIMEOUT_S = 5                                         # lieber ohne Karte als lange warten
 TANKERKOENIG_KEY = _ENV.get("PDA_TANKERKOENIG_KEY", "")    # Spritpreise
+# Bahn/ÖPNV-Verbindungssuche (MOTIS), ohne Key; leer = aus (dann nur die DB-Tafeln)
+TRANSITOUS_URL = _ENV.get("PDA_TRANSITOUS_URL", "https://api.transitous.org")
+# VVS-Auskunft (EFA) für Wege im VVS-Gebiet, ohne Key; leer = aus (dann Transitous)
+VVS_URL = _ENV.get("PDA_VVS_URL", "https://www3.vvs.de/mngvvs")
 HTTP_TIMEOUT_S = 20
-TRAVEL_REMINDER_MINUTES = 15          # Erinnerung so lange vor der empfohlenen Abfahrt
-TRAVEL_CHECK_INTERVAL_S = 300         # so oft schaut die Erinnerung in den Kalender
+TRAVEL_CHECK_INTERVAL_S = 120         # so oft schaut die Reise-Erinnerung in den Kalender (wie früh: ⚙ → Reise)
 
 # Sprache (backend/speech.py) - alles lokal; Modelle werden beim ersten Gebrauch hierhin geladen
 SPEECH_DIR = APP_DATA_DIR / "speech"

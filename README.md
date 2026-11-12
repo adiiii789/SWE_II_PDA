@@ -141,33 +141,90 @@ Meldungen, Modell) lassen sich dort setzen.
 „Wie komme ich zum nächsten Termin?“ – oder der feste Befehl `reise`. Der Assistent nimmt den
 nächsten Termin mit Ort aus Google Calendar. Start ist der Ort des vorigen Termins, beim ersten
 Termin des Tages die Heimatadresse (fragt der Assistent beim ersten Mal ab). Verglichen werden
-Auto, Bahn, Taxi, Fahrrad und zu Fuß; empfohlen wird das Verkehrsmittel mit den
-geringsten **Kosten = Preis + Reisezeit × Zeitwert** (Standard 25 €/h) – Zeit zählt also mit.
-Die Ansicht zeigt Empfehlung, Alternativen, Wegbeschreibung und eine Skizze der Route. 15 Minuten vor der
-empfohlenen Abfahrt kommt eine Erinnerung in den Chat.
+Auto, Bahn/ÖPNV (mit Bus und Tram), Taxi, Fahrrad und zu Fuß; empfohlen wird das Verkehrsmittel mit den
+geringsten **Kosten = Preis + Reisezeit × Zeitwert × Wetterfaktor** (Standard 25 €/h) – Zeit zählt
+also mit. **Kostenlose Verkehrsmittel** (zu Fuß, Fahrrad, mit Deutschlandticket auch Bus und Bahn)
+stehen grundsätzlich vorn – außer Rad und zu Fuß bei schlechtem Wetter; wäre nach Kosten etwas anderes
+besser, sagt die Ansicht das dazu. Die Ansicht hat **je Verkehrsmittel einen Reiter** (zuerst ist die
+Empfehlung gewählt; auch ein Klick auf eine Zeile der Vergleichstabelle wählt) mit Zeiten, Preis,
+Wegbeschreibung und Karte. **Bus und Bahn** sehen aus wie in der DB- bzw. VVS-App: oben Abfahrt –
+Ankunft, Dauer, Umstiege und ein Balken aus den Etappen in Linienfarben, darunter die Zeitleiste mit
+Soll-Zeit und Prognose (grün pünktlich, rot verspätet), Gleis/Steig, Linie mit Richtung,
+aufklappbaren Zwischenhalten, Hinweisen, Fußwegen und Umstiegszeiten. Die Karte zeigt jede Fahrt in
+der Farbe ihrer Linie, Fußwege gepunktet, Umstiege gelb. Die OpenStreetMap-Kacheln holt das
+Backend und bettet sie ein, jede nur einmal für alle Karten – das iframe lädt selbst nichts aus dem
+Netz; gespeichert werden sie zwei Wochen in `map_tiles/` im App-Datenordner. Ohne Netz bleibt die
+Linie ohne Karte.
+
+- **Heimweg:** Steht heute kein Termin mit Ort mehr an, zeigt `reise` den Weg vom letzten Termin
+  nach Hause, mit Abfahrt zum Terminende – bis 3 Stunden danach, dann wieder den nächsten Termin.
+  Im Chat geht auch „Wie komme ich heim?“ (Werkzeug `plan_trip_home`).
+- **Erinnerung:** 15 Minuten vor der empfohlenen Abfahrt meldet sich EVE von selbst – wie die
+  proaktiven Meldungen als Popup, Systembenachrichtigung oder nur im Chat, auf Wunsch vorgelesen.
+  Das gilt auch für den Heimweg, also z. B. 15 Minuten vor Ende des letzten Termins.
+- **Wetter:** Bei Regen oder Schnee zählt die Zeit auf dem Rad und zu Fuß doppelt, bei Kälte und
+  (nur Rad) starkem Wind zusätzlich ×1,3. So gewinnt bei Regen eher Auto oder Bahn. Die Vorhersage
+  kommt von Open-Meteo, für den Startort zur Abfahrt.
+- **Bahn/ÖPNV:** Liegen Start und Ziel im **VVS-Gebiet** (Stuttgart und Umland), fragt der
+  Assistent die **VVS-Auskunft** – mit Echtzeit, Gleisen/Steigen und dem echten Preis
+  (EinzelTicket Erwachsene; mit Deutschlandticket 0 €). Sonst sucht er bei
+  **[Transitous](https://transitous.org)** – wie im DB Navigator von Tür zu Tür, mit Bus, Tram,
+  S-Bahn und Fernzügen, deutschlandweit. Beide ohne Key. Hat der VVS keine Verbindung oder ist nicht
+  erreichbar, kommt Transitous dran. Erlaubt sind **bis zu zwei Umstiege** (einstellbar: 0 bis 3, je mindestens 5 Minuten); ein
+  Umstieg zählt beim Vergleich wie 10 Minuten mehr Fahrzeit. Transitous ist ein ehrenamtliches
+  Projekt für nicht-kommerzielle Nutzung, ohne Garantie und mit Echtzeit nur, wo Verbünde sie
+  liefern. Fällt es aus oder findet nichts, sucht der Assistent wie früher über die DB-Tafeln (nur
+  Züge, siehe unten). Abschalten bzw. eigene MOTIS-Instanz: `PDA_TRANSITOUS_URL`, VVS abschalten:
+  `PDA_VVS_URL=` in der `.env`. Die VVS-Auskunft ist die Schnittstelle der VVS-Website (EFA) ohne
+  dokumentierte Nutzungsbedingungen; die offizielle für Baden-Württemberg wäre TRIAS über
+  [MobiData BW](https://mobidata-bw.de/dataset/trias) (Zugang auf Antrag).
+
+**Einstellungen:** alles unter ⚙ Einstellungen → **Reise**:
+- **Allgemein:** Heimatadresse, welche Verkehrsmittel verglichen werden (z. B. ohne Auto),
+  „Kostenlose Verkehrsmittel zuerst“ (Standard an, optional nur bis zu einer Mehrdauer in Minuten),
+  Zeitwert, Puffer vor dem Termin
+- **Bus und Bahn:** Deutschlandticket, Umstiege (0–3), Umsteigezeit, längster Fußweg zur Haltestelle
+- **Auto und Taxi**, **Fahrrad und zu Fuß**, **Wetter**, **Erinnerung und Heimweg**
+- **Preise schätzen:** nur wo die Auskunft keinen Preis kennt (außerhalb des VVS)
+
+Gruppen, deren Dienst keinen Key hat, sind als „gerade nicht verfügbar“ markiert.
 
 Einrichtung – ohne Key fällt nur der betroffene Teil weg:
 
 | Was | Wofür | Einrichtung |
 |---|---|---|
 | openrouteservice (Pflicht) | Adressen, Routen und Fahrzeiten für Auto, Taxi, Fahrrad, zu Fuß | kostenloser Key: [openrouteservice.org](https://openrouteservice.org/dev/#/signup) → `PDA_ORS_KEY` in der `.env` |
-| DB API Marketplace | Bahn (Fahrplan) | kostenlos: [developers.deutschebahn.com](https://developers.deutschebahn.com) → Anwendung anlegen, API „Timetables“ abonnieren → `PDA_DB_CLIENT_ID` und `PDA_DB_API_KEY` in der `.env` |
+| VVS-Auskunft | ÖPNV im VVS-Gebiet mit Echtzeit und Preis | nichts – ohne Key |
+| Transitous | Bahn/ÖPNV-Verbindungen mit Bus und Tram | nichts – kostenlos und ohne Key ([Nutzungsregeln](https://transitous.org/api/): nicht-kommerziell) |
+| DB API Marketplace | Bahn-Ersatz, wenn Transitous ausfällt (Fahrplan mit Echtzeit); Bahnhöfe | kostenlos: [developers.deutschebahn.com](https://developers.deutschebahn.com) → Anwendung anlegen, die APIs „OpenBoards“ (Tafeln mit Verspätungen und Störungen), „StaDa - Station Data“ (Bahnhöfe mit Koordinaten) und „Timetables“ (Ersatz) abonnieren → `PDA_DB_CLIENT_ID` und `PDA_DB_API_KEY` in der `.env` |
 | Google Calendar | Termine | dieselbe Anmeldung wie die Kalender-Werkzeuge, Einrichtung unter [Google Kalender](#google-kalender) |
 | Tankerkönig | aktuelle Spritpreise (sonst 1,80 €/l) | kostenloser Key: [creativecommons.tankerkoenig.de](https://creativecommons.tankerkoenig.de) → `PDA_TANKERKOENIG_KEY` in der `.env` |
+| Open-Meteo | Wetter | nichts – kostenlos und ohne Key |
 
 Alle Dienste sind kostenlos. **Grenzen:** openrouteservice kennt keinen Echtzeit-Verkehr; die
-Autofahrzeit wird deshalb mit `travel_car_time_factor` (Standard 1,15) aufgeschlagen. Die
-DB-Timetables-API liefert nur Abfahrtstafeln, keine Verbindungssuche. Der Assistent findet daraus
-**nur Direktverbindungen** zwischen den Bahnhöfen der beiden Orte (Hauptbahnhof bevorzugt), und
-das nur für die nächsten Stunden. Busse und Straßenbahnen kennt er nicht: Ist der Bahnhof mehr
+Autofahrzeit wird deshalb mit einem Stau-Aufschlag (Standard 1,15) verlängert. Die
+DB-APIs (Ersatz für Transitous) liefern nur Abfahrts- und Ankunftstafeln, keine Verbindungssuche: Der Assistent setzt
+Verbindungen aus den Laufwegen der Züge selbst zusammen, mit **höchstens drei Umstiegen**, zwischen
+den Bahnhöfen der beiden Orte (Hauptbahnhof bevorzugt) und nur für die nächsten Stunden. Als
+Umstiegsbahnhöfe prüft er je Umstieg zwei bis drei: zuerst die, an denen sich Züge ab dem Start und
+Züge zum Ziel kreuzen (meist die großen Knoten), sonst die größten Bahnhöfe ungefähr auf dem Weg
+(Kategorie und Lage aus StaDa) – deren Tafeln verbinden dann beim nächsten Umstieg. Mit **OpenBoards** rechnet er mit den Prognosezeiten: Verspätete Züge, die zu spät
+ankommen, und geplatzte Anschlüsse fallen weg, ausgefallene Halte ebenso; Verspätungen („09:37 (+5)“)
+und Störungstexte stehen in der Wegbeschreibung. Ist OpenBoards nicht abonniert oder gestört, sucht
+er im Soll-Fahrplan von Timetables und sagt das in den Hinweisen. **Bahnhof zur Adresse:** aus der
+StaDa-Liste aller Bahnhöfe (einmal pro Woche geladen, gespeichert in `db_stations.json` im
+App-Datenordner) der nächste – ein großer Bahnhof darf etwas weiter weg sein als ein kleiner Halt.
+Findet die Suche ab dort nichts, versucht sie es ab den nächsten großen Bahnhöfen (z. B. Heidelberg Hbf
+statt Schwetzingen). Ohne StaDa sucht sie den Bahnhof über den Ortsnamen (Timetables), was bei Namen
+wie „Freiburg(Breisgau) Hbf“ oft danebengeht. Busse und Straßenbahnen kennt er nicht: Ist der Bahnhof mehr
 als 20 Minuten Fußweg entfernt, schätzt er die Zeit für Bus/Tram. **Bahnpreise** gibt die DB nicht
-heraus, sie sind eine Tarif-Schätzung (mit ≈ markiert). Mit `travel_deutschlandticket` kostet
-der Nahverkehr nichts.
+heraus, sie sind eine Tarif-Schätzung (mit ≈ markiert). Mit Deutschlandticket kostet der
+Nahverkehr nichts. Das Wetter zählt nur für Fahrrad und zu Fuß, nicht für die Fußwege zum Bahnhof.
 
-Persönliche Werte stehen in `%APPDATA%\PersonalDigitalAgent\preferences.json`, z. B.
-`"travel_value_of_time": 40`, `"travel_deutschlandticket": true`, `"travel_fuel": "diesel"`,
-`"travel_consumption": 6.5`, `"travel_home_address": "…"` – alle Schlüssel in `TravelSettings`
-([planner.py](backend/assistant/skills/travel/planner.py)).
+Gespeichert wird in `preferences.json` im App-Datenordner (unter `travel_settings`, die
+Heimatadresse unter `travel_home_address`). Ältere, von Hand eingetragene Werte wie
+`"travel_value_of_time": 40` gelten weiter, die Werte aus den Einstellungen haben Vorrang.
+„Standard wiederherstellen“ setzt alles zurück außer der Heimatadresse.
 
 ### MCP-Server einbinden
 

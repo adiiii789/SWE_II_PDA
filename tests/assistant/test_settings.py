@@ -52,7 +52,16 @@ class SettingTest(unittest.TestCase):
     def test_schema_for_frontend(self):
         data = Setting("n", "Anzahl", "number", 3, minimum=1, maximum=9, help="Hilfe").to_dict()
         self.assertEqual(data, {"key": "n", "label": "Anzahl", "kind": "number", "default": 3, "help": "Hilfe",
-                                "minimum": 1, "maximum": 9})
+                                "minimum": 1, "maximum": 9, "step": 1})
+
+    def test_decimal_numbers_with_small_step(self):
+        setting = Setting("f", "Faktor", "number", 1.5, minimum=1, maximum=5, step=0.1)
+        self.assertEqual(setting.clean(2.345), 2.35)
+        self.assertEqual(setting.clean(2), 2.0)
+        self.assertEqual(setting.to_dict()["step"], 0.1)
+        for value in (0.5, True, "2"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                setting.clean(value)
 
     def test_defaults_are_valid(self):
         for setting in (*ANSWER_SETTINGS, *(s for group in TOOL_GROUPS for s in group.settings)):

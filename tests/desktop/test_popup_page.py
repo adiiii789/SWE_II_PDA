@@ -13,6 +13,8 @@ from backend.assistant.tools import Attachment
 from backend.attachments import AttachmentStore
 from backend.assistant.settings import AssistantSettings
 from backend.desktop.application import create_popup
+from backend.assistant.skills.travel.planner import TravelSettings
+from backend.assistant.skills.travel.settings import TravelSettingsForm
 from backend.proactive_settings import ProactiveSettings
 from backend.views import TemplateView
 
@@ -268,7 +270,8 @@ class SettingsPanelTest(unittest.TestCase):
     def setUp(self):
         self.store = MemoryStore()
         for name, settings in (("_settings", AssistantSettings(self.store)),
-                               ("_proactive_settings", ProactiveSettings(self.store))):
+                               ("_proactive_settings", ProactiveSettings(self.store)),
+                               ("_travel_settings", TravelSettingsForm(self.store))):
             patcher = mock.patch.object(api, name, return_value=settings)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -308,6 +311,24 @@ class SettingsPanelTest(unittest.TestCase):
         settings = ProactiveSettings(self.store)
         self.assertEqual(settings.values("general")["quiet_from"], "21:30")
         self.assertEqual(settings.values("mail")["criteria"], "Uni")
+
+    def test_travel_tab_saves_decimal_values(self):
+        self.open()
+        self.js("document.querySelector('#settings-tabs [data-tab=travel]').click()")
+        self.assertEqual(self.js("Array.from(document.querySelectorAll('[data-tab=travel] .settings-group'))"
+                                 ".map(g => g.dataset.group)"),
+                         ["general", "transit", "car", "bike_walk", "weather", "reminder", "fares"])
+        self.js("""
+          document.querySelector('[data-tab=travel] [data-key=home_address] textarea').value = 'Hauptstraße 1, Mannheim';
+          document.querySelector('[data-tab=travel] [data-key=consumption] input').value = '6.5';
+          document.querySelector('[data-tab=travel] [data-key=train_transfers] select').value = '0';
+          document.querySelector('[data-tab=travel] [data-key=modes] input[value=taxi]').checked = false;
+          document.getElementById('settings-save').click();""")
+        self.assertTrue(wait_until(lambda: self.js("document.getElementById('settings-panel').hidden")))
+        settings = TravelSettings.from_preferences(self.store)
+        self.assertEqual((settings.consumption, settings.train_transfers), (6.5, 0))
+        self.assertEqual(settings.modes, ("train", "bike", "foot", "car"))   # Taxi abgewählt
+        self.assertEqual(self.store.get("travel_home_address"), "Hauptstraße 1, Mannheim")
 
     def test_save_changes_and_confirm_in_chat(self):
         self.open()

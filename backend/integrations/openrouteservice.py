@@ -62,7 +62,8 @@ class OpenRouteService:
         data = self.http.post_json(
             f"{BASE_URL}/v2/directions/{profile}/geojson",
             {"coordinates": [[start.lon, start.lat], [end.lon, end.lat]], "language": "de", "instructions": True},
-            {"Authorization": self.api_key})
+            # Ohne geo+json im Accept antwortet ORS mit 406 ("This response format is not supported")
+            {"Authorization": self.api_key, "Accept": "application/geo+json, application/json"})
         features = data.get("features") or []
         if not features:
             raise IntegrationError(f"Keine Route ({profile}) von {start.label!r} nach {end.label!r}")

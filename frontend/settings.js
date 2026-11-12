@@ -12,7 +12,7 @@ const settingsResetButton = document.getElementById("settings-reset");
 const settingsTabs = Array.from(document.querySelectorAll("#settings-tabs button"));
 
 let settingsForm = null;       // letzte Antwort von get_settings()
-let settingsTab = "answer";    // "answer" | "tools" | "proactive"
+let settingsTab = "answer";    // "answer" | "tools" | "proactive" | "travel"
 let resetArmed = false;        // Zurücksetzen braucht einen zweiten Klick
 
 function element(tag, className, text) {
@@ -70,7 +70,7 @@ function buildField(field, value, idPrefix) {
     input.id = id;
     input.min = field.minimum;
     input.max = field.maximum;
-    input.step = 1;
+    input.step = field.step || 1;   // kleiner als 1: Kommazahlen
     input.value = value;
     row.append(label, input);
     read = () => Number(input.value);
@@ -112,7 +112,7 @@ function renderSettings() {
   while (settingsBody.firstChild) settingsBody.removeChild(settingsBody.firstChild);
   resetArmed = false;
   updateResetButton();
-  const {answer, tools, proactive} = settingsForm;
+  const {answer, tools, proactive, travel} = settingsForm;
 
   const answerSection = element("section", "settings-section");
   answerSection.dataset.tab = "answer";
@@ -133,9 +133,16 @@ function renderSettings() {
     "Wann sich der PDA von selbst meldet. Gilt ab der nächsten Prüfung."));
   const proactiveReaders = buildGroups(proactiveSection, proactive, "proactive");
 
-  settingsBody.append(answerSection, toolSection, proactiveSection);
+  const travelSection = element("section", "settings-section");
+  travelSection.dataset.tab = "travel";
+  travelSection.appendChild(element("p", "settings-intro",
+    "Reise-Assistent: wie er Verkehrsmittel abwägt, an die Abfahrt erinnert und den Heimweg zeigt. Gilt ab dem nächsten Plan."));
+  const travelReaders = buildGroups(travelSection, travel || [], "travel");
+
+  settingsBody.append(answerSection, toolSection, proactiveSection, travelSection);
   const readAll = readers => Object.fromEntries(Object.entries(readers).map(([id, read]) => [id, read()]));
-  readSettings = () => ({answer: readAnswer(), tools: readAll(toolReaders), proactive: readAll(proactiveReaders)});
+  readSettings = () => ({answer: readAnswer(), tools: readAll(toolReaders), proactive: readAll(proactiveReaders),
+                         travel: readAll(travelReaders)});
   showSettingsTab(settingsTab);
 }
 

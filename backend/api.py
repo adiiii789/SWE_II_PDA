@@ -17,7 +17,9 @@ from typing import Any
 
 from backend import config, proactive
 from backend.assistant import Assistant, ConsultingAssistant, ModelSelection, create_assistant
+from backend.assistant.base import AssistantReply
 from backend.assistant.settings import AssistantSettings, is_internal_tool
+from backend.assistant.skills.travel.settings import TravelSettingsForm
 from backend.assistant.tools import ToolResult
 from backend.preferences import JsonPreferenceStore, default_store
 from backend.events import POPUP_ENLARGED, events
@@ -163,12 +165,28 @@ def _deliver_proactive(occasion: proactive.Occasion, formulate: bool = True, spe
     with _assistant_lock:
         reply = proactive.compose(_assistant() if formulate else None, occasion)
     message = proactive.announce(present(reply), occasion, events, display)
-    if speak and (speech_output := _speech_output()) is not None:
+    if speak:
+        _speak(reply.text)
+    return message
+
+
+def _announce_reply(reply: AssistantReply, title: str, trigger: str, display: str | None = None,
+                    speak: bool = False) -> dict[str, Any]:
+    """Fertige Antwort (mit eigener Ansicht) als proaktive Meldung zeigen, z. B. die Reise-Erinnerung.
+    display wie bei proactive.announce. Aus jedem Thread aufrufbar."""
+    occasion = proactive.Occasion(title, "", reply.text, trigger)
+    message = proactive.announce(present(reply), occasion, events, display)
+    if speak:
+        _speak(reply.text)
+    return message
+
+
+def _speak(text: str) -> None:
+    if (speech_output := _speech_output()) is not None:
         try:
-            speech_output.speak(reply.text)
+            speech_output.speak(text)
         except Exception:  # noqa: BLE001  # Meldung ist schon da - Vorlesen ist Zugabe
             log.exception("Proaktive Meldung konnte nicht vorgelesen werden")
-    return message
 
 
 def _watch_tool(name: str, arguments: dict[str, Any]) -> ToolResult:
@@ -203,6 +221,13 @@ def _proactive_watcher() -> ProactiveWatcher:
 
 
 @cache
+def _travel_settings() -> TravelSettingsForm:
+    """Reise-Einstellungen (⚙ → Reise) auf demselben Store wie der Reise-Assistent."""
+    return TravelSettingsForm(default_store(), lambda: {
+        "ors": bool(config.ORS_KEY), "rail": bool(config.DB_CLIENT_ID and config.DB_API_KEY)})
+
+
+@cache
 def _settings() -> AssistantSettings:
     """Einstellungen auf demselben Store wie der Assistent (preferences.default_store)."""
     return AssistantSettings(default_store())
@@ -225,27 +250,32 @@ def get_settings() -> dict[str, Any]:
     """Formular der Einstellungen (⚙ im Popup), siehe backend/assistant/settings.py:
     {"answer": {"fields": [...], "values": {...}},
      "tools": [{"id", "title", "description", "tools", "available", "fields", "values"}, ...],
-     "proactive": [gleicher Aufbau wie "tools", siehe backend/proactive_settings.py]}
+     "proactive": [gleicher Aufbau wie "tools", siehe backend/proactive_settings.py],
+     "travel": [gleicher Aufbau, siehe backend/assistant/skills/travel/settings.py]}
     fields: [{"key", "label", "kind": "choice"|"multi"|"bool"|"number"|"text"|"time", "default", "help",
               "choices"?: [{"value", "label"}], "minimum"?, "maximum"?}]"""
-    return {**_settings().form(_available_tools()), "proactive": _proactive_settings().form()}
+    return {**_settings().form(_available_tools()), "proactive": _proactive_settings().form(),
+            "travel": _travel_settings().form()}
 
 
 def save_settings(changes: dict[str, Any]) -> dict[str, Any]:
     """Einstellungen speichern: {"answer": {key: value}, "tools": {group_id: {key: value}},
-    "proactive": {bereich: {key: value}}} - alles optional, nur geänderte Werte nötig. Ungültige
+    "proactive": {bereich: {key: value}}, "travel": {gruppe: {key: value}}} - alles optional, nur geänderte Werte nötig. Ungültige
     Werte: ValueError, dann wird nichts gespeichert. Gilt ab der nächsten Nachricht bzw. Prüfung.
     Gibt das aktualisierte Formular zurück."""
     proactive_values = _proactive_settings().validated(changes.get("proactive"))
+    travel_values = _travel_settings().validated(changes.get("travel"))
     _settings().save(changes.get("answer"), changes.get("tools"))
     _proactive_settings().store_validated(proactive_values)
+    _travel_settings().store_validated(travel_values)
     return get_settings()
 
 
 def reset_settings() -> dict[str, Any]:
-    """Alle Einstellungen auf die Standardwerte. Gibt das Formular zurück."""
+    """Alle Einstellungen auf die Standardwerte (die Heimatadresse bleibt). Gibt das Formular zurück."""
     _settings().reset()
     _proactive_settings().reset()
+    _travel_settings().reset()
     return get_settings()
 
 

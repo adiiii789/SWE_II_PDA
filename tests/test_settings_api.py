@@ -4,6 +4,7 @@ from unittest import mock
 
 from backend import api
 from backend.assistant.settings import ANSWER_KEY, AssistantSettings
+from backend.assistant.skills.travel.settings import TravelSettingsForm
 from backend.proactive_settings import ProactiveSettings
 from tests.assistant.test_settings import MemoryStore
 
@@ -12,10 +13,34 @@ class SettingsApiTest(unittest.TestCase):
     def setUp(self):
         self.store = MemoryStore()
         for name, settings in (("_settings", AssistantSettings(self.store)),
-                               ("_proactive_settings", ProactiveSettings(self.store))):
+                               ("_proactive_settings", ProactiveSettings(self.store)),
+                               ("_travel_settings", TravelSettingsForm(self.store))):
             patcher = mock.patch.object(api, name, return_value=settings)
             patcher.start()
             self.addCleanup(patcher.stop)
+        self.stop_patches = mock.patch.stopall
+
+    def test_travel_settings_are_saved_and_reset(self):
+        form = api.save_settings({"travel": {"reminder": {"reminder_minutes": 20}, "general": {"home_address": "Daheim"}}})
+        reminder = next(group for group in form["travel"] if group["id"] == "reminder")
+        self.assertEqual(reminder["values"]["reminder_minutes"], 20)
+        reset = next(group for group in api.reset_settings()["travel"] if group["id"] == "reminder")
+        self.assertEqual(reset["values"]["reminder_minutes"], 15)
+        self.assertEqual(self.store.get("travel_home_address"), "Daheim")
+
+    def test_invalid_travel_value_saves_nothing(self):
+        with self.assertRaises(ValueError):
+            api.save_settings({"proactive": {"mail": {"criteria": "Uni"}}, "travel": {"car": {"fuel": "kerosin"}}})
+        self.assertEqual(self.store.values, {})
+
+    def test_travel_form_knows_missing_keys(self):
+        self.stop_patches()
+        with mock.patch.object(api, "default_store", return_value=self.store):
+            form = api._travel_settings.__wrapped__().form()   # ungecacht, mit dem Speicher des Tests
+        general = next(group for group in form if group["id"] == "general")
+        weather = next(group for group in form if group["id"] == "weather")
+        self.assertEqual(general["available"], bool(api.config.ORS_KEY))   # Adressen brauchen openrouteservice
+        self.assertTrue(weather["available"])                               # braucht keinen Key
 
     def test_proactive_settings_are_saved_and_reset(self):
         form = api.save_settings({"proactive": {"mail": {"criteria": "Uni"}}})
