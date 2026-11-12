@@ -17,6 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from backend.assistant.skills.travel import planner
+from backend.assistant.settings import TRAVEL_KEY
 from backend.assistant.skills.travel.planner import HOME_ADDRESS, Option, TravelSettings, TripPlan
 from backend.integrations import openrouteservice as ors
 from backend.integrations.db_stations import DbStations
@@ -48,6 +49,15 @@ class TravelSetupError(IntegrationError):
     """Etwas muss erst eingerichtet werden (Key, Heimatadresse, Kalender)."""
 
 
+class PlaceNotFound(IntegrationError):
+    """Ein Ort (oft eine Raumangabe aus dem Kalender) lässt sich keiner Adresse zuordnen."""
+
+    def __init__(self, place: str):
+        super().__init__(f"Ort nicht gefunden: {place!r} - eine Adresse dafür lässt sich als Ortskürzel "
+                         "speichern (⚙ Einstellungen → Reise → Allgemein)")
+        self.place = place
+
+
 class HomeAddressMissing(TravelSetupError):
     def __init__(self):
         super().__init__("Ich kenne deine Heimatadresse noch nicht.")
@@ -60,6 +70,7 @@ class Trip:
     origin_source: str          # "home" oder Titel des vorigen Termins
     plan: TripPlan
     home: bool = False          # Heimweg
+    planned_at: datetime.datetime | None = None   # wann der Plan gerechnet wurde (Erinnerung: aktuell genug?)
 
     @property
     def title(self) -> str:
@@ -90,11 +101,12 @@ class TravelService:
         return TravelSettings.from_preferences(self.preferences)
 
     # --- Kalender ------------------------------------------------------------------------
-    def next_trip(self, interactive: bool = True) -> Trip | None:
+    def next_trip(self, interactive: bool = True, fresh_after: datetime.timedelta | None = None) -> Trip | None:
         """Weg zum nächsten Termin mit Ort. Start: Ort des vorigen Termins am selben Tag, sonst daheim.
         Steht heute kein Termin mit Ort mehr an, aber einer hat schon begonnen: der Heimweg von dort
         (bis home_trip_hours nach dessen Ende). Der Plan wird je Termin, Startort und Bearbeitungs-
-        stand nur einmal berechnet (die Erinnerung fragt alle paar Minuten)."""
+        stand nur einmal berechnet (die Erinnerung fragt alle paar Minuten) - mit fresh_after neu, wenn
+        der Plan älter ist (die Erinnerung kurz vor der Abfahrt: aktuelle Verspätungen)."""
         self._ors()   # ohne Routen erst gar nicht den Kalender (und dessen Anmeldung) bemühen
         now = self.clock()
         settings = self.settings()
@@ -104,7 +116,7 @@ class TravelService:
             started = [event for event in events if event.start <= now and event.start.date() == now.date()]
             last = max(started, key=lambda event: event.end, default=None)
             if last is not None and now < last.end + datetime.timedelta(hours=settings.home_trip_hours):
-                return self._home_trip(last, now)
+                return self._home_trip(last, now, fresh_after)
         if target is None:
             return None
         previous = [event for event in events if event.end <= target.start
@@ -114,18 +126,25 @@ class TravelService:
         else:
             origin, source = self.home_address(), "home"
         key = (target.id, target.updated, target.start, target.location, origin)
-        if key not in self._trips:
-            self._trips = {key: Trip(target, source, self.plan(origin, target.location, target.start))}
+        if self._stale(key, now, fresh_after):
+            self._trips = {key: Trip(target, source, self.plan(origin, target.location, target.start), planned_at=now)}
         return self._trips[key]
 
-    def _home_trip(self, last: CalendarEvent, now: datetime.datetime) -> Trip | None:
+    def _stale(self, key: tuple, now: datetime.datetime, fresh_after: datetime.timedelta | None) -> bool:
+        """Neu rechnen: noch nicht gerechnet - oder (fresh_after) älter als das."""
+        trip = self._trips.get(key)
+        return trip is None or (fresh_after is not None and (trip.planned_at is None or now - trip.planned_at > fresh_after))
+
+    def _home_trip(self, last: CalendarEvent, now: datetime.datetime,
+                   fresh_after: datetime.timedelta | None = None) -> Trip | None:
         home = self.home_address()
         if last.location.strip().casefold() == home.strip().casefold():
             return None   # der letzte Termin ist zu Hause
         depart = last.end if now <= last.end else _rounded(now)
         key = ("home", last.id, last.updated, depart, last.location, home)
-        if key not in self._trips:
-            self._trips = {key: Trip(last, last.title, self.plan(last.location, home, depart_after=depart), home=True)}
+        if self._stale(key, now, fresh_after):
+            self._trips = {key: Trip(last, last.title, self.plan(last.location, home, depart_after=depart), home=True,
+                                     planned_at=now)}
         return self._trips[key]
 
     def _events(self, now: datetime.datetime, interactive: bool = True) -> list[CalendarEvent]:
@@ -154,7 +173,7 @@ class TravelService:
             raise ValueError("Entweder Ankunfts- oder Abfahrtszeit angeben")
         client = self._ors()
         settings = self.settings()
-        start, end = client.geocode(origin), client.geocode(destination)
+        start, end = self._place(client, origin, settings), self._place(client, destination, settings)
         options: list[Option] = []
         notes: list[str] = []
         air_km = distance_km(start, end)
@@ -337,6 +356,25 @@ class TravelService:
             if price is not None:
                 return price, False
         return settings.fuel_price, True
+
+    def _place(self, client: OpenRouteService, text: str, settings: TravelSettings) -> Place:
+        """Adresse (oder Ort aus dem Kalender mit Ortskürzel) → Koordinaten."""
+        address = planner.resolve_place(text, settings)
+        try:
+            return client.geocode(address)
+        except IntegrationError as error:
+            if "nicht gefunden" not in str(error):
+                raise
+            raise PlaceNotFound(text) from None
+
+    def set_place_alias(self, key: str, address: str) -> Place:
+        """Ortskürzel speichern (Adresse muss sich finden lassen), z. B. "LE1" → "Lerchenstraße 1, Stuttgart"."""
+        place = self._ors().geocode(address)
+        stored = self.preferences.get(TRAVEL_KEY)
+        stored = dict(stored) if isinstance(stored, dict) else {}
+        stored["places"] = planner.with_place_alias(self.settings().places, key.strip(), address.strip())
+        self.preferences.set(TRAVEL_KEY, stored)
+        return place
 
     def _ors(self) -> OpenRouteService:
         if self.ors is None:

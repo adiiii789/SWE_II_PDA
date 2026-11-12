@@ -30,7 +30,9 @@ INSTRUCTIONS = (
     "plan_trip_to_next_appointment; für andere Ziele plan_trip, für den Weg nach Hause plan_trip_home. "
     "Nenne die Empfehlung mit Abfahrtszeit (bei Bahn/ÖPNV auch Linie und Umstiege) und kurz die beste "
     "Alternative - die Details zeigt die Ansicht. Hat das Wetter die Wahl beeinflusst, sag das kurz. "
-    "Fehlt die Heimatadresse, frag danach und speichere sie mit set_home_address. Bahnpreise sind Schätzungen."
+    "Fehlt die Heimatadresse, frag danach und speichere sie mit set_home_address. Steht im Kalender nur ein "
+    "Raum (z. B. \"LE1-C3.05\"), frag nach der Adresse des Gebäudes und speichere das Kürzel mit "
+    "set_place_address. Bahnpreise sind Schätzungen, im VVS echte Preise."
 )
 
 

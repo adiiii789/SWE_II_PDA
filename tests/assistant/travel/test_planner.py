@@ -233,6 +233,33 @@ class TransitTest(unittest.TestCase):
         self.assertTrue(option.steps[-1].startswith("4 Min. zu Fuß zum Ziel"))
 
 
+class PlaceAliasTest(unittest.TestCase):
+    def test_room_in_the_calendar_becomes_the_building(self):
+        settings = TravelSettings(places="LE1 = Lerchenstraße 1, 70174 Stuttgart\nJ: Jägerstraße 56\nkaputt\n"
+                                         "LE1-C3 → Raum mit eigener Adresse")
+        self.assertEqual(planner.resolve_place("LE1-C3.05 Vorlesung", settings), "Raum mit eigener Adresse")
+        self.assertEqual(planner.resolve_place("le1-C2.01", settings), "Lerchenstraße 1, 70174 Stuttgart")
+        self.assertEqual(planner.resolve_place("J 2.13", settings), "Jägerstraße 56")
+        self.assertEqual(planner.resolve_place("JLE1 Seminar", settings), "JLE1 Seminar")   # nur ganze Wörter
+        self.assertEqual(planner.resolve_place("Königstraße 1", settings), "Königstraße 1")
+
+    def test_regular_expression_for_the_whole_place(self):
+        settings = TravelSettings(places="LE.* = Lerchenstraße 1\n.*Hörsaal \\d+ = Audimax\n"
+                                         "LE2 = Lerchenstraße 2\n(kaputt = bleibt Text")
+        self.assertEqual(planner.resolve_place("LE1-C3.05 Vorlesung", settings), "Lerchenstraße 1")
+        self.assertEqual(planner.resolve_place("le2-B1", settings), "Lerchenstraße 2")       # einfaches Kürzel vor
+        self.assertEqual(planner.resolve_place("Leonberg Bahnhof", settings), "Leonberg Bahnhof")   # groß/klein zählt
+        self.assertEqual(planner.resolve_place("Raum LE1", settings), "Raum LE1")           # ganzer Ort: beginnt mit
+        self.assertEqual(planner.resolve_place("Altbau Hörsaal 12", settings), "Audimax")
+        self.assertEqual(planner.resolve_place("(kaputt) Raum", settings), "bleibt Text")   # ungültig: als Text
+        self.assertEqual([key for key, _ in planner.place_aliases(settings.places)],
+                         ["(kaputt", "LE2", "LE.*", ".*Hörsaal \\d+"])
+
+    def test_add_or_replace_alias(self):
+        text = planner.with_place_alias("LE1 = alt\nJ = Jägerstraße", "le1", "Lerchenstraße 1")
+        self.assertEqual(planner.place_aliases(text), [("le1", "Lerchenstraße 1"), ("J", "Jägerstraße")])
+
+
 class WeatherTest(unittest.TestCase):
     options = [planner.Option(planner.BIKE, 3600, 0.0), planner.Option(planner.FOOT, 3600, 0.0),
                planner.Option(planner.CAR, 1800, 4.0)]

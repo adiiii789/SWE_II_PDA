@@ -11,5 +11,16 @@
       </option>
       <option name="myCustomValuesEnabled" value="true" />
     </inspection_tool>
+    <!-- Nur für macOS (in requirements.txt mit sys_platform == "darwin"); PyCharm wertet die Marker nicht aus -->
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <value>
+          <list size="2">
+            <item index="0" class="java.lang.String" itemvalue="pyobjc-framework-Cocoa" />
+            <item index="1" class="java.lang.String" itemvalue="pyobjc-framework-AVFoundation" />
+          </list>
+        </value>
+      </option>
+    </inspection_tool>
   </profile>
 </component>

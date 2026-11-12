@@ -16,8 +16,8 @@ from backend.integrations import transit
 from backend.integrations.http import IntegrationError
 from backend.rendering import ViewRenderer
 from backend.assistant.skills.travel import planner
-from tests.assistant.travel.fakes import (HOME, NOW, RAIN, UNI, FakeCalendar, FakeRail, event, make_service,
-                                          transit_journey)
+from tests.assistant.travel.fakes import (HOME, NOW, RAIN, UNI, FakeCalendar, FakeRail, FakeTransit, event,
+                                          make_service, transit_journey)
 
 
 def render(template_view):
@@ -32,7 +32,8 @@ class TravelToolsTest(unittest.TestCase):
     def test_is_tool_provider(self):
         self.assertIsInstance(self.tools, ToolProvider)
         self.assertEqual([s.name for s in self.tools.list_tools()],
-                         ["plan_trip_to_next_appointment", "plan_trip", "plan_trip_home", "set_home_address"])
+                         ["plan_trip_to_next_appointment", "plan_trip", "plan_trip_home", "set_place_address",
+                          "set_home_address"])
 
     def test_next_appointment(self):
         result = self.tools.call_tool("plan_trip_to_next_appointment", {})
@@ -101,6 +102,19 @@ class TravelToolsTest(unittest.TestCase):
         result = self.tools.call_tool("plan_trip", {"destination": "Universität"})
         self.assertTrue(result.is_error)
         self.assertIn("set_home_address", result.content)
+
+    def test_room_in_the_calendar_asks_for_the_building(self):
+        self.service.calendar = FakeCalendar(event(location="LE1-C3.05 Vorlesung"))
+        result = self.tools.call_tool("plan_trip_to_next_appointment", {})
+        self.assertTrue(result.is_error)
+        self.assertIn("'LE1-C3.05 Vorlesung'", result.content)
+        self.assertIn("set_place_address", result.content)
+        saved = self.tools.call_tool("set_place_address", {"key": "LE1", "address": "Universität"})
+        self.assertEqual(saved.content, "Ortskürzel gespeichert: LE1 = Universität, Heidelberg")
+        self.service._trips.clear()
+        result = self.tools.call_tool("plan_trip_to_next_appointment", {})
+        self.assertFalse(result.is_error, result.content)
+        self.assertEqual(result.view.data["route"], "Zuhause, Mannheim → Universität, Heidelberg")
 
     def test_set_home_address(self):
         result = self.tools.call_tool("set_home_address", {"address": "Universität"})
@@ -437,6 +451,31 @@ class ReminderTest(unittest.TestCase):
         self.assertEqual(self.service.calendar.calls[-1], False)   # nie interaktiv anmelden
         self.assertEqual(self.settings[0].reminder_display, "popup")
 
+    def test_fresh_plan_right_before_reminding(self):
+        transit = FakeTransit()
+        service = make_service(calendar=FakeCalendar(event(start=NOW + datetime.timedelta(hours=2))),
+                               transit=transit, modes=["train"])
+        reminder = TravelReminder(service, self.notify, interval_s=60)
+        depart = service.next_trip().plan.recommended.depart_at              # Plan von 08:00
+        planned = len(transit.calls)
+        # Verspätung: kurz vor der Abfahrt fährt die Verbindung 20 Min. später
+        transit.journey = lambda departure: transit_journey(departure + datetime.timedelta(minutes=20))
+        service.test_clock["now"] = depart - datetime.timedelta(minutes=10)
+        self.assertFalse(reminder.check())                                   # neu gerechnet: noch nicht Zeit
+        self.assertEqual(len(transit.calls), planned + 1)
+        self.assertFalse(reminder.check())                                   # Plan ist frisch: nicht schon wieder
+        self.assertEqual(len(transit.calls), planned + 1)
+        service.test_clock["now"] = depart + datetime.timedelta(minutes=10)
+        self.assertTrue(reminder.check())
+        self.assertIn("In 10 Minuten solltest du los", self.pushed[0].text)
+        self.assertEqual(service.next_trip().plan.recommended.depart_at, depart + datetime.timedelta(minutes=20))
+
+    def test_old_plan_when_refresh_fails(self):
+        depart = self.service.next_trip().plan.recommended.depart_at
+        self.at(depart - datetime.timedelta(minutes=10))
+        with mock.patch.object(self.service, "plan", side_effect=IntegrationError("offline")):
+            self.assertTrue(self.reminder.check())                           # erinnert mit dem alten Plan
+
     def test_lead_time_and_display_from_settings(self):
         self.service.preferences.set("travel_settings", {"reminder_minutes": 30, "reminder_display": "notice"})
         depart = self.service.next_trip().plan.recommended.depart_at
@@ -474,6 +513,25 @@ class ReminderTest(unittest.TestCase):
         self.at(depart + datetime.timedelta(minutes=2))
         self.assertTrue(self.reminder.check())
         self.assertTrue(self.pushed[0].text.startswith("Jetzt"))
+
+    def test_no_reminder_when_the_next_appointment_is_in_the_same_building(self):
+        morning = event("v1", "Vorlesung", start=NOW + datetime.timedelta(hours=1), location="LE1-C3.05 Vorlesung")
+        afternoon = event("v2", "Vorlesung", start=NOW + datetime.timedelta(hours=4), location="LE1-C3.09 Praktikum")
+        self.service.preferences.set("travel_settings", {"places": "LE1 = Universität"})
+        self.service.calendar = FakeCalendar(morning, afternoon)
+        self.at(afternoon.start - datetime.timedelta(minutes=20))           # nach der ersten, vor der zweiten
+        trip = self.service.next_trip()
+        self.assertTrue(trip.plan.same_place)
+        self.assertFalse(self.reminder.check())
+        self.assertIn("kein Weg nötig", view.summary(trip.plan, "Vorlesung"))
+
+    def test_same_warning_only_once(self):
+        self.service.calendar = FakeCalendar(event(location="Raum 7"))
+        with self.assertLogs("backend.assistant.skills.travel.reminder", "WARNING") as logs:
+            self.assertFalse(self.reminder.check())
+            self.assertFalse(self.reminder.check())
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn("Ort nicht gefunden: 'Raum 7'", logs.output[0])
 
     def test_errors_are_quiet(self):
         self.service.calendar = None   # nicht eingerichtet

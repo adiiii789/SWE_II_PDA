@@ -5,13 +5,13 @@ import datetime
 from collections.abc import Callable
 from typing import Any
 
-from backend.assistant.skills.travel.service import HomeAddressMissing, TravelService
+from backend.assistant.skills.travel.service import HomeAddressMissing, PlaceNotFound, TravelService
 from backend.assistant.skills.travel.view import summary, trip_view
 from backend.assistant.tools import ToolResult, ToolSpec, UnknownToolError
 from backend.integrations.http import IntegrationError
 
-NEXT_TRIP, PLAN_TRIP, HOME_TRIP, SET_HOME = ("plan_trip_to_next_appointment", "plan_trip", "plan_trip_home",
-                                             "set_home_address")
+NEXT_TRIP, PLAN_TRIP, HOME_TRIP, SET_HOME, SET_PLACE = ("plan_trip_to_next_appointment", "plan_trip",
+                                                        "plan_trip_home", "set_home_address", "set_place_address")
 _TIME = "ISO-Format, z. B. 2026-10-21T14:00"
 
 _SPECS = [
@@ -38,6 +38,15 @@ _SPECS = [
                  "depart_at": {"type": "string",
                                "description": f"Losfahren um, {_TIME}; leer = Ende des letzten Termins bzw. jetzt"},
              }}),
+    ToolSpec(SET_PLACE,
+             "Adresse für ein Ortskürzel speichern, das in Kalenderterminen steht (z. B. Gebäude \"LE1\" aus "
+             "\"LE1-C3.05 Vorlesung\"). Danach plant der Reise-Assistent alle Termine mit diesem Kürzel dorthin.",
+             {"type": "object", "properties": {
+                 "key": {"type": "string", "description": "Kürzel, wie es im Ort des Termins steht, z. B. LE1 - "
+                                                          "oder ein regulärer Ausdruck für den ganzen Ort, z. B. "
+                                                          "LE.* (beginnt mit LE)"},
+                 "address": {"type": "string", "description": "Adresse, z. B. Lerchenstraße 1, 70174 Stuttgart"},
+             }, "required": ["key", "address"]}),
     ToolSpec(SET_HOME,
              "Heimatadresse des Nutzers speichern (Start für den ersten Termin des Tages).",
              {"type": "object", "properties": {"address": {"type": "string"}}, "required": ["address"]}),
@@ -54,11 +63,15 @@ class TravelTools:
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         handlers = {NEXT_TRIP: self._next_trip, PLAN_TRIP: self._plan_trip, HOME_TRIP: self._home_trip,
-                    SET_HOME: self._set_home}
+                    SET_HOME: self._set_home, SET_PLACE: self._set_place}
         if name not in handlers:
             raise UnknownToolError(f"Unbekanntes Werkzeug: {name!r}")
         try:
             return handlers[name](arguments)
+        except PlaceNotFound as error:
+            return ToolResult(f"Für den Ort {error.place!r} kenne ich keine Adresse. Frag den Nutzer, wo das ist "
+                              f"(z. B. welches Gebäude ein Kürzel wie im Ort meint), und speichere es mit "
+                              f"{SET_PLACE}; dann noch einmal planen.", is_error=True)
         except HomeAddressMissing:
             return ToolResult("Die Heimatadresse ist unbekannt. Frag den Nutzer danach und speichere sie "
                               f"mit {SET_HOME}.", is_error=True)
@@ -103,6 +116,10 @@ class TravelTools:
             origin, title = trip.event.location, trip.event.title
         plan = service.plan(origin, home, depart_after=max(depart or now, now))
         return ToolResult(summary(plan, title, True), view=trip_view(plan, title, True, service.tiles))
+
+    def _set_place(self, arguments: dict[str, Any]) -> ToolResult:
+        place = self._service().set_place_alias(arguments["key"], arguments["address"])
+        return ToolResult(f"Ortskürzel gespeichert: {arguments['key']} = {place.label}")
 
     def _set_home(self, arguments: dict[str, Any]) -> ToolResult:
         place = self._service().set_home_address(arguments["address"])

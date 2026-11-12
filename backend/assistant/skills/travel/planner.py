@@ -18,13 +18,14 @@ from __future__ import annotations
 
 import datetime
 import math
+import re
 from dataclasses import dataclass, field, fields, replace
 from typing import Any
 
 from backend.assistant.settings import TRAVEL_KEY
 from backend.integrations import transit
 from backend.integrations.db_timetables import Journey, TrainConnection
-from backend.integrations.geo import Place
+from backend.integrations.geo import Place, distance_km
 from backend.integrations.openrouteservice import Route
 from backend.integrations.weather import Weather
 from backend.preferences import PreferenceStore
@@ -38,6 +39,7 @@ OUTDOOR = frozenset({BIKE, FOOT})   # hier zählt das Wetter
 WALK, TRANSIT, RAIL, BUS = "walk", "transit", "rail", "bus"   # Arten von Segmenten auf der Karte
 VEHICLES = frozenset({RAIL, BUS})   # Segmente mit einer bestimmten Linie (Zug, Bus, Tram)
 MAX_TRAIN_MESSAGES = 2              # Störungs-/Hinweistexte je Zug in der Wegbeschreibung
+SAME_PLACE_KM = 0.2                 # näher beieinander: derselbe Ort, kein Weg (und keine Erinnerung)
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,7 @@ class TravelSettings:
     reminder_speak: bool = False
     home_trip: bool = True               # nach dem letzten Termin des Tages den Heimweg zeigen
     home_trip_hours: int = 3             # so lange nach dessen Ende
+    places: str = ""                     # Ortskürzel je Zeile "Kürzel = Adresse", z. B. für Raumangaben im Kalender
 
     @classmethod
     def from_preferences(cls, preferences: PreferenceStore) -> TravelSettings:
@@ -89,6 +92,57 @@ class TravelSettings:
                 if cleaned is not None:
                     values[f.name] = cleaned
         return cls(**values)
+
+
+_REGEX_CHARS = set(r".^$*+?{}[]\|()")
+
+
+def place_aliases(text: str) -> list[tuple[str, str]]:
+    """ "LE1 = Lerchenstraße 1, Stuttgart" je Zeile → [(Kürzel, Adresse)]: einfache Kürzel zuerst
+    (längste vorne, damit "LE1-C3" vor "LE1" zählt), dann reguläre Ausdrücke in ihrer Reihenfolge.
+    Statt "=" geht auch ":" oder "→"; Zeilen ohne Trenner zählen nicht."""
+    aliases = []
+    for line in text.splitlines():
+        for separator in ("=", "→", ":"):
+            if separator in line:
+                key, address = (part.strip() for part in line.split(separator, 1))
+                if key and address:
+                    aliases.append((key, address))
+                break
+    return sorted(aliases, key=lambda alias: (_pattern(alias[0]) is not None,
+                                              0 if _pattern(alias[0]) else -len(alias[0])))
+
+
+def _pattern(key: str) -> re.Pattern | None:
+    """Ein Kürzel mit Regex-Zeichen (z. B. "LE.*") ist ein regulärer Ausdruck - ungültige zählen als Text."""
+    if not _REGEX_CHARS & set(key):
+        return None
+    try:
+        return re.compile(key)
+    except re.error:
+        return None
+
+
+def resolve_place(location: str, settings: TravelSettings) -> str:
+    r"""Adresse zu einem Ort aus dem Kalender, sonst der Ort selbst. Ein einfaches Kürzel zählt als
+    eigenes Wort, egal ob groß oder klein ("LE1" in "LE1-C3.05 Vorlesung"). Ein regulärer Ausdruck
+    muss den ganzen Ort treffen, genau wie geschrieben: "LE.*" = beginnt mit LE (also nicht
+    "Leonberg"), ".*LE\d.*" = enthält LE und eine Ziffer."""
+    location = location.strip()
+    for key, address in place_aliases(settings.places):
+        pattern = _pattern(key)
+        found = pattern.fullmatch(location) if pattern else \
+            re.search(rf"(?<!\w){re.escape(key)}(?!\w)", location, re.IGNORECASE)
+        if found:
+            return address
+    return location
+
+
+def with_place_alias(text: str, key: str, address: str) -> str:
+    """Ortskürzel hinzufügen oder (gleiches Kürzel) ersetzen."""
+    lines = [line for line in text.splitlines()
+             if line.strip() and not any(alias[0].casefold() == key.casefold() for alias in place_aliases(line))]
+    return "\n".join([*lines, f"{key} = {address}"])
 
 
 def _typed(default: Any, value: Any) -> Any:
@@ -187,6 +241,11 @@ class TripPlan:
     @property
     def recommended(self) -> Option | None:
         return self.options[0] if self.options else None
+
+    @property
+    def same_place(self) -> bool:
+        """Start und Ziel praktisch gleich (z. B. zwei Vorlesungen im selben Gebäude): kein Weg nötig."""
+        return distance_km(self.origin, self.destination) < SAME_PLACE_KM
 
 
 def car_option(route: Route, fuel_price: float, fuel_price_estimated: bool, settings: TravelSettings,

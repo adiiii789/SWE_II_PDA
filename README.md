@@ -161,7 +161,16 @@ Linie ohne Karte.
   Im Chat geht auch „Wie komme ich heim?“ (Werkzeug `plan_trip_home`).
 - **Erinnerung:** 15 Minuten vor der empfohlenen Abfahrt meldet sich EVE von selbst – wie die
   proaktiven Meldungen als Popup, Systembenachrichtigung oder nur im Chat, auf Wunsch vorgelesen.
-  Das gilt auch für den Heimweg, also z. B. 15 Minuten vor Ende des letzten Termins.
+  Das gilt auch für den Heimweg, also z. B. 15 Minuten vor Ende des letzten Termins. Kurz vorher
+  rechnet sie den Weg neu (aktuelle Abfahrten und Verspätungen); liegt der nächste Termin im selben
+  Gebäude, meldet sie sich nicht. Gelesen werden alle in Google Calendar sichtbaren Kalender, auch
+  abonnierte (z. B. ein Vorlesungsplan).
+- **Orte aus dem Kalender:** Steht als Ort nur ein Raum (z. B. „LE1-C3.05 Vorlesung“), trag unter
+  ⚙ → Reise → Allgemein ein Ortskürzel ein (`LE1 = Lerchenstraße 1, 70174 Stuttgart`) – oder sag es
+  dem Assistenten, er speichert es selbst. Ein einfaches Kürzel zählt als eigenes Wort (Groß/klein egal).
+  Mit Regex-Zeichen ist es ein regulärer Ausdruck für den ganzen Ort, genau wie geschrieben:
+  `LE.* = Lerchenstraße 1, 70174 Stuttgart` heißt „beginnt mit LE“ (nicht „Leonberg“),
+  `.*LE\d.*` „enthält LE und eine Ziffer“. Einfache Kürzel gehen vor, dann die Ausdrücke von oben nach unten.
 - **Wetter:** Bei Regen oder Schnee zählt die Zeit auf dem Rad und zu Fuß doppelt, bei Kälte und
   (nur Rad) starkem Wind zusätzlich ×1,3. So gewinnt bei Regen eher Auto oder Bahn. Die Vorhersage
   kommt von Open-Meteo, für den Startort zur Abfahrt.

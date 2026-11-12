@@ -38,6 +38,10 @@ class Group:
 GROUPS: tuple[Group, ...] = (
     Group("general", "Allgemein", "Woher du startest, was verglichen wird und was dir wichtig ist", (
         Setting(HOME, "Heimatadresse", "text", "", help="z. B. \"Königstraße 1, 70173 Stuttgart\""),
+        Setting("places", "Orte aus dem Kalender (Ortskürzel)", "text", "",
+                help="Je Zeile Kürzel = Adresse, z. B. \"LE1 = Lerchenstraße 1, 70174 Stuttgart\" - für Termine, "
+                     "deren Ort nur ein Raum ist (\"LE1-C3.05 Vorlesung\"). Auch als regulärer Ausdruck für den "
+                     "ganzen Ort: \"LE.* = …\" heißt beginnt mit LE"),
         Setting("modes", "Diese Verkehrsmittel vergleichen", "multi", list(_DEFAULTS["modes"]), (
             Choice(TRAIN, "Bus und Bahn"), Choice(BIKE, "Fahrrad"), Choice(FOOT, "Zu Fuß"),
             Choice(CAR, "Auto"), Choice(TAXI, "Taxi"),

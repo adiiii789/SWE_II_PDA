@@ -59,6 +59,8 @@ def summary(plan: TripPlan, title: str = "", home: bool = False) -> str:
     home: Heimweg, title ist dann der Termin, von dem es heimgeht."""
     heading = (f"Heimweg von „{title}“" if title else "Heimweg") if home else         (f"Weg zu „{title}“" if title else "Weg")
     best = plan.recommended
+    if plan.same_place:
+        return f"{heading}: Start und Ziel liegen am selben Ort ({plan.destination.label}) – kein Weg nötig."
     if best is None:
         return f"Ich habe keinen Weg gefunden ({heading}). " + " ".join(plan.notes)
     hurry = " – du bist schon spät dran" if _late(best) else ""

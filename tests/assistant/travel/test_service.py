@@ -3,7 +3,7 @@ import unittest
 
 from backend.assistant.skills.travel import planner
 from backend.assistant.skills.travel.planner import BIKE, CAR, FOOT, TAXI, TRAIN
-from backend.assistant.skills.travel.service import HomeAddressMissing, TravelSetupError
+from backend.assistant.skills.travel.service import HomeAddressMissing, PlaceNotFound, TravelSetupError
 from backend.integrations import openrouteservice as ors
 from backend.integrations.http import IntegrationError
 from backend.integrations.openrouteservice import Route
@@ -240,6 +240,25 @@ class TransitTest(unittest.TestCase):
         self.assertIn("ÖPNV: keine Verbindung mit höchstens zwei Umstiegen in den nächsten Stunden gefunden.",
                       plan.notes)
         self.assertFalse(any("PDA_DB_CLIENT_ID" in note for note in plan.notes))   # DB-Keys sind kein Muss
+
+
+class PlaceAliasTest(unittest.TestCase):
+    def test_alias_from_settings_and_unknown_place(self):
+        service = make_service(places="LE1 = Universität")
+        plan = service.plan("Zuhause", "LE1-C3.05 Vorlesung", ARRIVE)
+        self.assertEqual(plan.destination.label, "Universität, Heidelberg")
+        with self.assertRaises(PlaceNotFound) as caught:
+            service.plan("Zuhause", "Raum 7", ARRIVE)
+        self.assertEqual(caught.exception.place, "Raum 7")
+
+    def test_set_alias_keeps_other_settings(self):
+        service = make_service()
+        service.preferences.set("travel_settings", {"reminder_minutes": 30})
+        service.set_place_alias("LE1", "Universität")
+        self.assertEqual(service.settings().places, "LE1 = Universität")
+        self.assertEqual(service.settings().reminder_minutes, 30)
+        with self.assertRaises(IntegrationError):
+            service.set_place_alias("X", "Atlantis")                         # Adresse muss sich finden lassen
 
 
 class VvsTest(unittest.TestCase):
