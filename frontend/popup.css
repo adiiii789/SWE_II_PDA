@@ -170,6 +170,9 @@ body.chat-maximized #view-frame, body.chat-maximized #splitter { display: none; 
    verteilt bei einer Summe unter 1 nur diesen Bruchteil des Platzes, der Chat rutschte sonst hoch).
    !important, weil setSplit() inline setzt; die gezogene Aufteilung gilt wieder, wenn die Ansicht zurückkommt. */
 body.chat-maximized #chat-panel { flex-grow: 1 !important; }
+/* Ansicht bis an die Eingabe gezogen: Verlauf ist zu, nur die Eingabe bleibt */
+body.history-closed:not(.chat-maximized) #chat-scroll { visibility: hidden; }
+body.history-closed:not(.chat-maximized) #input-form { margin-top: 0; }
 
 /* ---- Chat ----------------------------------------------------------------------------------- */
 

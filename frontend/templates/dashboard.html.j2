@@ -5,28 +5,20 @@
       month       Monatsraster: weekdays, weeks (Zellen mit events und more)
       tasks       Aufgaben zum Abhaken: tasks, completed
       mails       Postfach: mails
-    Abhaken und Mail öffnen meldet das iframe per postMessage ans Popup (frontend/popup.js). -#}
-<!DOCTYPE html>
-<html lang="de">
-<head>
-  <meta charset="utf-8">
-  <style>
-{% include "theme.css" %}
-{% include "view.css" %}
-{% include "dashboard.css" %}
-  </style>
-</head>
-<body class="dashboard">
-<div class="board">
-{% for c in components %}
-  <section class="card card-{{ c.kind }}{% if c.kind in ('week', 'month') %} wide{% endif %}">
+    Kalender stehen im Hauptbereich (.pane-main), Listen daneben bzw. darunter (.pane-side).
+    Das Skript unten passt alles in die Höhe des iframes ein (Layout je nach Größe: nebeneinander,
+    untereinander oder Reiter) und staucht die Zeitleiste, damit der Tag ohne Scrollen sichtbar ist.
+    Abhaken und Mail öffnen meldet das iframe per postMessage ans Popup (frontend/popup.js),
+    ebenso die passende Höhe der Ansicht (view_size.js). -#}
+{%- macro card(c) %}
+  <section class="card card-{{ c.kind }}" data-title="{{ c.title }}">
     <header class="card-head">
       <h3>{{ c.title }}</h3>
       {% if c.subtitle %}<span class="card-sub">{{ c.subtitle }}</span>{% endif %}
     </header>
 
     {% if c.kind in ('day', 'week') %}
-    <div class="tl">
+    <div class="tl" style="--hour: {{ c.hour_px }}px;" data-hour-px="{{ c.hour_px }}">
       {% if c.kind == 'week' %}
       <div class="tl-row tl-head">
         <div class="tl-gutter"></div>
@@ -44,21 +36,23 @@
       </div>
       {% endif %}
       <div class="tl-scroll" data-scroll="{{ c.scroll }}">
-        <div class="tl-row tl-body" style="height: {{ c.height }}px;">
+        <div class="tl-row tl-body">
           <div class="tl-gutter tl-hours">
-            {% for hour in c.hours %}<div class="tl-hour" style="height: {{ c.hour_px }}px;"><span>{{ hour }}</span></div>{% endfor %}
+            {% for hour in c.hours %}<div class="tl-hour"><span>{{ hour }}</span></div>{% endfor %}
           </div>
           {% for col in c.columns %}
-          <div class="tl-col{% if col.today %} today{% endif %}{% if col.weekend %} weekend{% endif %}" style="background-size: 100% {{ c.hour_px }}px;">
+          <div class="tl-col{% if col.today %} today{% endif %}{% if col.weekend %} weekend{% endif %}">
             {% for b in col.blocks %}
+            {#- Lage in Prozent des Tages: so lässt sich die Stundenhöhe (--hour) frei stauchen #}
             <div class="ev{% if b.compact %} compact{% endif %}{% if b.declined %} declined{% endif %}"
-                 style="top: {{ b.top }}px; height: {{ b.height }}px; left: calc({{ b.left }}% + 2px); width: calc({{ b.width }}% - 4px); background: {{ b.tint }}; border-left-color: {{ b.color }};"
+                 data-start="{{ b.top / c.hour_px }}" data-end="{{ (b.top + b.height) / c.hour_px }}"
+                 style="top: {{ b.top / c.height * 100 }}%; height: {{ b.height / c.height * 100 }}%; left: calc({{ b.left }}% + 2px); width: calc({{ b.width }}% - 4px); background: {{ b.tint }}; border-left-color: {{ b.color }};"
                  title="{{ b.time }} {{ b.title }}{% if b.details %} · {{ b.details }}{% endif %}">
               <div class="ev-title">{{ b.title }}</div>
-              <div class="ev-meta">{{ b.time }}{% if b.location and not b.compact %} · {{ b.location }}{% endif %}</div>
+              <div class="ev-meta">{{ b.time }}{% if b.location %}<span class="ev-loc"> · {{ b.location }}</span>{% endif %}</div>
             </div>
             {% endfor %}
-            {% if col.now is not none %}<div class="tl-now" style="top: {{ col.now }}px;"></div>{% endif %}
+            {% if col.now is not none %}<div class="tl-now" data-at="{{ col.now / c.hour_px }}" style="top: {{ col.now / c.height * 100 }}%;"></div>{% endif %}
           </div>
           {% endfor %}
         </div>
@@ -69,7 +63,7 @@
     <div class="mo">
       <div class="mo-row mo-head">{% for weekday in c.weekdays %}<div>{{ weekday }}</div>{% endfor %}</div>
       {% for week in c.weeks %}
-      <div class="mo-row">
+      <div class="mo-row mo-week">
         {% for cell in week %}
         <div class="mo-cell{% if not cell.in_range %} out{% endif %}{% if cell.today %} today{% endif %}{% if cell.weekend %} weekend{% endif %}">
           <div class="mo-day">{{ cell.label }}</div>
@@ -82,6 +76,7 @@
     </div>
 
     {% elif c.kind == 'tasks' %}
+    <div class="card-body">
     {% if c.tasks %}
     <ul class="tasks">
       {% for t in c.tasks %}
@@ -91,6 +86,8 @@
           <span class="task-box" aria-hidden="true"></span>
           <span class="task-body">
             <span class="task-title">{{ t.title }}</span>
+            {% if t.notes %}<span class="task-notes">{{ t.notes }}</span>{% endif %}
+            {#- Fälligkeit, Uhrzeit und Liste ganz unten: der Titel behält die volle Breite #}
             {% if t.due or t.time or t.list %}
             <span class="task-meta">
               {% if t.due %}<span class="tag due {{ t.due_state }}">{{ t.due }}</span>{% endif %}
@@ -98,7 +95,6 @@
               {% if t.list %}<span class="tag list">{{ t.list }}</span>{% endif %}
             </span>
             {% endif %}
-            {% if t.notes %}<span class="task-notes">{{ t.notes }}</span>{% endif %}
           </span>
         </label>
       </li>
@@ -107,8 +103,10 @@
     {% else %}
     <p class="empty">{% if c.completed %}Nichts erledigt in diesem Zeitraum.{% else %}Alles erledigt.{% endif %}</p>
     {% endif %}
+    </div>
 
     {% elif c.kind == 'mails' %}
+    <div class="card-body">
     {% if c.mails %}
     <ul class="mails">
       {% for m in c.mails %}
@@ -123,12 +121,33 @@
     {% else %}
     <p class="empty">Keine Mails.</p>
     {% endif %}
+    </div>
 
     {% endif %}
   </section>
-{% endfor %}
+{%- endmacro %}
+{%- set calendars = components | selectattr("kind", "in", ["day", "week", "month"]) | list %}
+{%- set lists = components | rejectattr("kind", "in", ["day", "week", "month"]) | list %}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <style>
+{% include "theme.css" %}
+{% include "view.css" %}
+{% include "dashboard.css" %}
+  </style>
+</head>
+<body class="dashboard">
+<nav class="tabs" role="tablist" hidden></nav>
+<div class="board">
+  {% if calendars %}<div class="pane pane-main">{% for c in calendars %}{{ card(c) }}{% endfor %}</div>{% endif %}
+  {% if lists %}<div class="pane pane-side">{% for c in lists %}{{ card(c) }}{% endfor %}</div>{% endif %}
 </div>
 
+<script>
+{% include "view_size.js" %}
+</script>
 <script>
 // Läuft im iframe (sandbox, ohne Zugriff aufs Popup): Klicks gehen per postMessage nach oben,
 // popup.js führt sie aus und meldet das Ergebnis zurück.
@@ -138,17 +157,240 @@
     message.source = "eve-view";
     window.parent.postMessage(message, "*");
   }
+  function each(selector, root, fn) {
+    Array.prototype.forEach.call((root || document).querySelectorAll(selector), fn);
+  }
   function setDone(item, done) {
     item.classList.toggle("done", done);
     item.querySelector(".task-check").checked = done;
   }
 
-  Array.prototype.forEach.call(document.querySelectorAll(".tl-scroll"), function (element) {
-    element.scrollTop = Number(element.getAttribute("data-scroll")) || 0;
-  });
+  // ---- Layout: alles in die Höhe des iframes einpassen -----------------------------------------
+  // single  eine Karte füllt alles
+  // cols    Kalender links, Listen rechts (ab genügend Breite)
+  // stack   Kalender oben, Listen darunter (höchstens die Hälfte der Höhe, dann scrollen sie selbst)
+  // tabs    zu wenig Platz für alles: Reiter oben, eine Karte füllt den Rest
+  // Reicht der Listenbereich nicht für alle Listen (z. B. Aufgaben und Mails übereinander), bekommt er
+  // eigene Reiter (side-tabbed): Der Kalender bleibt sichtbar, die gewählte Liste nutzt die ganze Höhe.
+  var PAD = 8, GAP = 8;
+  var LIST_MIN = 200, SIDE_TABS_PX = 30;   // Mindesthöhe einer Liste (Kopf + etwa fünf Einträge), Reiterleiste
+  var SIDE_SHARE = 0.5;                    // Anteil der Listen an der Höhe untereinander (wie dashboard.css)
+  var MIN_HOUR = 18, MAX_HOUR = 48, IDEAL_HOUR = 34;   // Stundenhöhe der Zeitleiste in px
+  var DAY_FROM = 8, DAY_TO = 18;                       // dieser Bereich ist immer im Bild
+  var body = document.body;
+  var tabs = document.querySelector(".tabs");
+  var cards = Array.prototype.slice.call(document.querySelectorAll(".card"));
+  var main = document.querySelector(".pane-main"), side = document.querySelector(".pane-side");
+  var sideCards = side ? Array.prototype.slice.call(side.querySelectorAll(".pane-side > .card")) : [];
+  var mainCards = main ? Array.prototype.slice.call(main.querySelectorAll(".pane-main > .card")) : [];
+  var sideCount = sideCards.length;
+  var wideMain = !!document.querySelector(".pane-main .card-week, .pane-main .card-month");
+  // Reiter und Scrollpositionen von vor dem Aktualisieren (setzt popup.js)
+  var ui = window.EVE_UI_STATE || {tab: 0, scrolls: []};
+  var activeTab = Math.min(ui.tab || 0, Math.max(0, cards.length - 1)), mode = "";
+  var activeSide = Math.min(ui.side || 0, Math.max(0, sideCount - 1)), sideTabs = null;
+
+  // Stand der Bedienung ans Popup, damit er das Aktualisieren übersteht
+  var uiTimer = 0;
+  function reportUi() {
+    clearTimeout(uiTimer);
+    uiTimer = setTimeout(function () {
+      var scrolls = Array.prototype.map.call(document.querySelectorAll(".card-body"), function (body) {
+        return Math.round(body.scrollTop);
+      });
+      send({action: "ui_state", tab: activeTab, side: activeSide, scrolls: scrolls});
+    }, 250);
+  }
+
+  function minMain() { return document.querySelector(".pane-main .card-month") ? 230 : 180; }
+  // Listenbereich braucht mindestens eine Liste in voller Größe (mehrere notfalls mit Reitern)
+  function minSide(row) { return LIST_MIN + (sideCount > 1 && !row ? SIDE_TABS_PX : 0); }
+  function colsWidth() { return main ? (wideMain ? 760 : 520) : 460; }
+  function rowWidth() { return 440; }   // ab hier stehen zwei Listen untereinander nebeneinander
+
+  function chooseMode(width, height) {
+    if (cards.length === 1) return "single";
+    if (width >= colsWidth() && (main && side || sideCount > 1)) return "cols";
+    if (!side) return height >= minMain() * mainCards.length + GAP * (mainCards.length - 1) ? "stack" : "tabs";
+    var sideNeed = minSide(width >= rowWidth());
+    var fits = main ? height * SIDE_SHARE >= sideNeed && height - sideNeed - GAP >= minMain() * mainCards.length
+                    : height >= sideNeed;
+    return fits ? "stack" : "tabs";
+  }
+
+  // Höhe, die der Listenbereich im aktuellen Layout bekommt
+  function sideSpace(height) {
+    return mode === "stack" && main ? height * SIDE_SHARE : height;
+  }
+
+  function buildSideTabs() {
+    if (sideCount < 2) return;
+    sideTabs = document.createElement("nav");
+    sideTabs.className = "tabs side-tabs";
+    sideTabs.setAttribute("role", "tablist");
+    sideCards.forEach(function (card, index) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "tab");
+      var count = card.querySelectorAll(".task, .mail").length;
+      button.textContent = card.getAttribute("data-title") + (count ? " · " + count : "");
+      var sub = card.querySelector(".card-sub");
+      if (sub) button.title = sub.textContent;
+      button.addEventListener("click", function () { showSide(index); reportUi(); });
+      sideTabs.appendChild(button);
+    });
+    side.insertBefore(sideTabs, side.firstChild);
+    showSide(activeSide);
+  }
+  function showSide(index) {
+    activeSide = index;
+    sideCards.forEach(function (card, i) { card.classList.toggle("side-active", i === index); });
+    Array.prototype.forEach.call(sideTabs.children, function (button, i) {
+      button.classList.toggle("active", i === index);
+      button.setAttribute("aria-selected", i === index ? "true" : "false");
+    });
+  }
+
+  function buildTabs() {
+    tabs.innerHTML = "";
+    cards.forEach(function (card, index) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "tab");
+      button.textContent = card.getAttribute("data-title");
+      var sub = card.querySelector(".card-sub");
+      if (sub) button.title = sub.textContent;
+      button.addEventListener("click", function () { showTab(index); reportUi(); });
+      tabs.appendChild(button);
+    });
+  }
+  function showTab(index) {
+    activeTab = index;
+    cards.forEach(function (card, i) { card.classList.toggle("active", i === index); });
+    Array.prototype.forEach.call(tabs.children, function (button, i) {
+      button.classList.toggle("active", i === index);
+      button.setAttribute("aria-selected", i === index ? "true" : "false");
+    });
+    fitTimelines();
+  }
+
+  // Sichtbarer Stundenbereich: 8-18 Uhr, erweitert um alle Termine und die aktuelle Uhrzeit.
+  function hourWindow(tl) {
+    var from = DAY_FROM, to = DAY_TO;
+    each(".ev", tl, function (ev) {
+      from = Math.min(from, Number(ev.getAttribute("data-start")));
+      to = Math.max(to, Number(ev.getAttribute("data-end")));
+    });
+    each(".tl-now", tl, function (now) {
+      var at = Number(now.getAttribute("data-at"));
+      from = Math.min(from, at - 0.5);
+      to = Math.max(to, at + 0.5);
+    });
+    from = Math.max(0, Math.floor(from));
+    return {from: from, hours: Math.min(24, Math.ceil(to)) - from};
+  }
+
+  // Zeitleiste stauchen, bis der Stundenbereich in die Karte passt (aber nicht unter MIN_HOUR).
+  function fitTimeline(tl) {
+    var scroller = tl.querySelector(".tl-scroll");
+    var available = scroller.clientHeight;
+    if (!available) return;
+    var range = hourWindow(tl);
+    var hour = Math.max(MIN_HOUR, Math.min(MAX_HOUR, available / range.hours));
+    tl.style.setProperty("--hour", hour + "px");
+    var top;
+    if (range.hours * hour <= available) {
+      top = range.from * hour - (available - range.hours * hour) / 2;   // Bereich mittig
+    } else {   // passt nicht ganz: wie vom Backend vorgesehen (erster Termin bzw. jetzt im Bild)
+      top = Number(scroller.getAttribute("data-scroll")) * hour / Number(tl.getAttribute("data-hour-px"));
+    }
+    scroller.scrollTop = Math.max(0, top);
+    var events = tl.querySelectorAll(".ev"), heights = [];
+    each(".ev", tl, function (ev) { heights.push(ev.offsetHeight); });
+    Array.prototype.forEach.call(events, function (ev, i) { ev.classList.toggle("compact", heights[i] < 34); });
+  }
+  function fitTimelines() { each(".tl", null, fitTimeline); }
+
+  function setMode(next, width) {
+    if (next !== mode) {
+      body.classList.remove("mode-" + mode);
+      body.classList.add("mode-" + next);
+      mode = next;
+      tabs.hidden = mode !== "tabs";
+      if (mode === "tabs") showTab(Math.min(activeTab, cards.length - 1));
+    }
+    body.classList.toggle("side-row", sideCount > 1 && (mode === "cols" && !main || mode === "stack" && width >= rowWidth()));
+  }
+
+  // Mehrere Listen übereinander, aber nicht genug Höhe für jede: Reiter im Listenbereich
+  function setSideTabbed(height) {
+    var stacked = sideCount > 1 && mode !== "tabs" && mode !== "single" && !body.classList.contains("side-row");
+    body.classList.toggle("side-tabbed",
+      stacked && sideSpace(height) < sideCount * LIST_MIN + GAP * (sideCount - 1));
+  }
+
+  var measuredWidth = -1, ideal = 0;
+  function layout() {
+    var width = document.documentElement.clientWidth - 2 * PAD;
+    var height = document.documentElement.clientHeight - 2 * PAD;
+    // Wunschhöhe hängt nur von der Breite ab: gemessen im Layout ohne Reiter (sonst schaukelt es sich auf)
+    if (width !== measuredWidth) {
+      measuredWidth = width;
+      setMode(chooseMode(width, Infinity), width);
+      body.classList.remove("side-tabbed");
+      ideal = measureIdeal();
+    }
+    setMode(chooseMode(width, height), width);
+    setSideTabbed(height);
+    fitTimelines();
+    EveViewSize.report({min: Math.min(ideal, 170), ideal: ideal, max: 0});
+  }
+
+  // Wie hoch die Ansicht bequem wäre (unabhängig von der aktuellen Höhe, sonst schaukelt es sich auf).
+  function cardIdeal(card) {
+    var tl = card.querySelector(".tl"), rows = card.querySelectorAll(".mo-week"), list = card.querySelector(".card-body");
+    if (tl) return card.offsetHeight - tl.querySelector(".tl-scroll").clientHeight + hourWindow(tl).hours * IDEAL_HOUR;
+    if (rows.length) {
+      var used = 0;
+      Array.prototype.forEach.call(rows, function (row) { used += row.offsetHeight; });
+      return card.offsetHeight - used + rows.length * 72;
+    }
+    if (list) {   // Inhalt messen, nicht die Karte: die kann gerade gestreckt sein
+      var content = list.firstElementChild ? list.firstElementChild.offsetHeight + 6 : 0;
+      return Math.min(420, card.offsetHeight - list.clientHeight + content);
+    }
+    return card.offsetHeight;
+  }
+  function paneIdeal(paneCards, row) {
+    if (!paneCards.length) return 0;
+    var heights = paneCards.map(cardIdeal);
+    if (row) return Math.max.apply(null, heights);
+    return heights.reduce(function (a, b) { return a + b; }, 0) + GAP * (heights.length - 1);
+  }
+  function measureIdeal() {
+    var row = body.classList.contains("side-row");
+    var a = paneIdeal(mainCards, false), b = paneIdeal(sideCards, row);
+    return (mode === "cols" ? Math.max(a, b) : a + b + (a && b ? GAP : 0)) + 2 * PAD + 2;   // + Rahmen
+  }
+
+  if (cards.length) {
+    buildTabs();
+    buildSideTabs();
+    layout();
+    each(".card-body", null, function (body, index) {
+      if (ui.scrolls && ui.scrolls[index]) body.scrollTop = ui.scrolls[index];
+      body.addEventListener("scroll", reportUi);
+    });
+    // Größe kann sich nach dem ersten Lauf noch ändern (iframe wird erst eingepasst, Schriften laden)
+    window.addEventListener("load", layout);
+    if (window.ResizeObserver) new ResizeObserver(function () { layout(); }).observe(document.documentElement);
+    else window.addEventListener("resize", layout);
+  }
+
+  // ---- Aufgaben und Mails ------------------------------------------------------------------
   // Seit dem Laden abgehakt (z. B. vor einem Design-Wechsel) - setzt popup.js
   var state = window.EVE_TASK_STATE || {};
-  Array.prototype.forEach.call(document.querySelectorAll(".task"), function (item) {
+  each(".task", null, function (item) {
     var id = item.getAttribute("data-id");
     if (Object.prototype.hasOwnProperty.call(state, id)) setDone(item, state[id]);
   });
@@ -182,6 +424,22 @@
     if (item) openMail(item);
   });
   document.addEventListener("keydown", function (event) {
+    // Reiter mit Pfeiltasten wechseln
+    var bar = (event.key === "ArrowLeft" || event.key === "ArrowRight") && event.target.closest &&
+      event.target.closest(".tabs");
+    if (bar === sideTabs && sideTabs) {
+      showSide((activeSide + (event.key === "ArrowRight" ? 1 : sideCount - 1)) % sideCount);
+      sideTabs.children[activeSide].focus();
+      reportUi();
+      return;
+    }
+    if (bar && mode === "tabs") {
+      var step = event.key === "ArrowRight" ? 1 : cards.length - 1;
+      showTab((activeTab + step) % cards.length);
+      tabs.children[activeTab].focus();
+      reportUi();
+      return;
+    }
     var item = event.target.closest && event.target.closest(".mail");
     if (item && (event.key === "Enter" || event.key === " ")) {
       event.preventDefault();

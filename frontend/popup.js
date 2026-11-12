@@ -12,6 +12,7 @@ const splitter = document.getElementById("splitter");
 const chatMaxButton = document.getElementById("chat-max-button");
 const enlargeButton = document.getElementById("enlarge-button");
 const scrollDownButton = document.getElementById("scroll-down-button");
+const chatScroll = document.getElementById("chat-scroll");
 
 // Sprache (backend/speech.py): was verfügbar ist, kommt von speech_support().
 let speech = {input: false, output: false};
@@ -30,26 +31,70 @@ let resizedScrollTop = null;
 
 const NEAR_BOTTOM_PX = 40;
 const VIEW_MIN_PX = 60;     // Mindesthöhen beim Ziehen am #splitter
-const CHAT_MIN_PX = 190;   // wie min-height von #chat-panel in popup.css
+const CHAT_MIN_PX = 190;   // wie min-height von #chat-panel in popup.css (automatische Aufteilung)
+const SNAP_PX = 32;        // so nah an der Eingabe rastet die Ansicht ganz unten ein
+// Wunschhöhe der Ansicht {min, ideal, max}, meldet das Template (frontend/templates/view_size.js).
+// Solange der Nutzer nicht selbst am Splitter gezogen hat, richtet sich die Aufteilung danach.
+let viewSize = null;
+let manualSplit = false;
 
 let speaking = false;       // liest gerade vor (nur für den Avatar)
 let viewHtml = "";          // zuletzt gezeigte Ansicht - bei Design-Wechsel neu eingefärbt
 let viewTaskState = {};     // in dieser Ansicht abgehakt/geöffnet: Aufgaben-ID -> erledigt
+let viewUiState = null;     // Reiter und Scrollpositionen der Ansicht - bleiben beim Aktualisieren erhalten
+let viewVersion = 0;        // zählt jede neue Ansicht; eine ältere Aktualisierung überschreibt keine neuere
+let viewShownAt = 0;
+const VIEW_REFRESH_MS = 60000;      // Anzeige höchstens so oft im Hintergrund neu laden
+const VIEW_REDRAW_MS = 10 * 60000;  // spätestens dann auch ohne geänderte Daten (Jetzt-Linie)
 
 // Zeigt fertig gerendertes HTML (aus frontend/templates/, vom Backend gerendert) im iframe an,
 // in den Farben des gewählten Designs (appearance.js). Neues HTML = neue Ansicht, frische Daten.
-function showView(html) {
-  if (html !== viewHtml) viewTaskState = {};
+// refreshed: dieselbe Ansicht mit frischen Daten - Reiter und Scrollpositionen bleiben.
+function showView(html, refreshed = false) {
+  if (html !== viewHtml) {
+    viewTaskState = {};
+    viewSize = null;   // bis die neue Ansicht ihre Höhe meldet, bleibt die bisherige Aufteilung
+    if (!refreshed) viewUiState = null;
+  }
   viewHtml = html;
-  viewFrame.srcdoc = withTaskState(Appearance.themedHtml(html));
+  viewVersion++;
+  viewShownAt = Date.now();
+  viewFrame.srcdoc = withViewState(Appearance.themedHtml(html));
 }
 
-// Abgehakte Aufgaben bleiben abgehakt, wenn die Ansicht neu gezeichnet wird (Design-Wechsel).
-function withTaskState(html) {
-  if (!Object.keys(viewTaskState).length) return html;
-  const json = JSON.stringify(viewTaskState).replace(/</g, "\\u003c");
-  const script = `<script>window.EVE_TASK_STATE = ${json};</script>`;
+// Abgehakte Aufgaben bleiben abgehakt, wenn die Ansicht neu gezeichnet wird (Design-Wechsel),
+// Reiter und Scrollpositionen auch nach dem Aktualisieren.
+function withViewState(html) {
+  const state = {};
+  if (Object.keys(viewTaskState).length) state.EVE_TASK_STATE = viewTaskState;
+  if (viewUiState) state.EVE_UI_STATE = viewUiState;
+  if (!Object.keys(state).length) return html;
+  const assignments = Object.entries(state)
+    .map(([name, value]) => `window.${name} = ${JSON.stringify(value).replace(/</g, "\\u003c")};`).join(" ");
+  const script = `<script>${assignments}</script>`;
   return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${script}</head>`) : script + html;
+}
+
+// Ohne Jetzt-Linie vergleichen: die wandert jede Minute, die Daten deshalb nicht.
+function viewContent(html) {
+  return html.replace(/<div class="tl-now"[^>]*><\/div>/g, "");
+}
+
+// Anzeige oben auf den neuesten Stand bringen (Kalender, Aufgaben, Mails), ohne Sprachmodell.
+// Läuft, wenn das Popup in den Vordergrund kommt, und regelmäßig, solange es offen ist.
+async function refreshView() {
+  if (replyPending || !viewHtml.includes('class="dashboard"') || Date.now() - viewShownAt < VIEW_REFRESH_MS) return;
+  const version = viewVersion;
+  const shownAt = viewShownAt;
+  viewShownAt = Date.now();   // auch bei Fehlern nicht gleich wieder versuchen
+  let html;
+  try {
+    html = await refresh_view();
+  } catch (error) {
+    return;   // z. B. offline: bisherige Anzeige bleibt
+  }
+  if (!html || version !== viewVersion || replyPending) return;
+  if (viewContent(html) !== viewContent(viewHtml) || Date.now() - shownAt > VIEW_REDRAW_MS) showView(html, true);
 }
 
 // Klicks in der Ansicht (frontend/templates/dashboard.html.j2): Das iframe ist abgeschottet und
@@ -57,6 +102,24 @@ function withTaskState(html) {
 async function onViewMessage(event) {
   const message = event.data;
   if (event.source !== viewFrame.contentWindow || !message || message.source !== "eve-view") return;
+  if (message.action === "ui_state") {
+    const tab = Number(message.tab);
+    const side = Number(message.side || 0);
+    const scrolls = Array.isArray(message.scrolls) ? message.scrolls.slice(0, 20).map(Number) : [];
+    const index = (value) => Number.isInteger(value) && value >= 0 && value < 20;
+    if (index(tab) && index(side) && scrolls.every((value) => Number.isFinite(value) && value >= 0)) {
+      viewUiState = {tab, side, scrolls};
+    }
+    return;
+  }
+  if (message.action === "size") {
+    const size = [message.min, message.ideal, message.max].map((value) => Number(value));
+    if (size.every((value) => Number.isFinite(value) && value >= 0 && value <= 10000)) {
+      viewSize = {min: size[0], ideal: Math.max(size[0], size[1]), max: size[2]};
+      applyAutoSplit();
+    }
+    return;
+  }
   if (message.action === "complete_task" && typeof message.id === "string" && typeof message.done === "boolean") {
     let ok = true;
     try {
@@ -227,6 +290,8 @@ async function submitText(text, spoken = false) {
     messageInput.value = text;
     return;
   }
+  // Verlauf ganz zugezogen: wieder aufmachen, sonst sieht man die Antwort nicht
+  if (document.body.classList.contains("history-closed")) resetSplit();
   addMessage(text, "user");
   const pending = document.createElement("div");
   pending.className = "pending";
@@ -391,7 +456,45 @@ function setSplit(viewShare) {
   chatPanel.style.flexGrow = viewShare === null ? "" : 1 - viewShare;
 }
 
+// Platz für Ansicht und Chat zusammen (ohne den Splitter selbst)
+function splitSpace() {
+  return chatPanel.getBoundingClientRect().bottom - viewFrame.getBoundingClientRect().top - splitter.offsetHeight;
+}
+
+// Höhe des Chats ohne Verlauf (Eingabe samt Rändern, je nach Design verschieden)
+function chatFixedPx() {
+  return chatPanel.offsetHeight - chatScroll.offsetHeight;
+}
+
+// Grenzen für die Höhe der Ansicht. Automatisch: höchstens so hoch, wie sie es braucht, der Chat behält
+// CHAT_MIN_PX. Beim Ziehen darf die Ansicht bis an die Eingabe heran, der Verlauf verschwindet dann.
+function viewLimits(space, dragging) {
+  const upper = space - (dragging ? chatFixedPx() : CHAT_MIN_PX);
+  const min = viewSize ? Math.min(viewSize.min, upper) : VIEW_MIN_PX;
+  const max = viewSize && viewSize.max && !dragging ? Math.max(min, Math.min(viewSize.max, upper)) : upper;
+  return {min: Math.max(0, min), max: Math.max(0, max)};
+}
+
+// Ansicht so hoch, wie sie es sich wünscht (alles auf einen Blick), solange der Chat genug Platz behält.
+function applyAutoSplit() {
+  if (manualSplit || chatMaximized || !viewSize) return;
+  const space = splitSpace();
+  if (space <= 0) return;
+  const limits = viewLimits(space);
+  setSplit(Math.max(limits.min, Math.min(viewSize.ideal, limits.max)) / space);
+}
+
+function resetSplit() {
+  manualSplit = false;
+  chatPanel.style.minHeight = "";
+  document.body.classList.remove("history-closed");   // wieder die Mindesthöhe aus popup.css
+  if (viewSize) applyAutoSplit();
+  else setSplit(null);
+}
+
 function onSplitterDown(event) {
+  // Verlauf darf beim Ziehen ganz zugehen; die Eingabe bleibt immer sichtbar
+  chatPanel.style.minHeight = `${chatFixedPx()}px`;
   splitter.setPointerCapture(event.pointerId);
   splitter.classList.add("dragging");
   document.body.classList.add("dragging");
@@ -399,10 +502,13 @@ function onSplitterDown(event) {
 
 function onSplitterMove(event) {
   if (!splitter.hasPointerCapture(event.pointerId)) return;
-  const top = viewFrame.getBoundingClientRect().top;
-  const total = chatPanel.getBoundingClientRect().bottom - top;
-  const viewHeight = Math.max(VIEW_MIN_PX, Math.min(event.clientY - top, total - CHAT_MIN_PX));
-  setSplit(viewHeight / total);
+  const space = splitSpace();
+  const limits = viewLimits(space, true);
+  let wanted = event.clientY - viewFrame.getBoundingClientRect().top - splitter.offsetHeight / 2;
+  if (wanted > limits.max - SNAP_PX) wanted = limits.max;   // kurz vor der Eingabe: ganz nach unten
+  manualSplit = true;
+  setSplit(Math.max(limits.min, Math.min(wanted, limits.max)) / space);
+  document.body.classList.toggle("history-closed", wanted >= limits.max);
 }
 
 function onSplitterUp() {
@@ -454,7 +560,9 @@ window.addEventListener("message", onViewMessage);   // Klicks in der Ansicht (A
 modelSelect.addEventListener("change", changeModel);
 window.addEventListener("focus", () => {
   if (!modelSelect.disabled && !replyPending) loadModels();
+  refreshView();
 });
+setInterval(() => { if (document.hasFocus()) refreshView(); }, VIEW_REFRESH_MS / 2);
 chatHistory.addEventListener("click", onChatClick);
 recordButton.addEventListener("click", toggleRecording);
 chatHistory.addEventListener("scroll", onChatScroll);
@@ -464,7 +572,8 @@ splitter.addEventListener("pointerdown", onSplitterDown);
 splitter.addEventListener("pointermove", onSplitterMove);
 splitter.addEventListener("pointerup", onSplitterUp);
 splitter.addEventListener("lostpointercapture", onSplitterUp);
-splitter.addEventListener("dblclick", () => setSplit(null));
+splitter.addEventListener("dblclick", resetSplit);
+window.addEventListener("resize", applyAutoSplit);   // z. B. "Fenster groß"
 chatMaxButton.addEventListener("click", toggleChatMaximized);
 enlargeButton.addEventListener("click", toggleEnlarged);
 document.addEventListener("keydown", onKeyDown);

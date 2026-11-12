@@ -42,5 +42,10 @@
     </tbody>
   </table>
   {% endif %}
+  <script>
+{% include "view_size.js" %}
+EveViewSize.reportContent();
+window.addEventListener("resize", EveViewSize.reportContent);
+  </script>
 </body>
 </html>

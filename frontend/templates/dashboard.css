@@ -4,25 +4,88 @@
    Linien und Flächen entstehen aus --text-muted mit Deckkraft bzw. neutralem Grau: Manche Designs
    haben --border: transparent, Rahmenlinien wären dort unsichtbar. */
 
-body.dashboard { padding: 12px; }
-.board {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  grid-gap: 12px;
-  align-items: start;
-}
+/* Grundgerüst: Kalender (.pane-main) und Listen (.pane-side). Ohne Skript stehen sie untereinander und
+   die Seite scrollt; das Skript in dashboard.html.j2 setzt eine Klasse mode-* und passt alles in die Höhe
+   des iframes ein - jede Karte scrollt dann höchstens in sich selbst. */
+html { height: 100%; }
+body.dashboard { padding: 8px; }
+.pane > .card + .card, .board > .pane + .pane { margin-top: 8px; }
 .card {
   min-width: 0;
-  padding: 10px 12px 12px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px 10px;
+  box-sizing: border-box;
   border: var(--bw) solid var(--border);
   border-radius: var(--radius-sm);
   background: rgba(128, 128, 128, 0.07);
 }
-.card.wide { grid-column: 1 / -1; }
-.card-head { display: flex; flex-wrap: wrap; align-items: baseline; margin-bottom: 8px; }
-.card-head h3 { margin: 0 10px 0 0; font-family: var(--font-heading); font-size: 15px; font-weight: 600; }
-.card-sub { font-size: 11.5px; color: var(--text-muted); }
+.card-head { flex: none; display: flex; align-items: baseline; min-width: 0; margin-bottom: 6px; }
+.card-head h3 { flex: none; margin: 0 8px 0 0; font-family: var(--font-heading); font-size: 14px; font-weight: 600; }
+.card-sub { min-width: 0; font-size: 11px; color: var(--text-muted);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.card-body { min-height: 0; }
 .empty { margin: 4px 0 2px; }
+
+/* ---- Einpassen (mode-single, mode-cols, mode-stack, mode-tabs) ------------------------------ */
+body[class*="mode-"] { height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+body[class*="mode-"] .board { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+body[class*="mode-"] .pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+body[class*="mode-"] .pane-main { flex: 1 1 0; }
+body[class*="mode-"] .pane-main > .card { flex: 1 1 0; }
+body[class*="mode-"] .pane-side > .card { flex: 0 1 auto; }
+body[class*="mode-"] .card-body { flex: 1 1 auto; overflow-y: auto; margin-right: -6px; padding-right: 6px; }
+body[class*="mode-"] .tl, body[class*="mode-"] .mo { flex: 1 1 0; min-height: 0; }
+
+/* nebeneinander: Kalender links, Listen in einer schmaleren Spalte rechts */
+body.mode-cols .board { flex-direction: row; }
+body.mode-cols .board > .pane + .pane { margin: 0 0 0 8px; }
+body.mode-cols .pane-main + .pane-side { flex: 0 0 42%; min-width: 230px; max-width: 380px; }
+body.mode-cols .pane-side:only-child { flex: 1 1 0; }
+/* untereinander: Listen nehmen höchstens die Hälfte der Höhe (SIDE_SHARE), der Rest gehört dem Kalender */
+body.mode-stack .pane-main + .pane-side { flex: 0 1 auto; max-height: 50%; }
+body.mode-stack .pane-side:only-child { flex: 1 1 0; }
+/* zwei Listen nebeneinander, wenn die Breite reicht */
+body.side-row .pane-side { flex-direction: row !important; }
+body.side-row .pane-side > .card { flex: 1 1 0; }
+body.side-row .pane-side > .card + .card { margin: 0 0 0 8px; }
+/* Reiter: nur die gewählte Karte, über die ganze Höhe (Bereiche lösen sich auf, Karten liegen direkt im .board) */
+body.mode-tabs .pane { display: contents; }
+body.mode-tabs .card { display: none; }
+body.mode-tabs .pane > .card.active { display: flex; flex: 1 1 0; margin: 0; }
+body.mode-tabs .card.active .card-head h3 { display: none; }   /* steht schon im Reiter */
+/* Listenbereich mit eigenen Reitern: nur die gewählte Liste, über die ganze Höhe des Bereichs */
+.tabs.side-tabs { display: none; }
+body.side-tabbed .tabs.side-tabs { display: flex; }
+body.side-tabbed .pane-side > .card { display: none; }
+body.side-tabbed .pane-side > .card.side-active { display: flex; flex: 1 1 auto; margin-top: 0; }
+body.mode-tabs .tabs.side-tabs { display: none; }
+body.side-tabbed .pane-side > .card.side-active .card-head h3 { display: none; }   /* steht im Reiter */
+/* rechte Spalte: die letzte Liste füllt den Rest */
+body.mode-cols .pane-side > .card:last-child { flex-grow: 1; }
+
+.tabs { flex: none; display: flex; margin-bottom: 6px; padding: 2px; border-radius: var(--radius-sm);
+  background: rgba(128, 128, 128, 0.1); }
+.tabs[hidden] { display: none; }
+.tabs button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tabs button + button { margin-left: 2px; }
+.tabs button:hover { color: var(--text); }
+.tabs button.active { background: var(--surface); color: var(--text); font-weight: 600; }
 
 /* ---- Tages- und Wochenansicht ------------------------------------------------------------- */
 .tl-row { display: flex; }
@@ -51,12 +114,16 @@ body.dashboard { padding: 12px; }
 }
 .chip { margin-bottom: 2px; padding: 2px 6px; font-size: 11px; }
 
+.tl { display: flex; flex-direction: column; }
+.tl > .tl-row { flex: none; }
 .tl-scroll { max-height: 300px; overflow-y: auto; position: relative; }   /* = VISIBLE_PX in business_views.py */
-.tl-body { position: relative; }
-.tl-hour { position: relative; }
+body[class*="mode-"] .tl-scroll { flex: 1 1 0; min-height: 0; max-height: none; }
+/* --hour (Stundenhöhe) setzt das Template, das Skript staucht sie passend zur Kartenhöhe */
+.tl-body { position: relative; height: calc(24 * var(--hour)); }
+.tl-hour { position: relative; height: var(--hour); }
 .tl-hour span { position: absolute; top: -6px; right: 0; }
 .tl-hour:first-child span { display: none; }
-.tl-col { position: relative; }
+.tl-col { position: relative; background-size: 100% var(--hour); }
 /* Stundenlinien und Spaltentrenner (background-size setzt das Template) */
 .tl-col::before {
   content: "";
@@ -78,12 +145,13 @@ body.dashboard { padding: 12px; }
 }
 .tl-col.today::after { background: var(--accent); opacity: 0.07; }
 .card-day .tl-col.today::after { display: none; }   /* nur in der Woche hervorheben */
-.ev { position: absolute; z-index: 1; padding: 2px 6px; font-size: 11px; line-height: 1.3; }
+.ev { position: absolute; z-index: 1; min-height: 14px; padding: 2px 6px; font-size: 11px; line-height: 1.3; }
 .ev-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .ev-meta { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
 /* In der Woche sind die Spalten schmal: Titel zwischen Wörtern umbrechen statt abschneiden */
 .card-week .ev:not(.compact) .ev-title { white-space: normal; }
-.ev.compact { display: flex; align-items: center; padding-top: 0; padding-bottom: 0; }
+.ev.compact { display: flex; align-items: center; padding-top: 0; padding-bottom: 0; line-height: 1.2; }
+.ev.compact .ev-loc { display: none; }
 .ev.compact .ev-title { flex: 0 1 auto; min-width: 0; }
 .ev.compact .ev-meta { flex: 0 1000 auto; min-width: 0; margin-left: 6px; }   /* Uhrzeit weicht zuerst */
 .declined { opacity: 0.55; text-decoration: line-through; }
@@ -98,9 +166,13 @@ body.dashboard { padding: 12px; }
 }
 
 /* ---- Monatsraster ------------------------------------------------------------------------ */
-.mo-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.mo { display: flex; flex-direction: column; }
+.mo-row { flex: none; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+/* eingepasst: Wochen teilen sich die Höhe, Termine darüber hinaus werden abgeschnitten */
+body[class*="mode-"] .mo-week { flex: 1 1 0; min-height: 0; }
+body[class*="mode-"] .mo-cell { min-height: 0; overflow: hidden; }
 .mo-head div { padding: 0 5px 4px; font-size: 11px; color: var(--text-muted); }
-.mo-cell { position: relative; min-height: 66px; padding: 3px 4px 4px; box-sizing: border-box; }
+.mo-cell { position: relative; min-height: 60px; padding: 3px 4px 4px; box-sizing: border-box; }
 .mo-cell::before {
   content: "";
   position: absolute;
@@ -123,7 +195,7 @@ body.dashboard { padding: 12px; }
 /* ---- Aufgaben --------------------------------------------------------------------------- */
 .tasks, .mails { list-style: none; margin: 0; padding: 0; }
 .task { position: relative; }
-.task label { display: flex; align-items: flex-start; padding: 6px 4px; border-radius: var(--radius-sm); cursor: pointer; }
+.task label { display: flex; align-items: flex-start; padding: 4px 4px; border-radius: var(--radius-sm); cursor: pointer; }
 .task label:hover { background: var(--control-hover); }
 .task-check { position: absolute; opacity: 0; pointer-events: none; }
 .task-box {
@@ -148,10 +220,10 @@ body.dashboard { padding: 12px; }
   transform: rotate(45deg);
 }
 .task.busy { opacity: 0.7; }
-.task-body { min-width: 0; display: flex; flex-direction: column; }
-.task-title { line-height: 18px; overflow-wrap: anywhere; }
+.task-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.task-title { line-height: 18px; overflow-wrap: break-word; }
 .task.done .task-title { color: var(--text-muted); text-decoration: line-through; }
-.task-meta { margin-top: 3px; }
+.task-meta { margin-top: 3px; line-height: 16px; }
 .tag {
   display: inline-block;
   margin-right: 4px;
@@ -173,7 +245,7 @@ body.dashboard { padding: 12px; }
 .mail {
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr) auto;
-  padding: 6px 6px;
+  padding: 4px 6px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   outline: none;
