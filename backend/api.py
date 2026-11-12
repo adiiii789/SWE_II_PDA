@@ -57,6 +57,17 @@ def render_view(request: dict[str, Any]) -> str:
     return renderer().render(view_from_dict(request))
 
 
+def refresh_view() -> str | None:
+    """Anzeige oben (Kalender, Aufgaben, Mails) mit frischen Daten, ohne Sprachmodell: führt die Abfragen
+    hinter der aktuellen Anzeige erneut aus (backend/assistant/live_view.py). None = nichts zu aktualisieren."""
+    refresh = getattr(_assistant(), "refresh_view", None)
+    if refresh is None:
+        return None
+    with _assistant_lock:
+        view = refresh()
+    return renderer().render(view) if view else None
+
+
 def start_view() -> str:
     """HTML der Startansicht fürs iframe."""
     return renderer().render(START_VIEW)

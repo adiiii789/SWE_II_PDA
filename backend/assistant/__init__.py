@@ -31,6 +31,7 @@ def _model_assistant(backend: str) -> Assistant:
     from backend.assistant.claude_code_assistant import ClaudeCodeAssistant
     from backend.assistant.gemini import GeminiModel
     from backend.assistant.gemini_assistant import GeminiAssistant
+    from backend.assistant.live_view import LiveView
     from backend.assistant.model_picker import ModelPicker
     from backend.assistant.ollama import OllamaClient, OllamaModel
     from backend.assistant.ollama_assistant import OllamaAssistant
@@ -44,12 +45,13 @@ def _model_assistant(backend: str) -> Assistant:
     instructions = "\n\n".join(skill.instructions for skill in SKILLS)
     preferences = default_store()
     args = (tools, preferences, instructions, config.ASSISTANT_MAX_TOOL_ROUNDS, config.ASSISTANT_MAX_HISTORY)
+    shared = {"live_view": LiveView()}   # eine Anzeige für alle Anbieter
     gemini = GeminiAssistant(GeminiModel(config.GEMINI_MODEL, config.GEMINI_KEY_FILE, config.GEMINI_TIMEOUT_S),
-                             *args)
+                             *args, **shared)
     ollama = OllamaAssistant(OllamaModel(OllamaClient(config.OLLAMA_TIMEOUT_S, config.OLLAMA_CATALOG_TIMEOUT_S)),
-                             *args)
+                             *args, **shared)
     claude = ClaudeCodeAssistant(ClaudeCodeModel(config.CLAUDE_MODEL, config.CLAUDE_WORK_DIR,
-                                                 config.CLAUDE_TIMEOUT_S, config.CLAUDE_EFFORT), *args)
+                                                 config.CLAUDE_TIMEOUT_S, config.CLAUDE_EFFORT), *args, **shared)
     if backend == "models":
         return ModelPicker(gemini, ollama, preferences, claude if config.CLAUDE_ENABLED else None)
     return {"gemini": gemini, "ollama": ollama, "claude": claude}[backend]

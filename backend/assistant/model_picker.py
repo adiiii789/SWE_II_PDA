@@ -41,6 +41,9 @@ class ModelPicker:
             return model_select_reply(self, message.strip()[len("modell "):].strip())
         return self._assistants[self._provider].reply(message)
 
+    def refresh_view(self):
+        return self._assistants[self._provider].refresh_view()
+
     def announce(self, instruction: str) -> str | None:
         return self._assistants[self._provider].announce(instruction)
 
