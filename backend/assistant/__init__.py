@@ -6,13 +6,14 @@ Aufbau:
   llm.py               LanguageModel-Protokoll
   gemini.py            GeminiModel - LanguageModel über die Google Gemini API
   ollama.py            OllamaModel - lokal installierte Modelle
+  claude_code.py       ClaudeCodeModel - Claude über die Claude-Code-Anmeldung (eigenes Claude-Abo)
   model_assistant.py   Gemeinsamer Verlauf und Werkzeugaufrufe für je einen Anbieter
   model_picker.py      Wechsel zwischen den Anbietern
   tools.py             ToolProvider-Protokoll (Integrationen, MCP) + CompositeToolProvider
   skills/              Fähigkeiten des Assistenten (morning, travel, organization)
 
 Es gibt einen durchgehenden Assistenten. Welcher läuft, legt
-config.ASSISTANT_BACKEND fest ("models", "gemini", "ollama" oder "commands").
+config.ASSISTANT_BACKEND fest ("models", "gemini", "ollama", "claude" oder "commands").
 """
 from __future__ import annotations
 
@@ -26,6 +27,8 @@ from backend.assistant.commands import CommandAssistant
 
 
 def _model_assistant(backend: str) -> Assistant:
+    from backend.assistant.claude_code import ClaudeCodeModel
+    from backend.assistant.claude_code_assistant import ClaudeCodeAssistant
     from backend.assistant.gemini import GeminiModel
     from backend.assistant.gemini_assistant import GeminiAssistant
     from backend.assistant.model_picker import ModelPicker
@@ -45,9 +48,11 @@ def _model_assistant(backend: str) -> Assistant:
                              *args)
     ollama = OllamaAssistant(OllamaModel(OllamaClient(config.OLLAMA_TIMEOUT_S, config.OLLAMA_CATALOG_TIMEOUT_S)),
                              *args)
+    claude = ClaudeCodeAssistant(ClaudeCodeModel(config.CLAUDE_MODEL, config.CLAUDE_WORK_DIR,
+                                                 config.CLAUDE_TIMEOUT_S, config.CLAUDE_EFFORT), *args)
     if backend == "models":
-        return ModelPicker(gemini, ollama, preferences)
-    return gemini if backend == "gemini" else ollama
+        return ModelPicker(gemini, ollama, preferences, claude if config.CLAUDE_ENABLED else None)
+    return {"gemini": gemini, "ollama": ollama, "claude": claude}[backend]
 
 
 _BACKENDS: dict[str, Callable[[], Assistant]] = {
@@ -55,6 +60,7 @@ _BACKENDS: dict[str, Callable[[], Assistant]] = {
     "models": partial(_model_assistant, "models"),
     "gemini": partial(_model_assistant, "gemini"),
     "ollama": partial(_model_assistant, "ollama"),
+    "claude": partial(_model_assistant, "claude"),
 }
 
 

@@ -331,10 +331,12 @@ async function loadSpeechSupport() {
   recordButton.hidden = !speech.input;
 }
 
-// Sprachmodelle in die Auswahl laden, getrennt nach lokal und Cloud.
+// Sprachmodelle in die Auswahl laden, getrennt nach lokal, Gemini und Claude-Abo.
+const isClaude = model => (model.id ?? "").startsWith("claude/");
 const MODEL_GROUPS = [
-  {label: "Lokal (Ollama)", cloud: false},
-  {label: "Cloud (Gemini)", cloud: true},
+  {label: "Lokal (Ollama)", matches: model => !model.cloud},
+  {label: "Cloud (Gemini)", matches: model => Boolean(model.cloud) && !isClaude(model)},
+  {label: "Claude (Abo)", matches: isClaude},
 ];
 let renderedModels = "";
 
@@ -344,8 +346,8 @@ async function loadModels() {
     const snapshot = JSON.stringify([models, current]);
     if (snapshot === renderedModels && modelSelect.value === (current ?? "")) return;
     while (modelSelect.firstChild) modelSelect.removeChild(modelSelect.firstChild);
-    for (const {label, cloud} of MODEL_GROUPS) {
-      const members = models.filter(model => Boolean(model.cloud) === cloud);
+    for (const {label, matches} of MODEL_GROUPS) {
+      const members = models.filter(matches);
       if (members.length === 0) continue;
       const group = document.createElement("optgroup");
       group.label = label;

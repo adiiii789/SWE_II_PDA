@@ -21,7 +21,7 @@ from backend.assistant.base import AssistantReply, ModelSelection
 from backend.assistant.commands import COMMANDS
 from backend.assistant.llm import ChatMessage, LanguageModelError, SelectableLanguageModel, ToolCall
 from backend.assistant.settings import CONFIRMED_TOOLS, SETTINGS_KEYS, AssistantSettings, is_internal_tool
-from backend.assistant.tools import Attachment, ToolProvider, ToolResult
+from backend.assistant.tools import Attachment, ToolProvider, ToolResult, ToolSpec
 from backend.config import APP_NAME
 from backend.preferences import PreferenceStore
 from backend.views import TemplateView
@@ -29,7 +29,7 @@ from backend.views import TemplateView
 log = logging.getLogger(__name__)
 
 PROVIDER_PREFERENCE = "model_provider"
-MODEL_PREFERENCES = frozenset({"ollama_model", "gemini_model", PROVIDER_PREFERENCE})
+MODEL_PREFERENCES = frozenset({"ollama_model", "gemini_model", "claude_model", PROVIDER_PREFERENCE})
 MAX_TOOL_RESULT_CHARS = 8000   # schützt das Kontextfenster kleiner Modelle
 
 # Länge, Sprache, Ton, Emojis usw. legt der Nutzer im Popup fest (backend/assistant/settings.py).
@@ -154,10 +154,13 @@ class ModelAssistant:
             return None
         return response.message.content.strip() or None
 
-    def _run(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> str:
+    def _offered_tools(self) -> list[ToolSpec]:
         # Im Popup abgeschaltete und interne Werkzeuge bekommt das Modell gar nicht erst zu sehen.
-        tools = [tool for tool in self.tools.list_tools()
-                 if not is_internal_tool(tool.name) and self.settings.tool_enabled(tool.name)]
+        return [tool for tool in self.tools.list_tools()
+                if not is_internal_tool(tool.name) and self.settings.tool_enabled(tool.name)]
+
+    def _run(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> str:
+        tools = self._offered_tools()
         system = self._system_message([tool.name for tool in tools])
         for round_ in range(self.max_tool_rounds + 1):
             # In der letzten Runde keine Werkzeuge mehr anbieten: Das Modell muss antworten.

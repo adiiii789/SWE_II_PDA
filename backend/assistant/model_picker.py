@@ -1,7 +1,8 @@
-"""Wechselt zwischen lokalem Ollama und Gemini mit getrennten Verläufen."""
+"""Wechselt zwischen lokalem Ollama, Gemini und Claude (Abo) mit getrennten Verläufen."""
 from __future__ import annotations
 
 from backend.assistant.base import AssistantReply
+from backend.assistant.claude_code_assistant import ClaudeCodeAssistant
 from backend.assistant.commands import COMMANDS
 from backend.assistant.gemini_assistant import GeminiAssistant
 from backend.assistant.model_assistant import (PROVIDER_PREFERENCE, model_help_reply, model_list_reply,
@@ -11,9 +12,11 @@ from backend.preferences import PreferenceStore
 
 
 class ModelPicker:
-    def __init__(self, gemini: GeminiAssistant, ollama: OllamaAssistant, preferences: PreferenceStore):
-        self._assistants = {"gemini": gemini, "ollama": ollama}
-        self._provider = "ollama" if preferences.get(PROVIDER_PREFERENCE) == "ollama" else "gemini"
+    def __init__(self, gemini: GeminiAssistant, ollama: OllamaAssistant, preferences: PreferenceStore,
+                 claude: ClaudeCodeAssistant | None = None):
+        self._assistants = {"gemini": gemini, "ollama": ollama, **({"claude": claude} if claude else {})}
+        saved = preferences.get(PROVIDER_PREFERENCE)
+        self._provider = saved if saved in self._assistants else "gemini"
         self._preferences = preferences
         self.tools = gemini.tools
 
@@ -25,11 +28,15 @@ class ModelPicker:
             return COMMANDS["neu"][1]()
         if command == "hilfe":
             return model_help_reply({
-                "modelle": "Zeigt lokale Ollama- und Gemini-Modelle",
-                "modell <name>": "Wechselt das Modell, optional mit Präfix ollama/ oder gemini/",
+                "modelle": f"Zeigt {self._provider_names()}",
+                "modell <name>": "Wechselt das Modell, optional mit Präfix " + " oder ".join(
+                    f"{provider}/" for provider in self._assistants),
             })
         if command == "modelle":
-            return model_list_reply(self, "Ollama läuft lokal. Gemini verarbeitet Anfragen in der Google-Cloud.")
+            hint = "Ollama läuft lokal. Gemini verarbeitet Anfragen in der Google-Cloud."
+            if "claude" in self._assistants:
+                hint += " Claude läuft über dein Claude-Abo bei Anthropic."
+            return model_list_reply(self, hint)
         if command.startswith("modell "):
             return model_select_reply(self, message.strip()[len("modell "):].strip())
         return self._assistants[self._provider].reply(message)
@@ -51,8 +58,15 @@ class ModelPicker:
         provider, separator, model_name = name.partition("/")
         if not separator or provider not in self._assistants:
             model_name = name
-            provider = "gemini" if name in self._assistants["gemini"].model.selectable() else "ollama"
+            provider = next((key for key in ("gemini", "claude")
+                             if key in self._assistants and name in self._assistants[key].model.selectable()),
+                            "ollama")
         self._assistants[provider].select_model(model_name)
         if provider != self._provider:
             self._preferences.set(PROVIDER_PREFERENCE, provider)
             self._provider = provider
+
+    def _provider_names(self) -> str:
+        names = {"ollama": "lokale Ollama-", "gemini": "Gemini-", "claude": "Claude-"}
+        labels = [names[provider] for provider in self._assistants]
+        return ", ".join(labels[:-1]) + " und " + labels[-1] + "Modelle"

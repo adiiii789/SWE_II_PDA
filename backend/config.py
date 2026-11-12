@@ -1,8 +1,10 @@
 """Zentrale Konfiguration: Pfade, Namen und Darstellungswerte."""
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 from backend.platform_paths import app_data_dir
@@ -17,7 +19,7 @@ APP_USER_MODEL_ID = "swe2.personaldigitalagent.1.0"
 IS_MAC = sys.platform == "darwin"
 TRAY_ICON = ROOT_DIR / "assets" / "tray-macos.svg" if IS_MAC else ROOT_DIR / "TrayIcon.ico"
 
-# "models" (Ollama und Gemini), einzelner Anbieter oder "commands" (nur feste Befehle).
+# "models" (Ollama, Gemini, Claude), einzelner Anbieter oder "commands" (nur feste Befehle).
 # Siehe backend/assistant/__init__.py (_BACKENDS). Die Tests setzen "commands" (tests/conftest.py).
 ASSISTANT_BACKEND = os.environ.get("PDA_ASSISTANT_BACKEND", "models")
 
@@ -25,6 +27,14 @@ GEMINI_MODEL = os.environ.get("PDA_GEMINI_MODEL", "").strip()
 GEMINI_TIMEOUT_S = 120
 OLLAMA_TIMEOUT_S = 300
 OLLAMA_CATALOG_TIMEOUT_S = 2
+
+# Claude über die Claude-Code-Anmeldung dieses Rechners (backend/assistant/claude_code.py).
+# Erscheint in der Modellauswahl, sobald claude-agent-sdk installiert ist; PDA_CLAUDE=0 blendet es aus.
+CLAUDE_MODEL = os.environ.get("PDA_CLAUDE_MODEL", "").strip()          # sonnet, haiku, opus oder Modell-ID
+CLAUDE_EFFORT = os.environ.get("PDA_CLAUDE_EFFORT", "medium").strip()  # low, medium, high, xhigh, max
+CLAUDE_TIMEOUT_S = 180
+CLAUDE_ENABLED = (os.environ.get("PDA_CLAUDE", "1") != "0"
+                  and importlib.util.find_spec("claude_agent_sdk") is not None)
 
 ASSISTANT_MAX_TOOL_ROUNDS = 5         # Werkzeug-Runden pro Nachricht, gegen Endlosschleifen
 ASSISTANT_MAX_HISTORY = 30            # Nachrichten im Verlauf, die das Modell sieht
@@ -36,6 +46,9 @@ MCP_SERVERS_FILE = ROOT_DIR / "mcp_servers.json"
 APP_DATA_DIR = app_data_dir()
 PREFERENCES_FILE = APP_DATA_DIR / "preferences.json"
 GEMINI_KEY_FILE = APP_DATA_DIR / "gemini-api-key.txt"
+# Leerer Arbeitsordner für Claude Code. Im Temp-Ordner, weil Python aus dem Microsoft Store neue Ordner
+# unter AppData umleitet - claude.exe würde sie dann nicht finden.
+CLAUDE_WORK_DIR = Path(tempfile.gettempdir()) / "PersonalDigitalAgent-claude"
 
 # Dateien im Chat (backend/attachments.py). Nur Dateien in ATTACHMENT_DIR lassen sich öffnen;
 # derselbe Ordner, in den mcp_servers/inbox.py Mail-Anhänge ablegt.

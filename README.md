@@ -91,7 +91,27 @@ hinzu und legt die Vorgabe fest, solange noch kein Modell gespeichert ist.
 
 Für Ollama die Ollama-App oder `ollama serve` starten und ein Modell mit Tool-Calling laden
 (z. B. `ollama pull qwen3:8b`). Cloud-Modelle von ollama.com werden nicht angeboten.
-Nur einen Anbieter verwenden: `PDA_ASSISTANT_BACKEND=gemini` bzw. `=ollama`.
+Nur einen Anbieter verwenden: `PDA_ASSISTANT_BACKEND=gemini` bzw. `=ollama` oder `=claude`.
+
+### Claude über das eigene Claude-Abo (optional)
+
+Mit einem Claude-Abo (Pro oder Max) lässt sich Claude ohne API-Schlüssel nutzen. Die Anfragen laufen über
+die Claude-Code-Anmeldung **deines** Rechners und zählen auf dein Abo. Im Projekt liegt weder Schlüssel
+noch Token; wer im Team Claude nutzen will, meldet sich mit dem eigenen Konto an.
+
+1. `pip install -r requirements-claude.txt` (bringt Claude Code mit, gut 300 MB)
+2. Einmal anmelden: im Terminal `claude` starten und `/login` mit dem Claude-Konto ausführen
+   (wer Claude Code schon nutzt und angemeldet ist, muss nichts tun)
+3. Im Popup unter „Claude (Abo)“ ein Modell wählen, oder im Chat `modell claude/sonnet`
+
+Zur Auswahl stehen `sonnet` (Vorgabe), `haiku` und `opus`, jeweils das aktuelle Modell der Reihe.
+`PDA_CLAUDE_MODEL` legt die Vorgabe fest, `PDA_CLAUDE_EFFORT` die Denktiefe (`low` … `max`, Vorgabe
+`medium`), `PDA_CLAUDE=0` blendet Claude aus. Claude Code läuft abgeschottet: ohne eigene Werkzeuge
+(Bash, Dateien, Web), ohne deine Claude-Code-Einstellungen und MCP-Server und ohne gespeicherte
+Sitzungen. Es sieht nur die Werkzeuge von EVE; riskante Aufrufe brauchen wie bei Gemini deine Zustimmung.
+Eine Antwort dauert einige Sekunden länger als bei Gemini. Gesprächskontext und benötigte
+Werkzeugergebnisse gehen an Anthropic. Eine gesetzte `ANTHROPIC_API_KEY` wird ignoriert, damit
+immer das Abo zahlt.
 
 Nur feste Befehle, ohne Sprachmodell:
 

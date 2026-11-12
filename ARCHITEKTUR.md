@@ -57,6 +57,7 @@ Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen P
 | Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – je ein `ToolProvider`, gebündelt per `CompositeToolProvider` | Ort, Konvention und Sammel-Provider |
 | MCP-Server als Werkzeuge | `MCPToolProvider` in `backend/integrations/mcp_client.py`, Liste in `mcp_servers.json` | fertig (stdio), eigener Server `mcp_servers/pda_server.py` |
 | Google Gemini | `GeminiModel` in `backend/assistant/gemini.py`, `GeminiAssistant` in `gemini_assistant.py` | fertig, Modellwahl im Popup |
+| Claude (Abo) | `ClaudeCodeModel` in `backend/assistant/claude_code.py`, `ClaudeCodeAssistant` in `claude_code_assistant.py` | fertig, optional (`requirements-claude.txt`) |
 | Autonom (z. B. Briefing ohne Eingabe) | `backend/proactive.py`: Anlass → Modell formuliert Meldung → Chat, Systembenachrichtigung, Vorlesen; `api.proactive_message(name)` | proaktive Meldung fertig (Popup öffnet sich von selbst), Test-Makro Strg+Alt+P / Tray-Menü; echte Auslöser offen |
 | Kontextwissen, Präferenzen per UI | Speicher: `backend/preferences.py`; Einstellungen (Antworten, Werkzeuge): `backend/assistant/settings.py`, Formular `frontend/settings.js` | Antwort- und Werkzeug-Einstellungen fertig; Kontextwissen (Wohnort …) noch ohne UI |
 | Sprachliche Ein- und Ausgabe | `SpeechInput` / `SpeechOutput` in `backend/speech.py` (faster-whisper, Piper bzw. Windows-Stimme) | fertig, Mikrofon-Knopf im Chat |
@@ -113,6 +114,8 @@ backend/                      BACKEND: läuft in Python
     llm.py                    LanguageModel-Protokoll
     gemini.py                 GeminiModel: LanguageModel über die HTTPS-API von Google Gemini
     gemini_assistant.py       GeminiAssistant: Verlauf + Tool-Calling-Schleife
+    claude_code.py            ClaudeCodeModel: Claude über die Claude-Code-Anmeldung (claude-agent-sdk)
+    claude_code_assistant.py  ClaudeCodeAssistant: Werkzeuge über _call_tool, Verlauf als Text
     tools.py                  ToolProvider-Protokoll + CompositeToolProvider
     settings.py               Einstellungen aus dem Popup: Schema, Prüfen, Anweisungen fürs Modell
     skills/                   Fähigkeiten des Assistenten (Skill-Typ, noch keine)
@@ -649,6 +652,19 @@ reply(message):
 - **Modellwahl** (`ModelSelection` aus `base.py`): `available_models`, `current_model`,
   `select_model`. Die Wahl landet als `gemini_model` im `JsonPreferenceStore`
   (`%APPDATA%\PersonalDigitalAgent\preferences.json`).
+
+### Claude über das Abo – [claude_code.py](backend/assistant/claude_code.py)
+
+`ClaudeCodeModel` startet über `claude-agent-sdk` Claude Code als Unterprozess, angemeldet mit dem
+Claude-Konto des Rechners. Anders als bei Gemini führt Claude Code die Werkzeugschleife selbst: Die
+Werkzeuge des Assistenten laufen als MCP-Server im eigenen Prozess (`create_sdk_mcp_server`), und jeder
+Aufruf geht über einen Rückruf an `ModelAssistant._call_tool`. Damit gelten Zustimmung, abgeschaltete
+und interne Werkzeuge genauso; `ClaudeCodeAssistant` trägt Aufrufe und Ergebnisse in den Verlauf ein.
+Claude Code speichert keine Sitzung; der Verlauf geht bei jeder Anfrage als Text mit, Werkzeugaufrufe
+samt Argumenten, damit ein bestätigter Aufruf genau gleich wiederholt wird. Abgeschottet durch
+`tools=[]`, `strict_mcp_config`, `setting_sources=[]`, `permission_mode="dontAsk"`, `verbatim_prompts`
+und einen leeren Arbeitsordner im Temp-Verzeichnis (Python aus dem Microsoft Store leitet neue Ordner
+unter AppData um, die `claude.exe` dann nicht sieht).
 
 ### Werkzeuge und Integrationen – [tools.py](backend/assistant/tools.py)
 
