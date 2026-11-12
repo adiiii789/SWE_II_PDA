@@ -142,6 +142,28 @@ function updateAgentState() {
   else if (speaking) Avatar.setState("speaking");
   else if (replyPending) Avatar.setState("thinking");
   else Avatar.setState("idle");
+  tellCompanion("state", {state: Avatar.state});
+}
+
+// 3D-Begleiter neben dem Popup (frontend/companion.js): Zustand und Gesten gehen sofort über den
+// EventBus hinüber, nicht über den Bridge-Thread - sonst kämen sie erst nach der Antwort an.
+let companionState = "";
+function tellCompanion(kind, details = {}) {
+  if (!window.notifyPython) return;
+  if (kind === "state") {
+    if (details.state === companionState) return;
+    companionState = details.state;
+  }
+  notifyPython("companion", Object.assign({kind}, details));
+}
+
+// Der Begleiter ist (neu) geladen: alles schicken, was er wissen muss
+function syncCompanion() {
+  companionState = "";
+  tellCompanion("side", {value: Appearance.companionSide});
+  tellCompanion("visible", {value: Appearance.companionShown});
+  tellCompanion("theme", {accent: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()});
+  tellCompanion("state", {state: Avatar.state});
 }
 
 function isNearBottom() {
@@ -206,6 +228,7 @@ function createMessage(text, role) {
 }
 
 function addMessage(text, role) {
+  if (role === "error") tellCompanion("error");
   const element = createMessage(text, role);
   appendToChat(element, role === "user");
   return element;
@@ -264,6 +287,7 @@ function addAttachments(message, attachments) {
 // Proaktive Meldungen (backend/proactive.py) haben zusätzlich "proactive": true und "title".
 function showReply(reply) {
   const message = createMessage(reply.text, "assistant");
+  tellCompanion(reply.proactive ? "proactive" : "reply");
   if (reply.proactive) {
     markProactive(message, reply.title);
     Avatar.flash();
@@ -578,6 +602,10 @@ chatMaxButton.addEventListener("click", toggleChatMaximized);
 enlargeButton.addEventListener("click", toggleEnlarged);
 document.addEventListener("keydown", onKeyDown);
 onPythonEvent("assistant_message", showReply);   // Nachrichten, die das Backend von sich aus schickt
+onPythonEvent("companion_ready", syncCompanion);  // 3D-Begleiter geladen
+document.addEventListener("appearancechange", syncCompanion);
+// Popup geht auf: der Begleiter winkt
+document.addEventListener("visibilitychange", () => { if (!document.hidden) tellCompanion("hello"); });
 start_view().then(showView);
 updateLayoutButtons();
 addMessage('Hallo! Frag mich etwas oder schreib "hilfe" für die festen Befehle.', "assistant");

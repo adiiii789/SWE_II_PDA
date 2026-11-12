@@ -81,6 +81,13 @@
     <div id="design-description"></div>
     <div class="design-label">Avatar</div>
     <div id="design-avatars"></div>
+    <!-- 3D-Begleiter links neben dem Fenster (frontend/companion.js, backend/desktop/companion_window.py) -->
+    <div class="design-label">Begleiter (3D-Figur neben dem Fenster)</div>
+    <div id="companion-choice" class="segmented" role="radiogroup">
+      <button type="button" data-companion="left" role="radio">Links</button>
+      <button type="button" data-companion="right" role="radio">Rechts</button>
+      <button type="button" data-companion="off" role="radio">Aus</button>
+    </div>
   </section>
 
   <!-- Einstellungen (settings.js): legt sich über das ganze Popup; Formular kommt aus get_settings() -->

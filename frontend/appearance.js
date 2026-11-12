@@ -410,10 +410,12 @@ const THEME_VARIABLES = ["--background", "--page-bg", "--surface", "--surface-2"
   "--bubble-shadow", "--inset-shadow", "--font", "--font-heading", "--window-radius"];
 
 const Appearance = (() => {
-  const STORAGE = {theme: "pda.theme", avatar: "pda.avatar"};
+  const STORAGE = {theme: "pda.theme", avatar: "pda.avatar", companion: "pda.companion"};
   const defaults = {};   // Werte aus theme.css, Grundlage für alle Designs
   let theme = THEMES[0];
   let avatarStyle = "nebula";
+  let companionShown = true;     // 3D-Begleiter neben dem Popup (frontend/companion.js)
+  let companionSide = "left";   // links oder rechts vom Popup
 
   // Browser-Speicher kann fehlen oder gesperrt sein - dann gilt einfach der Standard.
   function load(key) {
@@ -435,6 +437,18 @@ const Appearance = (() => {
     Avatar.setColors(theme.orb, theme.orbBase, theme.look);
     if (remember) store(STORAGE.theme, theme.id);
     document.dispatchEvent(new Event("appearancechange"));
+    updatePanel();
+  }
+
+  // choice: "left" | "right" | "off" - gespeichert und an Begleiter-Fenster und -Seite gemeldet
+  function applyCompanion(choice, remember = true) {
+    companionShown = choice !== "off";
+    if (choice === "left" || choice === "right") companionSide = choice;
+    if (remember) store(STORAGE.companion, companionShown ? companionSide : "off");
+    if (window.notifyPython) {
+      notifyPython("companion", {kind: "side", value: companionSide});
+      notifyPython("companion", {kind: "visible", value: companionShown});
+    }
     updatePanel();
   }
 
@@ -463,6 +477,7 @@ const Appearance = (() => {
   const grids = {};
   const avatarList = document.getElementById("design-avatars");
   const description = document.getElementById("design-description");
+  const companionChoice = document.getElementById("companion-choice");
 
   function node(tag, className, text) {
     const element = document.createElement(tag);
@@ -517,6 +532,11 @@ const Appearance = (() => {
     }
     for (const card of avatarList.children) card.classList.toggle("active", card.dataset.avatar === avatarStyle);
     description.textContent = theme.description ? `${theme.name}: ${theme.description}` : "";
+    for (const option of companionChoice.children) {
+      const active = option.dataset.companion === (companionShown ? companionSide : "off");
+      option.classList.toggle("active", active);
+      option.setAttribute("aria-checked", active ? "true" : "false");
+    }
   }
 
   function openPanel() {
@@ -535,6 +555,9 @@ const Appearance = (() => {
     if (panel.hidden) openPanel(); else closePanel();
   });
   document.getElementById("design-close").addEventListener("click", closePanel);
+  for (const option of companionChoice.children) {
+    option.addEventListener("click", () => applyCompanion(option.dataset.companion));
+  }
   document.addEventListener("click", event => {
     if (!panel.hidden && !panel.contains(event.target) && event.target !== button) closePanel();
   });
@@ -550,6 +573,11 @@ const Appearance = (() => {
   document.body.dataset.agent = Avatar.state;
   applyTheme(load(STORAGE.theme) || THEMES[0].id, false);
   applyAvatar(load(STORAGE.avatar) || "nebula", false);
+  // früher "1"/"0" (an/aus), jetzt "left" | "right" | "off"
+  const savedCompanion = load(STORAGE.companion);
+  applyCompanion(savedCompanion === "0" ? "off" : ["left", "right", "off"].includes(savedCompanion)
+    ? savedCompanion : "left", false);
 
-  return {themedHtml, applyTheme, applyAvatar, closePanel, get theme() { return theme.id; }};
+  return {themedHtml, applyTheme, applyAvatar, applyCompanion, closePanel, get theme() { return theme.id; },
+    get companionShown() { return companionShown; }, get companionSide() { return companionSide; }};
 })();

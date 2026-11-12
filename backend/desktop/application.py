@@ -1,27 +1,58 @@
 """Setzt die Bausteine zusammen (Composition Root)."""
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+from PyQt5.QtCore import QRect, QUrl, QUrlQuery
 from PyQt5.QtWidgets import QApplication
 
 from backend import api, config
 from backend.bridge.function_registry import FunctionRegistry
+from backend.companion_models import is_model, model_entry
+from backend.desktop.companion_window import CompanionWindow
 from backend.desktop.hotkey import GlobalHotkey
 from backend.desktop.popup_window import PopupWindow
 from backend.desktop.tray_icon import TrayIcon
 from backend.desktop.web_view import WebView
-from backend.events import POPUP_ENLARGED, PROACTIVE_NOTICE, EventBus, events
+from backend.events import COMPANION, COMPANION_READY, POPUP_ENLARGED, PROACTIVE_NOTICE, EventBus, events
 
 log = logging.getLogger(__name__)
 
 
 def create_popup() -> PopupWindow:
-    view = WebView(config.POPUP_PAGE, FunctionRegistry.from_module(api), events, config.POPUP_BACKGROUND)
+    # COMPANION: Zustand und Gesten für den 3D-Begleiter, sofort und am Bridge-Thread vorbei
+    view = WebView(config.POPUP_PAGE, FunctionRegistry.from_module(api), events, config.POPUP_BACKGROUND,
+                   notifications=frozenset({COMPANION}))
     return PopupWindow(view)
+
+
+def companion_query(model: Path) -> str:
+    """Startmodell an die Seite des Begleiters übergeben (frontend/companion.js), falls vorhanden - samt
+    seiner Einstellungen (backend/companion_models.py). Wählt der Nutzer ein anderes, schickt das Popup es."""
+    if not is_model(model):
+        return ""
+    entry = model_entry(model)
+    query = QUrlQuery()
+    query.addQueryItem("model", entry["url"])
+    query.addQueryItem("options", json.dumps(entry["options"]))
+    return query.toString(QUrl.FullyEncoded)
+
+
+def create_companion(popup: PopupWindow) -> CompanionWindow | None:
+    """3D-Begleiter neben dem Popup; ohne Python-Funktionen, er hört nur auf Ereignisse."""
+    if not config.COMPANION_ENABLED:
+        return None
+    view = WebView(config.COMPANION_PAGE, FunctionRegistry({}), events, "transparent",
+                   notifications=frozenset({COMPANION_READY}), query=companion_query(config.COMPANION_MODEL))
+    companion = CompanionWindow(view, popup, events)
+    popup.companion_geometry = lambda: companion.geometry() if companion.isVisible() else QRect()
+    popup.side_reserve = companion.reserve
+    return companion
 
 
 def forward_popup_events(popup: PopupWindow, event_bus: EventBus) -> Callable[[], None]:
@@ -99,6 +130,7 @@ class Application:
         qt_app.setQuitOnLastWindowClosed(False)
 
         self.popup = create_popup()
+        self.companion = create_companion(self.popup)
         self.tray = TrayIcon(config.TRAY_ICON, config.APP_NAME)
         self.popup.anchor = self.tray.anchor
         self.popup.tray_geometry = self.tray.geometry
@@ -133,6 +165,11 @@ class Application:
         self.hotkey.unregister()
         self.tray.hide()
         self.popup.hide()
+        if self.companion is not None:
+            self.companion.release()
+            self.companion.hide()
+            self.companion.content.close_bridge()
+            self.companion.content.deleteLater()
         self.popup.release_desktop_resources()
         self.popup.content.close_bridge()
         self.popup.content.deleteLater()

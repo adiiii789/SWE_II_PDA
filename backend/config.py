@@ -85,3 +85,15 @@ POPUP_BACKGROUND = "transparent"
 POPUP_MARGIN_PX = 0                   # Abstand zum Rand macht die Seite selbst (popup.css), passend zum Design
 POPUP_SLIDE_IN_OFFSET_PX = 50         # Start der Animation unterhalb der Endposition
 POPUP_ANIMATION_MS = 500
+
+# 3D-Begleiter: eigenes durchsichtiges Fenster links neben dem Popup (backend/desktop/companion_window.py).
+# "0" schaltet ihn ganz ab; im Popup lässt er sich unter "Design" aus- und einblenden.
+COMPANION_ENABLED = os.environ.get("PDA_COMPANION", "1") != "0"
+COMPANION_PAGE = FRONTEND_DIR / "companion.html"
+# Eigenes 3D-Modell (glTF/GLB) statt der eingebauten Figur; fehlt die Datei, bleibt die eingebaute.
+COMPANION_MODELS_DIR = FRONTEND_DIR / "models"   # zur Auswahl in den Einstellungen (backend/companion_models.py)
+COMPANION_MODEL = Path(os.environ.get("PDA_COMPANION_MODEL") or FRONTEND_DIR / "models" / "companion.glb")
+COMPANION_HEIGHT_RATIO = 0.34         # Höhe als Anteil der Bildschirmhöhe (höchstens so hoch wie das Popup)
+COMPANION_ASPECT = 0.7                # Breite / Höhe
+COMPANION_GAP_PX = 4                  # Abstand zum Popup
+COMPANION_POINTER_MS = 50             # so oft schaut der Begleiter nach dem Mauszeiger

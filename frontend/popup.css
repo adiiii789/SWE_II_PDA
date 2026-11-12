@@ -378,6 +378,13 @@ body[data-agent=transcribing] #listening-hint { visibility: hidden; }
 .design-header { display: flex; align-items: center; justify-content: space-between; }
 .design-label { margin: 12px 0 6px; font-size: 11.5px; color: var(--text-muted); }
 #design-avatars { display: grid; grid-template-columns: repeat(3, 1fr); grid-gap: 6px; }
+.segmented { display: flex; padding: 2px; border: var(--bw) solid var(--border); border-radius: var(--radius-sm);
+  background: var(--control); }
+.segmented button { flex: 1 1 0; padding: 4px 8px; border: none; border-radius: 6px; background: transparent;
+  box-shadow: none; font-size: 12.5px; color: var(--text-muted); }
+.segmented button + button { margin-left: 2px; }
+.segmented button:hover { color: var(--text); background: transparent; }
+.segmented button.active { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 .design-grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-gap: 4px; }
 .theme-card, .avatar-card {
   display: flex;
