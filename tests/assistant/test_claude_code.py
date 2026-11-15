@@ -155,6 +155,18 @@ def test_tool_calls_run_through_the_assistant(tmp_path, install):
                      ("tool", ()), ("assistant", ())]
 
 
+def test_tool_calls_are_reported_to_the_popup(tmp_path, install):
+    # Claude führt die Schleife selbst - die Meldung "Werkzeug läuft" muss trotzdem kommen
+    install(ResultMessage(result="Erledigt."), tool_calls=[("echo", {"text": "hi"})])
+    seen = []
+    eve = ClaudeCodeAssistant(ClaudeCodeModel("", tmp_path / "claude", timeout=5), Tools(), Preferences(),
+                              on_tool=seen.append)
+
+    eve.reply("Sag hi")
+
+    assert [(item["phase"], item["tool"]) for item in seen] == [("start", "echo"), ("end", "echo")]
+
+
 def test_risky_tool_waits_for_agreement(tmp_path, install):
     first = install(ResultMessage(result="Soll ich Aufgabe 1 löschen?"), tool_calls=[("delete_task", {"id": "1"})])
     eve = assistant(tmp_path)

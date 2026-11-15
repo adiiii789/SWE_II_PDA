@@ -347,6 +347,53 @@ function markProactive(message, title) {
   message.prepend(label);
 }
 
+// "denkt nach …" unter der Nachricht des Nutzers; zeigt auch, welches Werkzeug gerade läuft
+// (Ereignis tool_activity, backend/assistant/tool_activity.py) und welche schon fertig sind.
+let pendingBubble = null;   // {node, label, steps, running}
+const THINKING_LABEL = "denkt nach …";
+
+function createPending() {
+  const pending = document.createElement("div");
+  pending.className = "pending";
+  const row = pending.appendChild(document.createElement("div"));
+  row.className = "pending-row";
+  row.appendChild(Avatar.create(16, "orb pending-orb"));
+  const dots = row.appendChild(document.createElement("span"));
+  dots.className = "think-dots";
+  for (let i = 0; i < 3; i++) dots.appendChild(document.createElement("i"));
+  const label = row.appendChild(document.createElement("span"));
+  label.className = "pending-label";
+  label.textContent = THINKING_LABEL;
+  const steps = pending.appendChild(document.createElement("ul"));
+  steps.className = "tool-steps";
+  steps.hidden = true;
+  pendingBubble = {node: pending, label, steps, running: null};
+  return pending;
+}
+
+function showToolActivity(activity) {
+  if (!pendingBubble || !activity || typeof activity.label !== "string") return;
+  const bubble = pendingBubble;
+  const status = document.getElementById("agent-status");
+  if (activity.phase === "start") {
+    bubble.label.textContent = `${activity.label} …`;   // nur Text: Namen können von fremden MCP-Servern kommen
+    bubble.label.title = activity.group || "";
+    bubble.running = activity.label;
+    if (status && Avatar.state === "thinking") status.textContent = activity.label.toLowerCase() + " …";
+  } else if (activity.phase === "end") {
+    const step = bubble.steps.appendChild(document.createElement("li"));
+    step.className = activity.error ? "tool-step failed" : "tool-step";
+    step.textContent = activity.label;
+    if (activity.group) step.title = activity.group;
+    bubble.steps.hidden = false;
+    bubble.running = null;
+    bubble.label.textContent = THINKING_LABEL;
+    bubble.label.title = "";
+    if (status && Avatar.state === "thinking") status.textContent = "denkt nach";
+  }
+  if (isNearBottom()) scrollToBottom();
+}
+
 // spoken: Nachricht kam per Spracheingabe - dann wird die Antwort vorgelesen.
 async function submitText(text, spoken = false) {
   if (modelSelect.disabled) {
@@ -356,10 +403,7 @@ async function submitText(text, spoken = false) {
   // Verlauf ganz zugezogen: wieder aufmachen, sonst sieht man die Antwort nicht
   if (document.body.classList.contains("history-closed")) resetSplit();
   addMessage(text, "user");
-  const pending = document.createElement("div");
-  pending.className = "pending";
-  pending.appendChild(Avatar.create(16, "orb pending-orb"));
-  pending.appendChild(document.createElement("span")).textContent = "denkt nach …";
+  const pending = createPending();
   appendToChat(pending, true);
   replyPending = true;
   updateRecordButton();
@@ -381,6 +425,7 @@ async function submitText(text, spoken = false) {
     addMessage(error.message, "error");
   } finally {
     pending.remove();
+    if (pendingBubble && pendingBubble.node === pending) pendingBubble = null;
     replyPending = false;
     updateRecordButton();
   }
@@ -642,6 +687,7 @@ enlargeButton.addEventListener("click", toggleEnlarged);
 document.addEventListener("keydown", onKeyDown);
 onPythonEvent("assistant_message", showReply);   // Nachrichten, die das Backend von sich aus schickt
 onPythonEvent("companion_ready", syncCompanion);  // 3D-Begleiter geladen
+onPythonEvent("tool_activity", showToolActivity);  // welches Werkzeug der Assistent gerade aufruft
 document.addEventListener("appearancechange", syncCompanion);
 // Popup geht auf: der Begleiter winkt
 document.addEventListener("visibilitychange", () => { if (!document.hidden) tellCompanion("hello"); });

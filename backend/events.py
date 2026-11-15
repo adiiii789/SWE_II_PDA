@@ -38,6 +38,9 @@ STARTUP_PROGRESS = "startup_progress"
 COMPANION = "companion"
 # Die Seite des Begleiters ist geladen - das Popup schickt daraufhin Zustand und Design erneut
 COMPANION_READY = "companion_ready"
+# Der Assistent ruft gerade ein Werkzeug auf (backend/assistant/tool_activity.py):
+# {"phase": "start" | "end", "tool", "label", "group", "error" (nur bei "end")}
+TOOL_ACTIVITY = "tool_activity"
 
 
 class EventBus:
