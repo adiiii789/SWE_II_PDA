@@ -120,10 +120,29 @@ option, optgroup { background: var(--surface); color: var(--text); }
 #agent-meta { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
 #agent-name { font-family: var(--font-heading); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #agent-status { font-size: 11.5px; color: var(--text-muted); }
+/* Zustandsfarben - dieselben wie beim 3D-Begleiter (companion.js STATES) */
+body { --state: transparent; }
+body[data-agent=listening]    { --state: #1FE07A; }
+body[data-agent=transcribing] { --state: #14D6C8; }
+body[data-agent=thinking]     { --state: #FFB020; }
+body[data-agent=speaking]     { --state: #9573FF; }
 body[data-agent=thinking] #agent-status,
 body[data-agent=transcribing] #agent-status,
-body[data-agent=speaking] #agent-status { color: var(--accent); }
-body[data-agent=listening] #agent-status { color: var(--danger); }
+body[data-agent=speaking] #agent-status,
+body[data-agent=listening] #agent-status { color: var(--text); font-weight: 600; }
+/* farbiger Punkt vor dem Status, pulsiert solange etwas läuft */
+#agent-status::before {
+  content: "";
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 0;
+  background: var(--state);
+}
+body[data-agent=idle] #agent-status::before { background: var(--text-muted); opacity: 0.5; }
+body:not([data-agent=idle]) #agent-status::before { animation: state-pulse 1.1s ease-in-out infinite; }
+@keyframes state-pulse { 50% { transform: scale(0.6); opacity: 0.55; } }
 #chat-toolbar { flex: none; display: flex; margin-left: 8px; }
 #chat-toolbar > * + * { margin-left: 2px; }
 
@@ -343,7 +362,28 @@ body[data-agent=transcribing] #listening-hint { visibility: hidden; }
   box-shadow: var(--card-shadow);
   transition: border-color 0.12s;
 }
-#input-form:focus-within { border-color: var(--text-muted); }
+/* Zustand am Eingabefeld: Rahmen in der Zustandsfarbe, oben eine Lichtleiste (läuft beim Denken) */
+#input-form { position: relative; }
+body:not([data-agent=idle]) #input-form { border-color: var(--state); }
+#input-form::before {
+  content: "";
+  position: absolute;
+  left: 14px; right: 14px; top: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--state);
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+body:not([data-agent=idle]) #input-form::before { opacity: 1; }
+body[data-agent=thinking] #input-form::before,
+body[data-agent=transcribing] #input-form::before {
+  background: linear-gradient(90deg, transparent, var(--state), transparent) no-repeat;
+  background-size: 40% 100%;
+  animation: state-sweep 1.3s linear infinite;
+}
+@keyframes state-sweep { from { background-position: -70% 0; } to { background-position: 170% 0; } }
 #message-input {
   flex: 1 1 100%;
   min-width: 0;
