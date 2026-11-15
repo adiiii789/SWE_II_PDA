@@ -208,7 +208,7 @@ body[class*="mode-"] .mo-cell { min-height: 0; overflow: hidden; }
   border-radius: 50%;
   transition: background-color 0.15s, border-color 0.15s;
 }
-.task-check:focus + .task-box { box-shadow: 0 0 0 2px var(--accent); }
+:focus { outline: none; }   /* kein Fokusrahmen */
 .task.done .task-box { background: var(--accent); border-color: var(--accent); }
 .task.done .task-box::after {
   content: "";
