@@ -1,5 +1,6 @@
 import re
 import unittest
+from unittest import mock
 
 from backend import config
 from backend.assistant import Assistant, ModelSelection, create_assistant
@@ -10,6 +11,7 @@ from backend.assistant.skills import travel
 from backend.integrations.mcp_client import MCPToolProvider
 from backend.rendering import ViewRenderer
 from backend.views import START_VIEW
+from tests.assistant.test_settings import MemoryStore
 
 
 class CommandAssistantTest(unittest.TestCase):
@@ -19,7 +21,8 @@ class CommandAssistantTest(unittest.TestCase):
     def test_implements_assistant_protocol(self):
         self.assertIsInstance(self.assistant, Assistant)
 
-    def test_every_command_renders_with_the_real_template(self):
+    @mock.patch.object(commands, "default_store", return_value=MemoryStore())
+    def test_every_command_renders_with_the_real_template(self, _store):
         # Vertrag Assistent ↔ Template: jede Ansicht lässt sich mit dem echten Template rendern.
         renderer = ViewRenderer(config.TEMPLATE_DIR, config.FRONTEND_DIR)
         for name, (_, handler) in commands.COMMANDS.items():

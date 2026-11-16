@@ -33,7 +33,10 @@ def present(reply: AssistantReply, store: AttachmentStore | None = None) -> dict
     html = renderer().render(reply.view) if reply.view else None
     store = store or attachment_store()
     attachments = [entry for entry in map(store.register, reply.attachments) if entry]
-    return {"text": reply.text, "html": html, "attachments": attachments}
+    message = {"text": reply.text, "html": html, "attachments": attachments}
+    if html and reply.view_button:
+        message["view_button"] = reply.view_button
+    return message
 
 
 def push(reply: AssistantReply, event_bus: EventBus = events) -> None:

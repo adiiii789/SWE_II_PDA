@@ -2,11 +2,12 @@
 
 Es gibt genau einen durchgehenden Assistenten: ein Gesprächsverlauf, ein Satz
 Präferenzen, Rückfragen über alle Bereiche hinweg. Eine Fähigkeit bündelt, was
-er für einen Aufgabenbereich braucht. Umgesetzt ist travel (skills/travel/). Geplant:
+er für einen Aufgabenbereich braucht. Umgesetzt ist travel (skills/travel/). Der Morning
+Assistant liefert sein Briefing über den Wächter (skills/morning.py). Geplant:
 
   Fähigkeit           Wofür                                  Integrationen (backend/integrations/)
   ------------------  -------------------------------------  -------------------------------------
-  morning             kurzes Briefing über den Tag           Calendar, OpenWeather, Aktien-API, Musik
+  morning             kurzes Briefing über den Tag           Calendar, Open-Meteo, Aktien-API, Musik
   travel              wie komme ich zum nächsten Termin?     Calendar, openrouteservice, DB, Tankerkönig
   organization        Nachrichten verfassen, Tag planen      Calendar, Gmail, Google Keep
                       (im Projektplan: "Assistant²")

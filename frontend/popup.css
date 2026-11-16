@@ -42,6 +42,10 @@ body.chat-maximized #view-frame, body.chat-maximized #splitter { display: none; 
   flex-direction: column;
   gap: 6px;
 }
+@media (max-width: 600px) {
+  body.briefing-view #view-frame { flex-grow: 7; }
+  body.briefing-view #chat-panel { min-height: 147px; }
+}
 
 #chat-toolbar { display: flex; justify-content: flex-end; gap: 4px; }
 #chat-toolbar .toolbar-gap { flex: 1; }
@@ -94,6 +98,13 @@ body.chat-maximized #view-frame, body.chat-maximized #splitter { display: none; 
   color: #E0B050;
   margin-bottom: 0.3em;
 }
+.assistant.with-view-action { max-width: calc(100% - 26px); }
+.assistant.with-view-action > p + p { display: inline-block; margin-right: 8px; }
+.assistant .view-action {
+  padding: 3px 8px;
+  background: var(--accent);
+}
+.assistant .view-action:hover { background: var(--control-hover); }
 
 /* Antworten als Markdown (frontend/markdown.js): Abstände kommen von den Elementen, nicht von pre-wrap */
 .message.assistant { white-space: normal; overflow-x: auto; }

@@ -10,6 +10,10 @@ das Popup nicht ein.
 from __future__ import annotations
 
 import logging
+import os
+import re
+import subprocess
+import sys
 import threading
 import webbrowser
 from functools import cache
@@ -136,10 +140,29 @@ def stop_speaking() -> None:
 
 
 def open_link(url: str) -> None:
-    """Link aus einer Antwort im Standardbrowser öffnen (nur http, https und mailto)."""
+    """Web- und Mail-Links öffnen. Spotify-Tracks bevorzugt in der Desktop-App."""
     if not url.lower().startswith(("http://", "https://", "mailto:")):
         raise ValueError(f"Diesen Link öffne ich nicht: {url}")
+    track = re.fullmatch(r"https://open\.spotify\.com/track/([A-Za-z0-9]{22})", url)
+    if track is not None and _open_spotify_track(track.group(1)):
+        return
     webbrowser.open(url)
+
+
+def _open_spotify_track(track_id: str) -> bool:
+    """Übergibt einen geprüften Track an Spotify, sofern die App verfügbar ist."""
+    uri = f"spotify:track:{track_id}"
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["/usr/bin/open", "-b", "com.spotify.client", uri],
+                           check=True, capture_output=True, timeout=5)
+        elif sys.platform == "win32":
+            os.startfile(uri)  # noqa: S606  # Windows öffnet den registrierten Spotify-Protokollhandler.
+        else:
+            return False
+    except (OSError, NotImplementedError, subprocess.SubprocessError):
+        return False
+    return True
 
 
 def enlarge_popup(enlarged: bool) -> bool:
@@ -166,7 +189,7 @@ def _deliver_proactive(occasion: proactive.Occasion, formulate: bool = True, spe
         reply = proactive.compose(_assistant() if formulate else None, occasion)
     message = proactive.announce(present(reply), occasion, events, display)
     if speak:
-        _speak(reply.text)
+        _speak(occasion.fallback if occasion.chat_text is not None else reply.text)
     return message
 
 

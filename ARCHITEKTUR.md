@@ -39,7 +39,7 @@ deckt drei Aufgabenbereiche ab, im Code **Fähigkeiten** (Skills) genannt:
 
 | Fähigkeit | Wofür | Integrationen |
 |---|---|---|
-| `morning` | kurzes Briefing über den Tag | Google Calendar, OpenWeather, Aktien-API, Musik |
+| `morning` | kurzes Briefing über den Tag | Google Calendar, Open-Meteo, Aktien-API, Musik |
 | `travel` | wie komme ich zum nächsten Termin? | Google Calendar, openrouteservice, DB Timetables, Tankerkönig |
 | `organization` („Assistant²“) | Nachrichten verfassen, Tag organisieren | Google Calendar, Gmail, Google Keep |
 
@@ -752,7 +752,7 @@ GeminiAssistant (erfüllt Assistant + ModelSelection)
   └─ preferences: default_store() (eine JsonPreferenceStore für die ganze App)
 autonom: Auslöser einer Fähigkeit (Skill.start, beim App-Start) → presenter.push(reply),
          z. B. TravelReminder: 15 Min. vor der empfohlenen Abfahrt
-proaktiv: Auslöser (heute Makro, später z. B. 7 Uhr Briefing) → api.proactive_message → announce()
+proaktiv: Makro oder Wächter (u. a. Morning-Briefing) → api._deliver_proactive → announce()
 ```
 
 Sind es für ein kleines Modell zu viele Werkzeuge, kann der Assistent später je Anfrage nur die
