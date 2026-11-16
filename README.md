@@ -146,6 +146,11 @@ beim Start aus PyCharm kann die Freigabe PyCharm oder Python zugeordnet sein. An
 `PDA_WHISPER_MODEL` (`tiny`, `base`, `medium` …), `PDA_PIPER_VOICE` und `PDA_SPEECH_LANGUAGE`
 (siehe [config.py](backend/config.py)). `PDA_MAC_VOICE` legt optional eine installierte Mac-Stimme fest.
 
+In den Einstellungen (⚙ → Stimme) lässt sich die Piper-Stimme samt Tempo wählen und vorher
+anhören: die Thorsten-Stimmen von Piper, auch die emotionale mit acht Sprechern (neutral, müde,
+flüsternd …). Eine neue Stimme wird beim ersten Vorlesen einmal heruntergeladen (≈ 63–114 MB);
+„Standard“ ist die Stimme aus `PDA_PIPER_VOICE`.
+
 ### MCP-Server einbinden
 
 In [mcp_servers.json](mcp_servers.json) eintragen – dasselbe Format wie bei Claude Desktop, sodass

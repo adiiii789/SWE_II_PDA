@@ -108,6 +108,7 @@ backend/                      BACKEND: läuft in Python
   rendering.py                macht aus einer Anfrage HTML (Jinja2 bzw. eigenes HTML)
   preferences.py              Kontextwissen, persönliche Präferenzen (JsonPreferenceStore)
   speech.py                   Spracheingabe (faster-whisper) und -ausgabe (Piper/Windows-Stimme)
+  voice_settings.py           Einstellungen → Stimme: Piper-Stimme, Sprecher und Tempo
   assistant/                  Fachlogik: Assistent hinter dem Chat
     base.py                   Assistant-Protokoll, AssistantReply, ModelSelection
     commands.py               CommandAssistant (feste Befehle, auch im KI-Assistenten gültig)

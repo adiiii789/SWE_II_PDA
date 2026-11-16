@@ -26,7 +26,8 @@ import sys
 import tempfile
 import threading
 import wave
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -55,8 +56,9 @@ class SpeechInput(Protocol):
 
 @runtime_checkable
 class SpeechOutput(Protocol):
-    def speak(self, text: str) -> None:
-        """Text vorlesen; kehrt sofort zurück und unterbricht, was gerade gesprochen wird."""
+    def speak(self, text: str, voice: Voice | None = None) -> None:
+        """Text vorlesen; kehrt sofort zurück und unterbricht, was gerade gesprochen wird.
+        voice: einmal eine andere Piper-Stimme (Probe in den Einstellungen), sonst die eingestellte."""
         ...
 
     def stop(self) -> None:
@@ -161,41 +163,68 @@ class VoiceInput:
 
 # --- Sprachausgabe -------------------------------------------------------------
 
+@dataclass(frozen=True)
+class Voice:
+    """Welche Piper-Stimme spricht (Einstellungen → Stimme, backend/voice_settings.py).
+
+    model: Name wie "de_DE-thorsten-medium"; speaker: Sprecher bei Stimmen mit mehreren
+    (z. B. "neutral" bei de_DE-thorsten_emotional-medium), None = deren Standard;
+    length_scale: Tempo, unter 1 schneller, über 1 langsamer."""
+
+    model: str
+    speaker: str | None = None
+    length_scale: float = 1.0
+
+
 class Synthesizer(Protocol):
-    def synthesize(self, text: str) -> tuple[Any, int]:
-        """Text in Audio umwandeln: (int16-Samples mono, Abtastrate)."""
+    def synthesize(self, text: str, voice: Voice | None = None) -> tuple[Any, int]:
+        """Text in Audio umwandeln: (int16-Samples mono, Abtastrate). voice gilt nur für Piper."""
         ...
 
 
 class PiperSynthesizer:
-    """Neuronale Stimme mit Piper; die Stimme wird beim ersten Gebrauch heruntergeladen."""
+    """Neuronale Stimme mit Piper; eine Stimme wird beim ersten Gebrauch heruntergeladen.
 
-    def __init__(self, voice: str, voice_dir: Path):
-        self._voice_name = voice
+    Welche Stimme spricht, fragt er bei jedem Text neu ab (voice: feste Stimme oder eine Funktion,
+    die die eingestellte liefert) - so gilt eine Änderung in den Einstellungen sofort."""
+
+    def __init__(self, voice: Voice | str | Callable[[], Voice], voice_dir: Path):
+        fixed = Voice(voice) if isinstance(voice, str) else voice
+        self._current: Callable[[], Voice] = fixed if callable(fixed) else (lambda: fixed)
         self._voice_dir = voice_dir
-        self._voice: Any = None
+        self._loaded: tuple[str, Any] | None = None   # (Modellname, PiperVoice) - nur eine im Speicher
+        self._lock = threading.Lock()   # Vorlesen und Probe laufen je in einem eigenen Thread
 
-    def synthesize(self, text: str) -> tuple[Any, int]:
+    def synthesize(self, text: str, voice: Voice | None = None) -> tuple[Any, int]:
         import numpy as np
+        from piper import SynthesisConfig
 
-        voice = self._load()
-        chunks = [chunk.audio_int16_array for chunk in voice.synthesize(text)]
+        choice = voice or self._current()
+        with self._lock:
+            piper_voice = self._load(choice.model)
+        speaker_id = None
+        if choice.speaker is not None:
+            speaker_id = piper_voice.config.speaker_id_map.get(choice.speaker)
+            if speaker_id is None:
+                log.warning("Stimme %s kennt den Sprecher %r nicht", choice.model, choice.speaker)
+        synthesis = SynthesisConfig(speaker_id=speaker_id, length_scale=choice.length_scale)
+        chunks = [chunk.audio_int16_array for chunk in piper_voice.synthesize(text, synthesis)]
         audio = np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.int16)
-        return audio, voice.config.sample_rate
+        return audio, piper_voice.config.sample_rate
 
-    def _load(self) -> Any:
-        if self._voice is None:
+    def _load(self, name: str) -> Any:
+        if self._loaded is None or self._loaded[0] != name:
             from piper import PiperVoice
 
-            model = self._voice_dir / f"{self._voice_name}.onnx"
+            model = self._voice_dir / f"{name}.onnx"
             if not model.exists():
                 from piper.download_voices import download_voice
 
-                log.info("Lade Piper-Stimme %r …", self._voice_name)
+                log.info("Lade Piper-Stimme %r …", name)
                 self._voice_dir.mkdir(parents=True, exist_ok=True)
-                download_voice(self._voice_name, self._voice_dir)
-            self._voice = PiperVoice.load(model)
-        return self._voice
+                download_voice(name, self._voice_dir)
+            self._loaded = (name, PiperVoice.load(model))
+        return self._loaded[1]
 
 
 class MacSynthesizer:
@@ -218,7 +247,7 @@ class MacSynthesizer:
             self._selected = True
         return self._voice
 
-    def synthesize(self, text: str) -> tuple[Any, int]:
+    def synthesize(self, text: str, voice: Voice | None = None) -> tuple[Any, int]:
         import numpy as np
 
         voice = self._select_voice()
@@ -244,7 +273,7 @@ class SapiSynthesizer:
     def __init__(self, language: str | None):
         self._language = language
 
-    def synthesize(self, text: str) -> tuple[Any, int]:
+    def synthesize(self, text: str, voice: Voice | None = None) -> tuple[Any, int]:
         import numpy as np
         import pythoncom
         import win32com.client
@@ -274,11 +303,11 @@ class FallbackSynthesizer:
     def __init__(self, synthesizers: Sequence[Synthesizer]):
         self._synthesizers = list(synthesizers)
 
-    def synthesize(self, text: str) -> tuple[Any, int]:
+    def synthesize(self, text: str, voice: Voice | None = None) -> tuple[Any, int]:
         while self._synthesizers:
             synthesizer = self._synthesizers[0]
             try:
-                return synthesizer.synthesize(text)
+                return synthesizer.synthesize(text, voice)
             except Exception:  # noqa: BLE001  # z. B. Stimme nicht ladbar - nächsten versuchen
                 log.exception("%s geht nicht, nehme den nächsten", type(synthesizer).__name__)
                 self._synthesizers.pop(0)
@@ -308,14 +337,14 @@ class VoiceOutput:
         self._generation = 0          # stop()/speak() machen ältere, noch laufende Aufträge ungültig
         self._lock = threading.Lock()
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str, voice: Voice | None = None) -> None:
         text = speakable(text)
         with self._lock:
             self._generation += 1
             generation = self._generation
         self._player.stop()
         if text:
-            threading.Thread(target=self._speak, args=(text, generation), name="speech-out",
+            threading.Thread(target=self._speak, args=(text, generation, voice), name="speech-out",
                              daemon=True).start()
 
     def stop(self) -> None:
@@ -323,9 +352,9 @@ class VoiceOutput:
             self._generation += 1
         self._player.stop()
 
-    def _speak(self, text: str, generation: int) -> None:
+    def _speak(self, text: str, generation: int, voice: Voice | None) -> None:
         try:
-            audio, sample_rate = self._synthesizer.synthesize(text)
+            audio, sample_rate = self._synthesizer.synthesize(text, voice)
         except Exception:  # noqa: BLE001  # läuft im eigenen Thread - nur protokollieren
             log.exception("Vorlesen fehlgeschlagen")
             return
@@ -378,14 +407,15 @@ def create_speech_input() -> SpeechInput | None:
     return VoiceInput(Microphone(), transcriber)
 
 
-def create_speech_output() -> SpeechOutput | None:
-    """Sprachausgabe mit Piper und plattformspezifischer Ersatzstimme."""
+def create_speech_output(voice: Callable[[], Voice] | None = None) -> SpeechOutput | None:
+    """Sprachausgabe mit Piper und plattformspezifischer Ersatzstimme.
+    voice: liefert die eingestellte Piper-Stimme (backend/voice_settings.py); ohne gilt config.PIPER_VOICE."""
     if not _installed("sounddevice", "numpy"):
         log.info("Sprachausgabe aus: sounddevice nicht installiert")
         return None
     synthesizers: list[Synthesizer] = []
     if _installed("piper"):
-        synthesizers.append(PiperSynthesizer(config.PIPER_VOICE, config.SPEECH_DIR / "piper"))
+        synthesizers.append(PiperSynthesizer(voice or Voice(config.PIPER_VOICE), config.SPEECH_DIR / "piper"))
     if sys.platform == "darwin":
         synthesizers.append(MacSynthesizer(config.SPEECH_LANGUAGE or None, config.MAC_VOICE))
     elif sys.platform == "win32" and _installed("win32com"):

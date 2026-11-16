@@ -26,6 +26,7 @@ from backend.events import POPUP_ENLARGED, events
 from backend.presenter import attachment_store, present, renderer
 from backend.proactive_settings import ProactiveSettings
 from backend.speech import SpeechInput, SpeechOutput, create_speech_input, create_speech_output
+from backend.voice_settings import VoiceSettings
 from backend.startup import Startup, Step
 from backend.views import START_VIEW, view_from_dict
 from backend.watcher import ProactiveWatcher
@@ -128,8 +129,13 @@ def _speech_input() -> SpeechInput | None:
 
 
 @cache
+def _voice_settings() -> VoiceSettings:
+    return VoiceSettings(default_store(), config.SPEECH_DIR / "piper", config.PIPER_VOICE)
+
+
+@cache
 def _speech_output() -> SpeechOutput | None:
-    return create_speech_output()
+    return create_speech_output(lambda: _voice_settings().voice())   # Stimme aus den Einstellungen
 
 
 def speech_support() -> dict[str, bool]:
@@ -157,6 +163,13 @@ def cancel_recording() -> None:
 def speak(text: str) -> None:
     """Text vorlesen; kehrt sofort zurück."""
     _require(_speech_output(), "Sprachausgabe").speak(text)
+
+
+def preview_voice(values: dict[str, Any]) -> None:
+    """Probe der Stimme aus dem Formular, noch ohne zu speichern ({"voice", "speed"}, siehe
+    backend/voice_settings.py); kehrt sofort zurück. Ungültige Werte: ValueError."""
+    voice = _voice_settings().voice(values)
+    _require(_speech_output(), "Sprachausgabe").speak(_voice_settings().form()["sample"], voice)
 
 
 def stop_speaking() -> None:
@@ -266,20 +279,24 @@ def get_settings() -> dict[str, Any]:
     """Formular der Einstellungen (⚙ im Popup), siehe backend/assistant/settings.py:
     {"answer": {"fields": [...], "values": {...}},
      "tools": [{"id", "title", "description", "tools", "available", "fields", "values"}, ...],
-     "proactive": [gleicher Aufbau wie "tools", siehe backend/proactive_settings.py]}
+     "proactive": [gleicher Aufbau wie "tools", siehe backend/proactive_settings.py],
+     "voice": {"fields", "values", "sample"} (backend/voice_settings.py)}
     fields: [{"key", "label", "kind": "choice"|"multi"|"bool"|"number"|"text"|"time", "default", "help",
               "choices"?: [{"value", "label"}], "minimum"?, "maximum"?}]"""
-    return {**_settings().form(_available_tools()), "proactive": _proactive_settings().form()}
+    return {**_settings().form(_available_tools()), "proactive": _proactive_settings().form(),
+            "voice": _voice_settings().form()}
 
 
 def save_settings(changes: dict[str, Any]) -> dict[str, Any]:
     """Einstellungen speichern: {"answer": {key: value}, "tools": {group_id: {key: value}},
-    "proactive": {bereich: {key: value}}} - alles optional, nur geänderte Werte nötig. Ungültige
+    "proactive": {bereich: {key: value}}, "voice": {key: value}} - alles optional, nur geänderte Werte nötig. Ungültige
     Werte: ValueError, dann wird nichts gespeichert. Gilt ab der nächsten Nachricht bzw. Prüfung.
     Gibt das aktualisierte Formular zurück."""
     proactive_values = _proactive_settings().validated(changes.get("proactive"))
+    voice_values = _voice_settings().validated(changes.get("voice"))
     _settings().save(changes.get("answer"), changes.get("tools"))
     _proactive_settings().store_validated(proactive_values)
+    _voice_settings().store_validated(voice_values)
     return get_settings()
 
 
@@ -287,6 +304,7 @@ def reset_settings() -> dict[str, Any]:
     """Alle Einstellungen auf die Standardwerte. Gibt das Formular zurück."""
     _settings().reset()
     _proactive_settings().reset()
+    _voice_settings().reset()
     return get_settings()
 
 

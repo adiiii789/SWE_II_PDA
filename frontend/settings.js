@@ -12,7 +12,7 @@ const settingsResetButton = document.getElementById("settings-reset");
 const settingsTabs = Array.from(document.querySelectorAll("#settings-tabs button"));
 
 let settingsForm = null;       // letzte Antwort von get_settings()
-let settingsTab = "answer";    // "answer" | "tools" | "proactive" | "companion"
+let settingsTab = "answer";    // "answer" | "tools" | "proactive" | "voice" | "companion"
 let resetArmed = false;        // Zurücksetzen braucht einen zweiten Klick
 
 function element(tag, className, text) {
@@ -126,7 +126,7 @@ function renderSettings() {
   while (settingsBody.firstChild) settingsBody.removeChild(settingsBody.firstChild);
   resetArmed = false;
   updateResetButton();
-  const {answer, tools, proactive} = settingsForm;
+  const {answer, tools, proactive, voice} = settingsForm;
 
   const answerSection = element("section", "settings-section");
   answerSection.dataset.tab = "answer";
@@ -147,6 +147,19 @@ function renderSettings() {
     "Wann sich der PDA von selbst meldet. Gilt ab der nächsten Prüfung."));
   const proactiveReaders = buildGroups(proactiveSection, proactive, "proactive");
 
+  // Stimme (backend/voice_settings.py): Probe mit den Werten im Formular, noch ohne zu speichern
+  const voiceSection = element("section", "settings-section");
+  voiceSection.dataset.tab = "voice";
+  voiceSection.appendChild(element("p", "settings-intro",
+    "Mit welcher Stimme der Assistent vorliest. Eine neue Stimme lädt beim ersten Vorlesen einmal herunter."));
+  const readVoice = buildFields(voiceSection, voice.fields, voice.values, "voice");
+  const previewRow = voiceSection.appendChild(element("div", "setting"));
+  const previewButton = previewRow.appendChild(element("button", "", "Probe anhören"));
+  previewButton.type = "button";
+  previewButton.disabled = !speech.output;
+  if (!speech.output) previewRow.appendChild(element("div", "setting-help", "Sprachausgabe ist nicht verfügbar."));
+  previewButton.addEventListener("click", () => previewVoice(readVoice()));
+
   // Begleiter: nur im Browser gespeichert (appearance.js), deshalb nicht im Schema von get_settings()
   const companionSection = element("section", "settings-section");
   companionSection.dataset.tab = "companion";
@@ -155,10 +168,10 @@ function renderSettings() {
   const readCompanion = buildFields(companionSection, companionFields(),
     {shown: Appearance.companionShown, side: Appearance.companionSide, model: companionChoice.value}, "companion");
 
-  settingsBody.append(answerSection, toolSection, proactiveSection, companionSection);
+  settingsBody.append(answerSection, toolSection, proactiveSection, voiceSection, companionSection);
   const readAll = readers => Object.fromEntries(Object.entries(readers).map(([id, read]) => [id, read()]));
   readSettings = () => ({answer: readAnswer(), tools: readAll(toolReaders), proactive: readAll(proactiveReaders),
-    companion: readCompanion()});
+    voice: readVoice(), companion: readCompanion()});
   showSettingsTab(settingsTab);
 }
 
@@ -205,6 +218,15 @@ async function openSettings() {
     companionChoice = {models: models.models, value: current};
     renderSettings();
     setSettingsStatus("");
+  } catch (error) {
+    setSettingsStatus(error.message, true);
+  }
+}
+
+async function previewVoice(values) {
+  setSettingsStatus("Probe läuft … (eine neue Stimme lädt erst herunter)");
+  try {
+    await preview_voice(values);
   } catch (error) {
     setSettingsStatus(error.message, true);
   }

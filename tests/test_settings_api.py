@@ -1,10 +1,13 @@
 """api.get_settings / save_settings / reset_settings - mit Speicher im Arbeitsspeicher statt APPDATA."""
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from backend import api
 from backend.assistant.settings import ANSWER_KEY, AssistantSettings
 from backend.proactive_settings import ProactiveSettings
+from backend.speech import Voice
+from backend.voice_settings import VoiceSettings
 from tests.assistant.test_settings import MemoryStore
 
 
@@ -12,7 +15,8 @@ class SettingsApiTest(unittest.TestCase):
     def setUp(self):
         self.store = MemoryStore()
         for name, settings in (("_settings", AssistantSettings(self.store)),
-                               ("_proactive_settings", ProactiveSettings(self.store))):
+                               ("_proactive_settings", ProactiveSettings(self.store)),
+                               ("_voice_settings", VoiceSettings(self.store, Path(__file__).parent / "keine-stimmen", "de_DE-pavoque-low"))):
             patcher = mock.patch.object(api, name, return_value=settings)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -32,6 +36,23 @@ class SettingsApiTest(unittest.TestCase):
     def test_invalid_proactive_value_saves_nothing(self):
         with self.assertRaises(ValueError):
             api.save_settings({"answer": {"tone": "sachlich"}, "proactive": {"general": {"quiet_from": "25:00"}}})
+        self.assertEqual(self.store.values, {})
+
+    def test_voice_is_saved_and_reset(self):
+        form = api.save_settings({"voice": {"voice": "de_DE-thorsten-high", "speed": "schnell"}})
+        self.assertEqual(form["voice"]["values"], {"voice": "de_DE-thorsten-high", "speed": "schnell"})
+        self.assertEqual(api.reset_settings()["voice"]["values"]["voice"], "standard")
+
+    def test_invalid_voice_saves_nothing(self):
+        with self.assertRaises(ValueError):
+            api.save_settings({"answer": {"tone": "sachlich"}, "voice": {"voice": "de_DE-jemand-low"}})
+        self.assertEqual(self.store.values, {})
+
+    def test_preview_speaks_unsaved_voice(self):
+        output = mock.Mock()
+        with mock.patch.object(api, "_speech_output", return_value=output):
+            api.preview_voice({"voice": "de_DE-thorsten_emotional-medium:sleepy"})
+        self.assertEqual(output.speak.call_args.args[1], Voice("de_DE-thorsten_emotional-medium", "sleepy", 1.0))
         self.assertEqual(self.store.values, {})
 
     def test_internal_tools_are_not_offered_in_settings(self):

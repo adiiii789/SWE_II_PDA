@@ -28,7 +28,8 @@ from backend.preferences import PreferenceStore
 ANSWER_KEY = "answer_settings"
 TOOLS_KEY = "tool_settings"
 PROACTIVE_KEY = "proactive_settings"      # Schema: backend/proactive_settings.py
-SETTINGS_KEYS = (ANSWER_KEY, TOOLS_KEY, PROACTIVE_KEY)   # nicht als "Bekanntes über den Nutzer" ans Modell
+VOICE_KEY = "voice_settings"              # Schema: backend/voice_settings.py
+SETTINGS_KEYS = (ANSWER_KEY, TOOLS_KEY, PROACTIVE_KEY, VOICE_KEY)   # nicht als "Bekanntes über den Nutzer" ans Modell
 
 MAX_TEXT_CHARS = 1000                     # Freitext - schützt das Kontextfenster
 INTERNAL_TOOL_PREFIX = "watch_"           # nur für den Wächter (backend/watcher.py), nie fürs Sprachmodell
