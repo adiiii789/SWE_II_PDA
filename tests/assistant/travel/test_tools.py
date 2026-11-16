@@ -596,7 +596,7 @@ class SkillTest(unittest.TestCase):
         announce.assert_called_once_with(reply, "Zeit loszufahren", "Reise-Assistent", "notice", True)
 
     def test_reminder_starts_with_key(self):
-        with mock.patch.object(config, "ORS_KEY", "key"), \
+        with mock.patch.dict("os.environ", {"PDA_ORS_KEY": "key"}), \
                 mock.patch.object(travel, "service", lambda: make_service()), \
                 mock.patch("backend.assistant.skills.travel.reminder.TravelReminder.start", return_value="stop"):
             self.assertEqual(travel.SKILL.start(), "stop")

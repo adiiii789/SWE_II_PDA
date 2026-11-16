@@ -8,7 +8,7 @@ from unittest import mock
 from tests.assistant.test_settings import MemoryStore
 from tests.qt_helpers import qt_app, run_js, wait_until
 
-from backend import api, presenter, proactive
+from backend import api, api_keys, presenter, proactive
 from backend.assistant import AssistantReply
 from backend.assistant.skills import morning
 from backend.assistant.tools import Attachment
@@ -379,6 +379,30 @@ class SettingsPanelTest(unittest.TestCase):
         self.assertEqual((settings.consumption, settings.train_transfers), (6.5, 0))
         self.assertEqual(settings.modes, ("train", "bike", "foot", "car"))   # Taxi abgewählt
         self.assertEqual(self.store.get("travel_home_address"), "Hauptstraße 1, Mannheim")
+
+    def test_keys_tab_shows_only_whether_a_key_is_set(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        env = Path(folder.name) / ".env"
+        env.write_text("GEMINI_API_KEY=geheimer-gemini-key\nPDA_SMTP_HOST=smtp.example.com\n", encoding="utf-8")
+        patcher = mock.patch.object(api_keys.config, "ENV_FILE", env)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.open()
+        self.js("document.querySelector('#settings-tabs [data-tab=keys]').click()")
+        self.addCleanup(self.js, "showSettingsTab('answer')")
+        self.assertNotIn("geheimer-gemini-key", self.js("document.documentElement.outerHTML"))   # nie im Frontend
+        badge = "document.querySelector('[data-key={}] .settings-badge').textContent"
+        self.assertEqual(self.js(badge.format("GEMINI_API_KEY")), "gespeichert")
+        self.assertEqual(self.js(badge.format("PDA_ORS_KEY")), "fehlt")
+        self.assertEqual(self.js("document.querySelector('[data-key=GEMINI_API_KEY] input[type=password]').value"), "")
+        self.js("""
+          document.querySelector('[data-key=PDA_ORS_KEY] input').value = 'neuer-ors-key';
+          document.querySelector('[data-key=GEMINI_API_KEY] input[type=checkbox]').click();
+          document.getElementById('settings-save').click();""")
+        self.assertTrue(wait_until(lambda: self.js("document.getElementById('settings-panel').hidden")))
+        self.assertEqual(env.read_text(encoding="utf-8"),
+                         "GEMINI_API_KEY=\nPDA_SMTP_HOST=smtp.example.com\nPDA_ORS_KEY=neuer-ors-key\n")
 
     def test_save_changes_and_confirm_in_chat(self):
         self.open()

@@ -30,7 +30,8 @@ from email.message import EmailMessage
 from email.utils import getaddresses
 from pathlib import Path
 
-ENV_FILE = Path(__file__).resolve().parent.parent / ".env"   # dieselbe Datei wie backend/config.py
+# dieselbe Datei wie backend/config.py (ENV_FILE)
+ENV_FILE = Path(os.environ.get("PDA_ENV_FILE") or Path(__file__).resolve().parent.parent / ".env")
 MAX_BODY_CHARS = 20_000
 # Wie backend.config.APP_NAME. Nicht importiert, weil der Server eigenständig läuft (sys.path = mcp_servers).
 APP_NAME = "EVE"

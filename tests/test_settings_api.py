@@ -39,7 +39,7 @@ class SettingsApiTest(unittest.TestCase):
             form = api._travel_settings.__wrapped__().form()   # ungecacht, mit dem Speicher des Tests
         general = next(group for group in form if group["id"] == "general")
         weather = next(group for group in form if group["id"] == "weather")
-        self.assertEqual(general["available"], bool(api.config.ORS_KEY))   # Adressen brauchen openrouteservice
+        self.assertFalse(general["available"])   # Adressen brauchen openrouteservice - die Tests haben keinen Key
         self.assertTrue(weather["available"])                               # braucht keinen Key
 
     def test_proactive_settings_are_saved_and_reset(self):

@@ -41,7 +41,7 @@ def _model_assistant(backend: str) -> Assistant:
     instructions = "\n\n".join(skill.instructions for skill in SKILLS)
     preferences = default_store()
     args = (tools, preferences, instructions, config.ASSISTANT_MAX_TOOL_ROUNDS, config.ASSISTANT_MAX_HISTORY)
-    gemini = GeminiAssistant(GeminiModel(config.GEMINI_MODEL, config.GEMINI_KEY_FILE, config.GEMINI_TIMEOUT_S),
+    gemini = GeminiAssistant(GeminiModel(config.GEMINI_MODEL, config.GEMINI_TIMEOUT_S),
                              *args)
     ollama = OllamaAssistant(OllamaModel(OllamaClient(config.OLLAMA_TIMEOUT_S, config.OLLAMA_CATALOG_TIMEOUT_S)),
                              *args)

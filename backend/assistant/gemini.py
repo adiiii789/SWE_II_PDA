@@ -2,21 +2,22 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
-from pathlib import Path
+from collections.abc import Callable, Sequence
+from functools import partial
 from typing import Any
+
+from backend import api_keys
 
 from backend.assistant.llm import ChatMessage, LanguageModelError, ModelInfo, ModelResponse, ToolCall
 from backend.assistant.tools import ToolSpec
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
 MODELS = ("gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash")
-KEY_HELP = ("Gemini braucht einen API-Schlüssel. Hinterlege ihn als GEMINI_API_KEY oder "
-            "in gemini-api-key.txt im App-Datenordner. Die Einrichtung steht in der README.")
+KEY_HELP = ("Gemini braucht einen API-Schlüssel. Trag ihn unter ⚙ Einstellungen → Zugangsdaten ein "
+            "(landet als GEMINI_API_KEY in der .env). Die Einrichtung steht in der README.")
 
 
 class GeminiError(LanguageModelError):
@@ -24,10 +25,11 @@ class GeminiError(LanguageModelError):
 
 
 class GeminiModel:
-    def __init__(self, name: str, key_file: Path, timeout: float):
+    def __init__(self, name: str, timeout: float, api_key: Callable[[], str] = partial(api_keys.get, "GEMINI_API_KEY")):
+        """api_key(): der Schlüssel, bei jeder Anfrage neu gelesen (Umgebungsvariable oder .env)."""
         self.name = ""
         self.default_name = name or MODELS[0]
-        self.key_file = key_file
+        self.api_key = api_key
         self.timeout = timeout
 
     def available_models(self) -> list[ModelInfo]:
@@ -70,14 +72,10 @@ class GeminiModel:
         return ModelResponse(_reply(data, allow_calls=bool(tools)))
 
     def _api_key(self) -> str:
-        key = os.environ.get("GEMINI_API_KEY", "").strip()
-        if not key:
-            try:
-                key = self.key_file.read_text(encoding="utf-8").strip()
-            except FileNotFoundError:
-                pass
-            except (OSError, UnicodeError):
-                raise GeminiError("Die lokale Datei mit dem Gemini-Schlüssel ist nicht lesbar.") from None
+        try:
+            key = self.api_key().strip()
+        except (OSError, UnicodeError):
+            raise GeminiError("Die .env mit dem Gemini-Schlüssel ist nicht lesbar.") from None
         if not key:
             raise GeminiError(KEY_HELP)
         if any(character.isspace() or not character.isascii() for character in key):

@@ -32,10 +32,14 @@ def read_env_file(path: Path) -> dict[str, str]:
     return values
 
 
-# Keys und Zugangsdaten: Umgebungsvariablen oder die .env im Projektordner (Vorlage: .env.example).
-# Umgebungsvariablen haben Vorrang. os.environ bleibt unverändert, damit die MCP-Server die .env
-# selbst lesen - Änderungen an den Mail-Einstellungen wirken dort ohne Neustart.
-ENV_FILE = ROOT_DIR / ".env"
+# Einstellungen, Keys und Zugangsdaten: Umgebungsvariablen oder die .env (Vorlage: .env.example) -
+# im Projektordner, im gepackten Programm im App-Datenordner (der Entpack-Ordner ist nur vorübergehend).
+# PDA_ENV_FILE nennt eine andere Datei (die Tests nutzen eine leere). Umgebungsvariablen haben Vorrang.
+# os.environ bleibt unverändert, damit die MCP-Server die .env selbst lesen - Änderungen an den
+# Mail-Einstellungen wirken dort ohne Neustart. Keys liest backend/api_keys.py bei jedem Zugriff neu
+# (verwaltbar im Popup unter ⚙ → Zugangsdaten).
+ENV_FILE = Path(os.environ.get("PDA_ENV_FILE")
+                or (app_data_dir() if hasattr(sys, "_MEIPASS") else ROOT_DIR) / ".env")
 _ENV = {**read_env_file(ENV_FILE), **os.environ}
 
 # "models" (Ollama und Gemini), einzelner Anbieter oder "commands" (nur feste Befehle).
@@ -56,25 +60,21 @@ MCP_SERVERS_FILE = ROOT_DIR / "mcp_servers.json"
 # Präferenzen (backend/preferences.py) - außerhalb des Programmordners, damit sie Updates überstehen
 APP_DATA_DIR = app_data_dir()
 PREFERENCES_FILE = APP_DATA_DIR / "preferences.json"
-GEMINI_KEY_FILE = APP_DATA_DIR / "gemini-api-key.txt"
 
 # Dateien im Chat (backend/attachments.py). Nur Dateien in ATTACHMENT_DIR lassen sich öffnen;
 # derselbe Ordner, in den mcp_servers/inbox.py Mail-Anhänge ablegt.
 ATTACHMENT_DIR = Path(_ENV.get("PDA_ATTACHMENT_DIR") or APP_DATA_DIR / "attachments")
 DOWNLOAD_DIR = Path.home() / "Downloads"   # Ziel von "Speichern"
 
-# Reise-Assistent (backend/assistant/skills/travel/). Ohne Key fällt der jeweilige Teil weg;
+# Reise-Assistent (backend/assistant/skills/travel/). Ohne Key fällt der jeweilige Teil weg; die Keys
+# (PDA_ORS_KEY, PDA_DB_CLIENT_ID, PDA_DB_API_KEY, PDA_TANKERKOENIG_KEY) liest backend/api_keys.py.
 # Einrichtung siehe README. Persönliche Werte (Zeitwert, Verbrauch …) stehen in den Präferenzen.
 # credentials.json (OAuth-Client) und token.json - derselbe Ordner wie mcp_servers/google_calendar.py
 GOOGLE_DIR = Path(_ENV.get("PDA_GOOGLE_DIR") or APP_DATA_DIR / "google")
-ORS_KEY = _ENV.get("PDA_ORS_KEY", "")                      # openrouteservice: Adressen, Routen
-DB_CLIENT_ID = _ENV.get("PDA_DB_CLIENT_ID", "")            # DB API Marketplace (Timetables)
-DB_API_KEY = _ENV.get("PDA_DB_API_KEY", "")
 DB_STATIONS_FILE = APP_DATA_DIR / "db_stations.json"       # Bahnhofsliste aus StaDa (einmal pro Woche geladen)
 STATIONS_TIMEOUT_S = 90                                    # der Download ist ≈ 9 MB groß
 TILE_DIR = APP_DATA_DIR / "map_tiles"                      # OpenStreetMap-Kacheln für die Routenkarte
 TILE_TIMEOUT_S = 5                                         # lieber ohne Karte als lange warten
-TANKERKOENIG_KEY = _ENV.get("PDA_TANKERKOENIG_KEY", "")    # Spritpreise
 # Bahn/ÖPNV-Verbindungssuche (MOTIS), ohne Key; leer = aus (dann nur die DB-Tafeln)
 TRANSITOUS_URL = _ENV.get("PDA_TRANSITOUS_URL", "https://api.transitous.org")
 # VVS-Auskunft (EFA) für Wege im VVS-Gebiet, ohne Key; leer = aus (dann Transitous)

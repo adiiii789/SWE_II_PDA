@@ -256,6 +256,9 @@ TOOL_GROUPS: tuple[ToolGroup, ...] = (
               "Aufgaben lesen, erstellen, ändern, erledigen, löschen und verschieben", TASKS_SETTINGS),
     ToolGroup("basics", "Uhrzeit und Rechnen", ("get_current_time", "calculate"),
               "Aktuelle Uhrzeit, Rechenaufgaben"),
+    ToolGroup("weather_stocks", "Wetter und Börse", ("get_weather_forecast", "get_stock_quotes"),
+              "Wettervorhersage (Open-Meteo) und Aktienkurse (Alpha Vantage) - dieselben Quellen wie das "
+              "Morning-Briefing, das sie auch abgeschaltet nutzt"),
 )
 
 

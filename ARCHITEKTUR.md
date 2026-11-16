@@ -39,7 +39,7 @@ deckt drei Aufgabenbereiche ab, im Code **Fähigkeiten** (Skills) genannt:
 
 | Fähigkeit | Wofür | Integrationen |
 |---|---|---|
-| `morning` | kurzes Briefing über den Tag | Google Calendar, Open-Meteo, Aktien-API, Musik |
+| `morning` | kurzes Briefing über den Tag | Google Calendar, Open-Meteo, Aktien-API, Musik – Kalender, Wetter und Börse über MCP-Werkzeuge (`watch_calendar_events`, `watch_morning_weather`, `watch_stock_quotes`) |
 | `travel` | wie komme ich zum nächsten Termin? | Google Calendar, openrouteservice, DB Timetables, Tankerkönig |
 | `organization` („Assistant²“) | Nachrichten verfassen, Tag organisieren | Google Calendar, Gmail, Google Keep |
 
@@ -79,6 +79,7 @@ mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von
   basic_tools.py              Uhrzeit und Rechnen (ohne Abhängigkeiten)
   mailer.py                   E-Mail per SMTP, nur an freigegebene Empfänger
   inbox.py                    E-Mail und Anhänge lesen per IMAP, nur lesend
+  morning_sources.py          Wetter (Open-Meteo) und Börse (Alpha Vantage) für Werkzeuge und Morning-Briefing
   file_text.py                Text aus PDF, Word, Excel, PowerPoint, HTML, Textdateien
   demo_server.py              Server ohne SDK: zeigt das Protokoll, Gegenpart in den Tests
 
@@ -97,6 +98,7 @@ backend/                      BACKEND: läuft in Python
   proactive.py                proaktive Meldungen: Anlässe, Meldung formulieren, an Chat + Benachrichtigung
   attachments.py              Dateien im Chat (z. B. Mail-Anhänge): öffnen, speichern
   config.py                   alle Einstellungen
+  api_keys.py                 API-Keys und Passwörter in der .env: lesen, im Popup setzen (ohne Werte ans Frontend)
   views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
   rendering.py                macht aus einer Anfrage HTML (Jinja2 bzw. eigenes HTML)
   preferences.py              Kontextwissen, persönliche Präferenzen (JsonPreferenceStore)
@@ -569,8 +571,8 @@ Gesprächsverlauf.
 `GeminiModel` implementiert `LanguageModel` und ruft Googles `generateContent` per HTTPS auf.
 Systemanweisungen, Gesprächsverlauf und freigegebene Funktionsbeschreibungen bilden die Anfrage.
 Bei Werkzeugaufrufen bleiben die originalen Antwortteile mit ihren Signaturen erhalten. Die
-`functionResponse` enthält dieselbe ID wie der zugehörige Aufruf. Der Schlüssel kommt aus
-`GEMINI_API_KEY` oder aus der Schlüsseldatei im App-Datenordner.
+`functionResponse` enthält dieselbe ID wie der zugehörige Aufruf. Den Schlüssel liest
+`api_keys.get("GEMINI_API_KEY")` bei jeder Anfrage: Umgebungsvariable, sonst die `.env`.
 
 ### Der KI-Assistent – [gemini_assistant.py](backend/assistant/gemini_assistant.py)
 
@@ -724,6 +726,13 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   weitergeleitete Mails, Textdateien – in Teilen zu 7000 Zeichen, damit jeder Teil in ein
   Tool-Ergebnis passt. Bilder und eingescannte PDFs haben keinen Text, werden aber angehängt.
   Dateinamen aus der Mail werden bereinigt (keine Pfadanteile, keine unter Windows verbotenen Namen).
+- **Wetter und Börse** (`get_weather_forecast`, `get_stock_quotes`, Logik in
+  [morning_sources.py](mcp_servers/morning_sources.py)): Open-Meteo ohne Key; Alpha Vantage mit
+  `PDA_ALPHAVANTAGE_KEY` aus der `.env` (gelesen wie in `backend/api_keys.py`), höchstens fünf Kürzel,
+  geprüft gegen ein enges Muster, mit 1,2 s Abstand zwischen den Anfragen. Die Quellen liefern
+  Daten (dict); daraus machen die Werkzeuge Text fürs Modell und die internen `watch_morning_weather` /
+  `watch_stock_quotes` JSON fürs Morning-Briefing. Die Darstellung (Kurslinie, Formatierung) bleibt
+  in `backend/assistant/skills/morning.py`.
 - **Dateien im Chat:** `MCPToolProvider` macht aus jedem `resource_link` ein `Attachment`
   (`ToolResult.attachments`); das Modell sieht nur `[Datei im Chat angehängt: name]`. Der
   `GeminiAssistant` sammelt die Anhänge einer Runde in `AssistantReply.attachments`. `present()`
@@ -769,9 +778,15 @@ Alle Einstellungen stehen in [backend/config.py](backend/config.py): Pfade, Name
 Farbe, Animationsdauer und das Assistant-Backend.
 
 - API-Keys und Zugangsdaten stehen nicht im Code, sondern in der `.env` im Projektordner
-  (Vorlage [.env.example](.env.example), nicht eingecheckt) oder in Umgebungsvariablen, die
+  (Vorlage [.env.example](.env.example), nicht eingecheckt; im gepackten Programm im
+  App-Datenordner, `PDA_ENV_FILE` nennt eine andere Datei) oder in Umgebungsvariablen, die
   Vorrang haben. `config.py` liest beides in `_ENV`, lässt `os.environ` aber unverändert: Die
   MCP-Server lesen dieselbe Datei selbst (`mcp_servers/mailer.py`), bei jedem Aufruf neu.
+- Keys liest [api_keys.py](backend/api_keys.py) bei jedem Zugriff neu (`get`), damit ein im
+  Popup eingetragener Key ohne Neustart gilt. Der Reise-Dienst wird neu gebaut, sobald sich
+  einer seiner Keys ändert. Das Formular (⚙ → Zugangsdaten) bekommt nur `status()` ohne Werte.
+  `save` schreibt nur Namen aus `KEYS`, ohne Zeilenumbrüche und Steuerzeichen, atomar und
+  unter macOS/Linux mit 0600.
 
 - `ROOT_DIR` wird aus dem Ort der Datei berechnet, nicht aus dem aktuellen Arbeitsordner. Das
   Programm funktioniert deshalb unabhängig davon, von wo es gestartet wird.

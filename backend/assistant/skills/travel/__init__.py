@@ -13,9 +13,9 @@ Ohne Sprachmodell: fester Befehl "reise" (next_trip_reply).
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import cache
+from functools import lru_cache
 
-from backend import config
+from backend import api_keys, config
 from backend.assistant.base import AssistantReply
 from backend.assistant.skills.base import Skill
 from backend.assistant.skills.travel.planner import HOME_ADDRESS, TravelSettings
@@ -36,8 +36,14 @@ INSTRUCTIONS = (
 )
 
 
-@cache
 def service() -> TravelService:
+    """Der Reise-Dienst - neu gebaut, sobald sich ein Key ändert (⚙ → Zugangsdaten), sonst derselbe."""
+    return _service(*(api_keys.get(name) for name in ("PDA_ORS_KEY", "PDA_DB_CLIENT_ID", "PDA_DB_API_KEY",
+                                                       "PDA_TANKERKOENIG_KEY")))
+
+
+@lru_cache(maxsize=1)
+def _service(ors_key: str, db_client_id: str, db_api_key: str, fuel_key: str) -> TravelService:
     # Erst hier importieren: Ohne Reise-Funktion braucht die App keinen dieser Clients.
     from backend.integrations.db_stations import DbStations
     from backend.integrations.db_timetables import DbTimetables
@@ -52,15 +58,15 @@ def service() -> TravelService:
     from backend.preferences import default_store
 
     http = JsonHttp(config.HTTP_TIMEOUT_S)
-    rail_keys = (config.DB_CLIENT_ID, config.DB_API_KEY) if config.DB_CLIENT_ID and config.DB_API_KEY else None
+    rail_keys = (db_client_id, db_api_key) if db_client_id and db_api_key else None
     stations = (DbStations(JsonHttp(config.STATIONS_TIMEOUT_S), *rail_keys, config.DB_STATIONS_FILE)
                 if rail_keys else None)
     return TravelService(
-        OpenRouteService(http, config.ORS_KEY) if config.ORS_KEY else None,
+        OpenRouteService(http, ors_key) if ors_key else None,
         default_store(),
         GoogleCalendar(http, oauth_token(config.GOOGLE_DIR)),
         DbTimetables(http, *rail_keys, locate=stations.lookup) if rail_keys else None,
-        Tankerkoenig(http, config.TANKERKOENIG_KEY) if config.TANKERKOENIG_KEY else None,
+        Tankerkoenig(http, fuel_key) if fuel_key else None,
         OpenMeteo(http),
         stations=stations,
         tiles=MapTiles(JsonHttp(config.TILE_TIMEOUT_S), config.TILE_DIR),
@@ -88,8 +94,8 @@ def next_trip_reply() -> AssistantReply:
 def _start() -> Callable[[], None] | None:
     from backend.assistant.skills.travel.reminder import TravelReminder
 
-    if not config.ORS_KEY:
-        return None   # ohne Routen keine Abfahrtszeit
+    if not api_keys.get("PDA_ORS_KEY"):
+        return None   # ohne Routen keine Abfahrtszeit (ein später eingetragener Key gilt ab dem nächsten Start)
     return TravelReminder(service(), _notify, config.TRAVEL_CHECK_INTERVAL_S).start()
 
 

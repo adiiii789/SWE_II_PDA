@@ -19,7 +19,7 @@ import webbrowser
 from functools import cache
 from typing import Any
 
-from backend import config, proactive
+from backend import api_keys, config, proactive
 from backend.assistant import Assistant, ConsultingAssistant, ModelSelection, create_assistant
 from backend.assistant.base import AssistantReply
 from backend.assistant.settings import AssistantSettings, is_internal_tool
@@ -247,7 +247,8 @@ def _proactive_watcher() -> ProactiveWatcher:
 def _travel_settings() -> TravelSettingsForm:
     """Reise-Einstellungen (⚙ → Reise) auf demselben Store wie der Reise-Assistent."""
     return TravelSettingsForm(default_store(), lambda: {
-        "ors": bool(config.ORS_KEY), "rail": bool(config.DB_CLIENT_ID and config.DB_API_KEY)})
+        "ors": bool(api_keys.get("PDA_ORS_KEY")),
+        "rail": bool(api_keys.get("PDA_DB_CLIENT_ID") and api_keys.get("PDA_DB_API_KEY"))})
 
 
 @cache
@@ -274,28 +275,33 @@ def get_settings() -> dict[str, Any]:
     {"answer": {"fields": [...], "values": {...}},
      "tools": [{"id", "title", "description", "tools", "available", "fields", "values"}, ...],
      "proactive": [gleicher Aufbau wie "tools", siehe backend/proactive_settings.py],
-     "travel": [gleicher Aufbau, siehe backend/assistant/skills/travel/settings.py]}
+     "travel": [gleicher Aufbau, siehe backend/assistant/skills/travel/settings.py],
+     "keys": [{"name", "label", "group", "help", "set", "source"}] - ohne Werte (backend/api_keys.py)}
     fields: [{"key", "label", "kind": "choice"|"multi"|"bool"|"number"|"text"|"time", "default", "help",
               "choices"?: [{"value", "label"}], "minimum"?, "maximum"?}]"""
     return {**_settings().form(_available_tools()), "proactive": _proactive_settings().form(),
-            "travel": _travel_settings().form()}
+            "travel": _travel_settings().form(), "keys": api_keys.status()}
 
 
 def save_settings(changes: dict[str, Any]) -> dict[str, Any]:
     """Einstellungen speichern: {"answer": {key: value}, "tools": {group_id: {key: value}},
-    "proactive": {bereich: {key: value}}, "travel": {gruppe: {key: value}}} - alles optional, nur geänderte Werte nötig. Ungültige
+    "proactive": {bereich: {key: value}}, "travel": {gruppe: {key: value}},
+    "keys": {NAME: neuer Wert, "" = löschen}} - alles optional, nur geänderte Werte nötig. Ungültige
     Werte: ValueError, dann wird nichts gespeichert. Gilt ab der nächsten Nachricht bzw. Prüfung.
     Gibt das aktualisierte Formular zurück."""
     proactive_values = _proactive_settings().validated(changes.get("proactive"))
     travel_values = _travel_settings().validated(changes.get("travel"))
+    key_values = api_keys.validated(changes.get("keys"))
     _settings().save(changes.get("answer"), changes.get("tools"))
     _proactive_settings().store_validated(proactive_values)
     _travel_settings().store_validated(travel_values)
+    api_keys.store(key_values)
     return get_settings()
 
 
 def reset_settings() -> dict[str, Any]:
-    """Alle Einstellungen auf die Standardwerte (die Heimatadresse bleibt). Gibt das Formular zurück."""
+    """Alle Einstellungen auf die Standardwerte (die Heimatadresse und die Zugangsdaten bleiben).
+    Gibt das Formular zurück."""
     _settings().reset()
     _proactive_settings().reset()
     _travel_settings().reset()

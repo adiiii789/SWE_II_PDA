@@ -5,7 +5,7 @@ import json
 from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
-from backend import api, config, watcher as watcher_module
+from backend import api, watcher as watcher_module
 from backend.assistant.skills import morning
 from backend.assistant.skills.morning_music import song_for
 from backend.assistant.tools import ToolResult
@@ -115,48 +115,35 @@ def test_watcher_checks_at_briefing_time_between_regular_checks():
     assert watcher.check.call_count == 2
 
 
-def test_weather_location_local_day_and_stock_previous_trading_day(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "APP_DATA_DIR", tmp_path)
-    wait = mock.Mock()
-    monkeypatch.setattr(morning, "sleep", wait)
-    (tmp_path / "alphavantage-api-key.txt").write_text("test-key\n", encoding="utf-8")
-    requests = []
+def mcp_tools(monkeypatch, events=()):
+    """call_tool wie im Wächter, aber mit den echten Quellen aus mcp_servers/morning_sources.py
+    (wie pda_server.py: watch_morning_weather, watch_stock_quotes) und simuliertem Netz."""
+    from tests.test_morning_sources import alpha_vantage, morning_sources, open_meteo
 
-    def respond(url, *, timeout):
-        request = urlsplit(url)
-        params = parse_qs(request.query)
-        requests.append(params)
-        assert timeout > 0
-        if request.path == "/v1/search":
-            data = {"results": [{"name": "Berlin", "latitude": 52.52, "longitude": 13.405}]}
-        elif request.path == "/v1/forecast":
-            codes = [0] * 8 + [3] * 10 + [0] * 7
-            codes[9], codes[13], codes[14], codes[15] = 0, 61, 95, 2
-            gusts = [12] * 25
-            gusts[16] = 71
-            data = {
-                "daily": {"time": ["2026-11-09"], "temperature_2m_min": [6],
-                          "temperature_2m_max": [11], "weather_code": [95]},
-                "hourly": {
-                    "time": [f"2026-11-09T{hour:02d}:00" for hour in range(24)] + ["2026-11-10T00:00"],
-                    "temperature_2m": [6] * 12 + [11] * 12 + [99],
-                    "weather_code": codes, "is_day": [0] * 8 + [1] * 10 + [0] * 7,
-                    "wind_gusts_10m": gusts,
-                },
-            }
-        elif params["symbol"] == ["AAPL"]:
-            data = {"Time Series (Daily)": {
-                "2026-11-05": {"4. close": "100"},
-                "2026-11-06": {"4. close": "102"},
-                "2026-11-09": {"4. close": "300"},
-            }}
-        else:
-            data = {"Information": "API limit"}
-        return io.BytesIO(json.dumps(data).encode())
+    monkeypatch.setattr(morning_sources, "urlopen", lambda url, timeout: (
+        alpha_vantage if "alphavantage" in url else open_meteo)(url, timeout=timeout))
+    monkeypatch.setenv("PDA_ALPHAVANTAGE_KEY", "test-key")
+    calls = []
 
-    monkeypatch.setattr(morning, "urlopen", respond)
+    def call_tool(name, arguments):
+        calls.append((name, arguments))
+        try:
+            if name == "watch_morning_weather":
+                return ToolResult(json.dumps(morning_sources.forecast(arguments["location"], 1)))
+            if name == "watch_stock_quotes":
+                until = dt.date.fromisoformat(arguments["until"])
+                return ToolResult(json.dumps(morning_sources.stock_quotes(arguments["symbols"], until, wait=mock.Mock())))
+        except morning_sources.SourceError as error:
+            return ToolResult(str(error), is_error=True)
+        return ToolResult(json.dumps(list(events)))
+
+    return call_tool, calls
+
+
+def test_weather_location_local_day_and_stock_previous_trading_day(monkeypatch):
+    call_tool, calls = mcp_tools(monkeypatch)
     now = MONDAY.replace(tzinfo=dt.timezone.utc)
-    view = morning.compose(now, OPTIONS, []).view
+    view = morning.prepare(now, OPTIONS, call_tool).view
     weather = view.data["weather"]
     assert (weather["location"], weather["low"], weather["high"]) == ("Berlin", "6", "11")
     assert (weather["condition"], weather["icon"]) == ("Überwiegend bewölkt", "cloud")
@@ -175,30 +162,23 @@ def test_weather_location_local_day_and_stock_previous_trading_day(tmp_path, mon
     assert 'class="weather-icon cloud"' in html
     assert "Stundenverlauf" in html and 'href="https://open-meteo.com/"' in html
     assert 'aria-label="Kursverlauf über 2 Handelstage"' in html
-    assert requests[0]["name"] == ["Berlin"] and requests[0]["countryCode"] == ["DE"]
-    assert requests[1]["timezone"] == ["auto"] and requests[1]["forecast_days"] == ["1"]
-    assert "appid" not in requests[0] and "appid" not in requests[1]
-    assert [request["symbol"] for request in requests[2:]] == [["AAPL"], ["MSFT"]]
-    wait.assert_called_once_with(morning._STOCK_REQUEST_GAP_S)
+    assert calls == [("watch_calendar_events", {"days": 1}),
+                     ("watch_morning_weather", {"location": "Berlin,DE"}),
+                     ("watch_stock_quotes", {"symbols": "aapl, MSFT, AAPL", "until": "2026-11-08"})]   # bis gestern
 
 
-def test_stock_trend_uses_seven_chronological_closes_ending_yesterday(monkeypatch):
-    yesterday = MONDAY.date() - dt.timedelta(days=1)
-    closes = {(yesterday - dt.timedelta(days=index)).isoformat(): {"4. close": str(100 - index)}
-              for index in reversed(range(-1, 9))}
-    monkeypatch.setattr(morning, "_get_json", mock.Mock(return_value={"Time Series (Daily)": closes}))
-    quote = morning._stock("AAPL", yesterday.isoformat(), "test-key")
-    assert quote["close"] == "100,00"
-    assert quote["trend"]["sessions"] == 7
-    points = quote["trend"]["points"].split()
+def test_stock_trend_from_seven_closes():
+    trend = morning._stock_trend([94, 95, 96, 97, 98, 99, 100])
+    assert trend["sessions"] == 7
+    points = trend["points"].split()
     assert points[0] == "2.0,22.0" and points[-1] == "62.0,2.0"
 
 
-def test_failed_sources_still_deliver_and_respect_quiet_time(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "APP_DATA_DIR", tmp_path)
-    monkeypatch.setattr(morning, "urlopen", mock.Mock(side_effect=TimeoutError))
+def test_failed_sources_still_deliver_and_respect_quiet_time():
     watcher = harness(MONDAY.replace(hour=6), time="06:00", **OPTIONS)
     watcher.errors["watch_calendar_events"] = "Google nicht erreichbar"
+    watcher.errors["watch_morning_weather"] = "Open-Meteo ist gerade nicht verfügbar."
+    watcher.errors["watch_stock_quotes"] = "Alpha-Vantage-Schlüssel hinterlegen (⚙ Einstellungen → Zugangsdaten)."
     assert watcher.check() == 0
     watcher.now = MONDAY
     assert watcher.check() == 1
@@ -208,8 +188,16 @@ def test_failed_sources_still_deliver_and_respect_quiet_time(tmp_path, monkeypat
     assert "Songvorschlag" in watcher.texts[0]
 
 
-def test_weather_reports_unknown_location_without_fetching_forecast(monkeypatch):
-    query = mock.Mock(return_value={})
-    monkeypatch.setattr(morning, "_get_json", query)
-    assert morning._weather("Unbekannt") == {"status": "Open-Meteo hat den Ort nicht gefunden."}
-    query.assert_called_once_with(morning._WEATHER_SEARCH, count=1, language="de", name="Unbekannt")
+def test_without_tools_or_with_odd_answers_the_briefing_still_comes(monkeypatch):
+    plain = morning.prepare(MONDAY, OPTIONS)                         # nur feste Befehle, kein MCP
+    assert plain.view.data["weather"]["status"] == "Open-Meteo ist gerade nicht verfügbar."
+    assert plain.view.data["stocks"]["status"] == "Börsendaten sind gerade nicht verfügbar."
+    odd = morning.prepare(MONDAY, OPTIONS, lambda name, arguments: ToolResult("[]"))   # falsches Format
+    assert odd.view.data["weather"]["status"] == "Open-Meteo ist gerade nicht verfügbar."
+    assert odd.view.data["stocks"]["status"] == "Börsendaten sind gerade nicht verfügbar."
+    assert odd.view.data["calendar"]["status"] == "Heute stehen keine Termine an."
+    call_tool, _ = mcp_tools(monkeypatch)
+    unknown = morning.prepare(MONDAY, {**OPTIONS, "weather_location": "Unbekannt,XX"}, call_tool)
+    assert unknown.view.data["weather"]["location"] == "Berlin"     # die Attrappe findet immer Berlin
+    gone = morning.prepare(MONDAY, OPTIONS, lambda name, arguments: ToolResult("Ort weg", is_error=True))
+    assert gone.view.data["weather"] == {"status": "Ort weg", "location": "Berlin,DE"}

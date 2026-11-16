@@ -53,31 +53,11 @@ Als Projektinterpreter die lokale Umgebung auswählen: `.venv/bin/python` am Mac
 ### Sprachmodell
 
 Standardmäßig verwendet der Assistent **Gemini 3.5 Flash-Lite** über die Google Gemini API.
-Erstelle in [Google AI Studio](https://aistudio.google.com/api-keys) einen API-Schlüssel.
-Speichere ihn als einzige Zeile in `gemini-api-key.txt` im App-Datenordner, außerhalb des Git-Projekts.
-Die Datei ist Klartext und sollte nur für dein Benutzerkonto lesbar sein.
-
-- macOS: `~/Library/Application Support/PersonalDigitalAgent/gemini-api-key.txt`
-- Windows: `%APPDATA%\PersonalDigitalAgent\gemini-api-key.txt`
-
-Auf macOS kannst du den Schlüssel im Terminal verdeckt einfügen und mit Enter speichern:
-
-```zsh
-(
-  umask 077
-  dir="$HOME/Library/Application Support/PersonalDigitalAgent"
-  mkdir -p "$dir" || exit
-  read -rs "key?Gemini-API-Schlüssel: "
-  printf '\n'
-  if [[ -n "$key" ]]; then
-    printf '%s\n' "$key" > "$dir/gemini-api-key.txt"
-    chmod 600 "$dir/gemini-api-key.txt"
-  fi
-)
-```
-
-Alternativ liest das Programm die Umgebungsvariable `GEMINI_API_KEY`. Sie hat Vorrang
-vor der Datei und wird nicht an MCP-Server weitergegeben. Welche Modelle dein Konto nutzen kann,
+Erstelle in [Google AI Studio](https://aistudio.google.com/api-keys) einen API-Schlüssel und trag
+ihn unter **⚙ Einstellungen → Zugangsdaten** ein. Er landet als `GEMINI_API_KEY` in der `.env`
+(siehe [Keys und Zugangsdaten](#keys-und-zugangsdaten-env)) und gilt ab der nächsten Nachricht.
+Eine (nicht leere) Umgebungsvariable `GEMINI_API_KEY` hat Vorrang vor der Datei; sie wird nicht an
+MCP-Server weitergegeben. Welche Modelle dein Konto nutzen kann,
 hängt von den [Kontingenten deines Projekts](https://ai.google.dev/gemini-api/docs/rate-limits) ab.
 Bei Gemini gehen Gesprächskontext und benötigte Werkzeugergebnisse (z. B. gelesene Mails) an Google.
 
@@ -129,13 +109,32 @@ beim Start aus PyCharm kann die Freigabe PyCharm oder Python zugeordnet sein. An
 
 ### Keys und Zugangsdaten (`.env`)
 
-Alle API-Keys und Zugangsdaten stehen in **einer** Datei `.env` im Projektordner:
-[.env.example](.env.example) nach `.env` kopieren und ausfüllen. Die `.env` steht in
-`.gitignore` und wird nicht eingecheckt. Gelesen wird sie von [backend/config.py](backend/config.py)
-(App, Reise-Assistent) und von den Mail-Werkzeugen in `mcp_servers/`. Gesetzte
-Umgebungsvariablen haben Vorrang vor der Datei. Nach einer Änderung die App neu starten;
-Mail-Einstellungen wirken sofort. Auch die übrigen `PDA_…`-Einstellungen (Sprache, proaktive
-Meldungen, Modell) lassen sich dort setzen.
+Alle API-Keys und Zugangsdaten stehen in **einer** Datei `.env` im Projektordner (im gepackten
+Programm im App-Datenordner). Die `.env` steht in `.gitignore` und wird nicht eingecheckt.
+
+**Am einfachsten im Programm:** ⚙ Einstellungen → **Zugangsdaten**. Dort lassen sich Gemini,
+openrouteservice, DB API, Tankerkönig, Alpha Vantage und die Mail-Passwörter eintragen, ersetzen
+oder löschen. Ein neuer Key gilt ab der nächsten Anfrage, ohne Neustart. Nur die
+Reise-Erinnerung startet erst beim nächsten Programmstart, wenn der openrouteservice-Key neu ist.
+Gespeicherte Werte zeigt das Formular nie an, nur „gespeichert“ oder „fehlt“:
+[backend/api_keys.py](backend/api_keys.py) schickt keine Werte ans Frontend. Es schreibt nur
+die bekannten Namen und lehnt Zeilenumbrüche ab, damit sich über das Formular nichts anderes in
+die `.env` einschleusen lässt (z. B. weitere erlaubte Mail-Empfänger).
+
+Von Hand geht es auch: [.env.example](.env.example) nach `.env` kopieren und ausfüllen. Gelesen
+wird sie von [backend/config.py](backend/config.py) und [backend/api_keys.py](backend/api_keys.py)
+sowie von den Mail-Werkzeugen in `mcp_servers/`. Gesetzte Umgebungsvariablen haben Vorrang
+vor der Datei und lassen sich im Formular nicht ändern. Auch die übrigen `PDA_…`-Einstellungen
+(Sprache, proaktive Meldungen, Modell) lassen sich in der `.env` setzen; die gelten nach einem
+Neustart.
+
+Früher lagen der Gemini- und der Alpha-Vantage-Schlüssel als `gemini-api-key.txt` bzw.
+`alphavantage-api-key.txt` im App-Datenordner. Beim Start übernimmt EVE sie in die `.env` und
+löscht die Textdatei. Steht der Key schon in der `.env`, bleibt die Datei liegen, wird aber nicht
+mehr gelesen.
+
+Die `.env` ist Klartext wie vorher die Textdateien. Sie sollte also nur für dein Benutzerkonto
+lesbar sein (unter macOS/Linux setzt EVE beim Speichern `chmod 600`).
 
 ### Reise-Assistent
 
@@ -260,7 +259,8 @@ offiziellen MCP-SDK. Er bietet `get_current_time`, `calculate`, `send_email`, `l
 `read_attachment`, `reply_email`, `save_email_draft`, `organize_email`, `delete_email`,
 `list_calendar_events`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`,
 `find_free_time`, `respond_to_calendar_invitation`, `list_tasks`, `create_task`, `update_task`,
-`complete_task`, `delete_task`, `move_task` und `create_task_list`. Ein neues Tool ist dort eine
+`complete_task`, `delete_task`, `move_task`, `create_task_list` sowie für Wetter und Börse
+`get_weather_forecast` und `get_stock_quotes` (siehe [Morning Assistant](#morning-assistant)). Ein neues Tool ist dort eine
 Funktion mit `@mcp.tool()`. Mit `mcp dev mcp_servers/pda_server.py` lässt er sich ohne Assistent im
 Browser ausprobieren. Werkzeuge mit dem Präfix `watch_` sind nur für den Wächter (siehe
 [Proaktive Meldungen](#proaktive-meldungen)) und für das Sprachmodell unsichtbar.
@@ -409,14 +409,31 @@ das heutige Briefing jederzeit manuell ab und steht auch in der Übersicht `hilf
   die Börse geschlossen, steht das Datum des letzten verfügbaren Handelstags dabei.
   Eine kleine Kurslinie zeigt die Schlusskurse von bis zu sieben Handelstagen.
   Den [Alpha-Vantage-Schlüssel](https://www.alphavantage.co/support/#api-key)
-  als einzige Zeile in `alphavantage-api-key.txt` im App-Datenordner ablegen.
+  unter ⚙ Einstellungen → Zugangsdaten eintragen (`PDA_ALPHAVANTAGE_KEY` in der `.env`).
 - **Musik** ist ein wechselnder Songvorschlag. Unter **Musikgeschmack** lässt sich ein Genre
   auswählen. Das Cover lädt direkt von Spotify. Über das Spotify-Logo in der Karte
   oder **Auf Spotify anhören** im Chat öffnet sich der Track in der Spotify-App.
   Falls die App nicht geöffnet werden kann, nutzt EVE den Browser.
 
-Der App-Datenordner steht oben unter [Einstellungen](#einstellungen-präferenzen).
 Fällt eine Quelle aus oder fehlt ihr Schlüssel, zeigt EVE die übrigen Teile des Briefings an.
+
+**Wetter und Börse als Werkzeuge:** Die beiden Quellen stellt der MCP-Server bereit
+([mcp_servers/morning_sources.py](mcp_servers/morning_sources.py)). So kann der Assistent sie auch
+im Chat nutzen, z. B. „Wie wird das Wetter morgen in Stuttgart?“ oder „Wie steht die SAP-Aktie?“.
+
+| Werkzeug | Liefert | Quelle |
+| --- | --- | --- |
+| `get_weather_forecast(location, days=1)` | Tiefst- und Höchstwert und Wetterlage je Tag (bis 7), am ersten Tag alle drei Stunden | Open-Meteo, ohne Key |
+| `get_stock_quotes(symbols)` | bis zu 5 Kürzel: letzter Schlusskurs, Veränderung zum vorherigen Handelstag | Alpha Vantage, `PDA_ALPHAVANTAGE_KEY` |
+
+Das Briefing holt seine Daten über die internen Gegenstücke `watch_morning_weather` und
+`watch_stock_quotes`. Das sind dieselben Quellen, nur als JSON, und sie sind für das Sprachmodell
+unsichtbar. Unter ⚙ Einstellungen → Werkzeuge → **Wetter und Börse** lassen sich die beiden
+Werkzeuge für den Chat abschalten; das Briefing nutzt die Quellen trotzdem. Der kostenlose
+Alpha-Vantage-Key erlaubt 25 Anfragen am Tag (eine je Kürzel), deshalb fragt das Modell Kurse
+nur auf Wunsch ab. Ohne MCP-Server (`PDA_ASSISTANT_BACKEND=commands`) fehlen im Briefing Wetter
+und Börse, wie schon die Termine. Der Songvorschlag braucht keine Schnittstelle: Er kommt aus
+einer festen Liste und bleibt deshalb im Briefing selbst.
 
 ## Testen
 

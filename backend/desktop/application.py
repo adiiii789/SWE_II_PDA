@@ -8,7 +8,7 @@ from typing import Any
 
 from PyQt5.QtWidgets import QApplication
 
-from backend import api, config
+from backend import api, api_keys, config
 from backend.assistant.skills import start_triggers
 from backend.bridge.function_registry import FunctionRegistry
 from backend.desktop.hotkey import GlobalHotkey
@@ -85,6 +85,10 @@ class Application:
 
     def __init__(self, qt_app: QApplication):
         qt_app.setQuitOnLastWindowClosed(False)
+        try:   # frühere Key-Dateien (z. B. gemini-api-key.txt) in die .env übernehmen
+            api_keys.migrate_legacy_files()
+        except Exception:  # noqa: BLE001  # die App startet trotzdem; der Key fehlt dann eben
+            log.exception("Keys nicht in die .env übernommen")
 
         self.popup = create_popup()
         self.tray = TrayIcon(config.TRAY_ICON, config.APP_NAME)

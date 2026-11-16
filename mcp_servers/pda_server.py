@@ -24,6 +24,12 @@ Werkzeuge:
   delete_task        löscht eine Aufgabe (google_tasks.py)
   move_task          verschiebt eine Aufgabe in eine andere Liste oder unter eine Aufgabe (google_tasks.py)
   create_task_list   legt eine neue Aufgabenliste an (google_tasks.py)
+  get_weather_forecast    Wettervorhersage für einen Ort, bis 7 Tage (morning_sources.py, Open-Meteo)
+  get_stock_quotes        Schlusskurse und Veränderung zum Vortag (morning_sources.py, Alpha Vantage)
+
+Nur für den Hintergrund (Präfix watch_, das Sprachmodell sieht sie nicht): watch_new_emails,
+watch_open_tasks, watch_calendar_events, watch_morning_weather, watch_stock_quotes - Daten als JSON
+für den Wächter und das Morning-Briefing.
 
 read_email und read_attachment geben die Anhänge zusätzlich als "resource_link" (file://-URI)
 zurück. Das Modell sieht davon nur den Namen; die App hängt die Datei im Chat an.
@@ -41,6 +47,7 @@ VS Code & Co. - Eintrag wie in mcp_servers.json, nur mit absolutem Pfad.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 from typing import Annotated, Literal
@@ -55,6 +62,7 @@ import google_calendar
 import google_tasks
 import inbox
 import mailer
+import morning_sources
 
 log = logging.getLogger("pda_server")
 
@@ -395,6 +403,34 @@ def create_task_list(title: Annotated[str, Field(description="Name of the new ta
     return _logged(_tasks_call(google_tasks.create_task_list, title))
 
 
+# --- Morning Assistant: Wetter und Börse (morning_sources.py) --------------------------------
+@mcp.tool()
+def get_weather_forecast(
+    location: Annotated[str, Field(description="City, optionally with a two-letter country code, e.g. 'Stuttgart,DE'")],
+    days: Annotated[int, Field(ge=1, le=morning_sources.MAX_DAYS, description="Number of days, 1 = today")] = 1,
+) -> str:
+    """Weather forecast from Open-Meteo: low and high temperature and conditions per day, for the
+    first day also every three hours. Times are local to the place."""
+    return _morning_call(lambda: morning_sources.forecast_text(morning_sources.forecast(location, days)))
+
+
+@mcp.tool()
+def get_stock_quotes(
+    symbols: Annotated[str, Field(description="Up to 5 comma-separated ticker symbols, e.g. 'AAPL, MSFT, SAP.DE'")],
+) -> str:
+    """Latest daily closing price of stocks and the change to the previous trading day (Alpha
+    Vantage). The free key allows only 25 requests a day (one per symbol): call it only when the
+    user asks for stock prices."""
+    return _morning_call(lambda: morning_sources.quotes_text(morning_sources.stock_quotes(symbols)))
+
+
+def _morning_call(action) -> str:
+    try:
+        return action()
+    except morning_sources.SourceError as error:
+        raise ToolError(str(error)) from error
+
+
 # --- Nur für den Wächter (backend/watcher.py) ------------------------------------------------
 # Das Präfix "watch_" versteckt sie vor dem Sprachmodell (backend/assistant/settings.py).
 @mcp.tool()
@@ -414,6 +450,26 @@ def watch_open_tasks() -> str:
 def watch_calendar_events(days: int = 14) -> str:
     """Internal: upcoming events as JSON for the background watcher."""
     return json.dumps(_calendar_call(google_calendar.watched_events, days), ensure_ascii=False)
+
+
+@mcp.tool()
+def watch_morning_weather(location: str) -> str:
+    """Internal: today's weather as JSON for the morning briefing."""
+    return json.dumps(_morning_call(lambda: morning_sources.forecast(location, 1)), ensure_ascii=False)
+
+
+@mcp.tool()
+def watch_stock_quotes(symbols: str, until: str = "") -> str:
+    """Internal: closing prices up to the given day (ISO, default today) as JSON for the morning briefing."""
+    day = _iso_day(until)
+    return json.dumps(_morning_call(lambda: morning_sources.stock_quotes(symbols, day)), ensure_ascii=False)
+
+
+def _iso_day(text: str) -> datetime.date | None:
+    try:
+        return datetime.date.fromisoformat(text) if text else None
+    except ValueError as error:
+        raise ToolError(f"Datum im ISO-Format erwartet: {text!r}") from error
 
 
 def _tasks_call(action, *arguments) -> str:
