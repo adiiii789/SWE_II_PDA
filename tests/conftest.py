@@ -20,6 +20,7 @@ os.environ["PDA_ENV_FILE"] = str(_SANDBOX / ".env")
 # Auch der App-Datenordner (Präferenzen, frühere Key-Dateien, Kacheln …) ist ein eigener: Sonst
 # übernähme z. B. der Start von Application in tests/desktop echte Key-Dateien in die Test-.env.
 os.environ["PDA_APP_DATA_DIR"] = str(_SANDBOX / "appdata")
+os.environ["PDA_LEGACY_MCP_ENV_FILE"] = str(_SANDBOX / "mcp_servers.env")   # nie die echte mcp_servers/.env
 for key in ("GEMINI_API_KEY", "PDA_ORS_KEY", "PDA_DB_CLIENT_ID", "PDA_DB_API_KEY", "PDA_TANKERKOENIG_KEY",
             "PDA_ALPHAVANTAGE_KEY", "PDA_SMTP_PASSWORD", "PDA_IMAP_PASSWORD"):
     os.environ.pop(key, None)

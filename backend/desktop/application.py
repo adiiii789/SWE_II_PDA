@@ -129,8 +129,9 @@ class Application:
 
     def __init__(self, qt_app: QApplication):
         qt_app.setQuitOnLastWindowClosed(False)
-        try:   # frühere Key-Dateien (z. B. gemini-api-key.txt) in die .env übernehmen
+        try:   # frühere Key-Dateien (gemini-api-key.txt …) und mcp_servers/.env in die .env übernehmen
             api_keys.migrate_legacy_files()
+            api_keys.migrate_legacy_env()
         except Exception:  # noqa: BLE001  # die App startet trotzdem; der Key fehlt dann eben
             log.exception("Keys nicht in die .env übernommen")
 

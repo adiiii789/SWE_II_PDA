@@ -43,6 +43,9 @@ def read_env_file(path: Path) -> dict[str, str]:
 ENV_FILE = Path(os.environ.get("PDA_ENV_FILE")
                 or (app_data_dir() if hasattr(sys, "_MEIPASS") else ROOT_DIR) / ".env")
 _ENV = {**read_env_file(ENV_FILE), **os.environ}
+# Früherer Ort der Mail-Einstellungen (vor Sprint 3): Fehlende Einträge übernimmt backend/api_keys.py beim
+# Start in ENV_FILE. Die alte Datei bleibt, wie sie ist.
+LEGACY_MCP_ENV_FILE = Path(os.environ.get("PDA_LEGACY_MCP_ENV_FILE") or ROOT_DIR / "mcp_servers" / ".env")
 
 # "models" (Ollama, Gemini, Claude), einzelner Anbieter oder "commands" (nur feste Befehle).
 # Siehe backend/assistant/__init__.py (_BACKENDS). Die Tests setzen "commands" (tests/conftest.py).

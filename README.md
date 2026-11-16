@@ -154,9 +154,9 @@ vor der Datei und lassen sich im Formular nicht ändern. Auch die übrigen `PDA_
 Neustart.
 
 Früher lagen der Gemini- und der Alpha-Vantage-Schlüssel als `gemini-api-key.txt` bzw.
-`alphavantage-api-key.txt` im App-Datenordner. Beim Start übernimmt EVE sie in die `.env` und
-löscht die Textdatei. Steht der Key schon in der `.env`, bleibt die Datei liegen, wird aber nicht
-mehr gelesen.
+`alphavantage-api-key.txt` im App-Datenordner und die Mail-Einstellungen in `mcp_servers/.env`. Beim
+Start übernimmt EVE, was davon in der `.env` noch fehlt. Die alten Dateien bleiben unverändert liegen,
+gelesen wird danach nur noch die `.env`.
 
 Die `.env` ist Klartext wie vorher die Textdateien. Sie sollte also nur für dein Benutzerkonto
 lesbar sein (unter macOS/Linux setzt EVE beim Speichern `chmod 600`).
