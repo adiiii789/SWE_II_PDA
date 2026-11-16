@@ -8,6 +8,8 @@
 //   {kind: "theme", accent} Akzentfarbe des Designs für Ohren, Hände und Kragen
 //   {kind: "side", value}   steht links oder rechts vom Popup (Blick zum Chat geht dorthin)
 //   {kind: "model", url, options}  anderes Modell (backend/companion_models.py); url "" = eingebaute Figur
+// Fährt der Begleiter ums Popup (Option "click": "lap"), nennt backend/desktop/companion_window.py in jedem
+// Schritt per Companion.drive(Grad, Größe) Fahrtrichtung und Tiefe, am Ende Companion.drive(null).
 // Den Mauszeiger reicht backend/desktop/companion_window.py per Companion.pointer() herein.
 //
 // Eigenes Modell: Mit ?model=<file-URL einer .glb/.gltf> (backend/config.py COMPANION_MODEL) ersetzt es die
@@ -303,7 +305,7 @@ const Companion = (() => {
     return found;
   }
 
-  const DEFAULT_OPTIONS = {yaw: 0, size: 1, lift: 0, hover: true, eyes: "glow", iris_hue: [160, 260]};
+  const DEFAULT_OPTIONS = {yaw: 0, size: 1, lift: 0, hover: true, eyes: "glow", iris_hue: [160, 260], click: "spin"};
 
   function useModel(gltf, options) {
     options = Object.assign({}, DEFAULT_OPTIONS, options || {});
@@ -401,7 +403,7 @@ const Companion = (() => {
     }
     for (const part of BUILT_IN) part.visible = false;
     custom = {pivot, head, armL, armR, rest, glowMaterials, mixer, eyes, hover: options.hover,
-      turn, faceYaw, extraYaw};
+      turn, faceYaw, extraYaw, click: options.click};
     wake();
   }
 
@@ -675,6 +677,8 @@ const Companion = (() => {
       const rest = custom.rest.get(custom.head);
       custom.head.rotation.set(rest.x + neck.rotation.x, rest.y + neck.rotation.y, rest.z + neck.rotation.z);
       custom.pivot.rotation.y = 0;
+    } else if (driving) {
+      custom.pivot.rotation.set(0, 0, 0);   // fährt ums Popup: geradeaus, nicht zum Mauszeiger
     } else {
       // ohne eigenen Kopf: das ganze Modell schaut (etwas schwächer) mit
       custom.pivot.rotation.set(neck.rotation.x * 0.5, neck.rotation.y * 0.6, neck.rotation.z * 0.6);
@@ -873,6 +877,18 @@ const Companion = (() => {
     }
   }
 
+  // Runde ums Popup: Drehung in Fahrtrichtung (0 = zum Betrachter, 90° = nach rechts, 180° = weg).
+  // Die Schrägstellung des Modells (Option yaw) fällt beim Fahren weg; gedreht wird auf kürzestem Weg.
+  let driving = false, driveYaw = 0, driveTarget = 0, driveScale = 1, driveScaleTarget = 1;
+  function wrapAngle(angle) { return Math.atan2(Math.sin(angle), Math.cos(angle)); }
+  function drive(degrees, scale) {
+    driving = typeof degrees === "number" && Number.isFinite(degrees);
+    const wanted = driving ? degrees * Math.PI / 180 - (custom ? custom.extraYaw * chatSide : 0) : 0;
+    driveTarget = driveYaw + wrapAngle(wanted - driveYaw);
+    driveScaleTarget = driving && Number.isFinite(scale) ? Math.min(1.5, Math.max(0.3, scale)) : 1;
+    wake();
+  }
+
   function ease(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 
   function update(now, dt) {
@@ -922,7 +938,12 @@ const Companion = (() => {
     const bounce = gestureProgress("wave", now);
     if (bounce >= 0) hover += Math.abs(Math.sin(bounce * Math.PI * 3)) * 0.08 * (1 - bounce);
     root.position.y = hover;
-    bodyPivot.rotation.y = spin + look.x * 0.12;
+    driveYaw += (driveTarget - driveYaw) * Math.min(1, dt * 12);
+    driveScale += (driveScaleTarget - driveScale) * Math.min(1, dt * 12);
+    root.scale.setScalar(driveScale);   // weiter hinten kleiner
+    if (!driving && Math.abs(driveTarget - driveYaw) < 0.002) driveYaw = driveTarget = wrapAngle(driveTarget);
+    if (driving) root.position.y += Math.abs(Math.sin(t * 22)) * 0.012;   // leichtes Rütteln beim Fahren
+    bodyPivot.rotation.y = spin + driveYaw + (driving ? 0 : look.x * 0.12);
     if (state === "listening") tilt = 0.12;
     bodyPivot.rotation.z += (0 - bodyPivot.rotation.z) * Math.min(1, dt * 3);
 
@@ -1044,8 +1065,12 @@ const Companion = (() => {
     wake();
   }
 
-  // Anklicken: Hüpfer mit Pirouette; über der Figur sieht sie den Zeiger direkt an
-  canvas.addEventListener("click", () => gesture("hop", 950));
+  // Anklicken: Hüpfer mit Pirouette - oder (Option "click": "lap") eine Runde ums Popup, die das Fenster
+  // in Python fährt. Über der Figur sieht sie den Zeiger direkt an.
+  canvas.addEventListener("click", () => {
+    if (custom && custom.click === "lap" && window.notifyPython) notifyPython("companion_lap", true);
+    else gesture("hop", 950);
+  });
   canvas.addEventListener("mousemove", event => {
     setPointer(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
   });
@@ -1077,8 +1102,8 @@ const Companion = (() => {
     if (window.notifyPython) notifyPython("companion_ready", true);   // Popup schickt Zustand und Design
   }
 
-  return {pointer: setPointer, setState, gesture, setAccent, resume, get state() { return state; }};
+  return {pointer: setPointer, setState, gesture, setAccent, resume, drive, get state() { return state; }};
 })();
 // const landet nicht auf window - Python ruft aber "window.Companion && Companion...." auf
-// (backend/desktop/companion_window.py: pointer, resume)
+// (backend/desktop/companion_window.py: drive, pointer, resume)
 window.Companion = Companion;

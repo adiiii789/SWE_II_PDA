@@ -11,7 +11,8 @@ Neben einem Modell kann eine gleichnamige .json liegen, die es anpasst (alles op
       "eyes": "glow",           "glow": Augen-Textur als Leuchtmaske (Form bleibt, Farbe = Zustand,
                                 blinzeln, Denkpunkte); "iris": nur die Iris (Farbton in iris_hue)
                                 nimmt die Zustandsfarbe an; "keep": Augen unverändert
-      "iris_hue": [160, 260]    Farbtonbereich der Iris in Grad (nur für "iris")
+      "iris_hue": [160, 260],   Farbtonbereich der Iris in Grad (nur für "iris")
+      "click": "spin"           beim Anklicken: "spin" Hüpfer mit Pirouette, "lap" einmal ums Popup fahren
     }
 """
 from __future__ import annotations
@@ -27,8 +28,9 @@ log = logging.getLogger(__name__)
 
 BUILT_IN = "builtin"   # Kennung der eingebauten Figur (ohne Modelldatei)
 EYE_MODES = ("glow", "iris", "keep")
+CLICK_MODES = ("spin", "lap")
 DEFAULTS: dict[str, Any] = {"yaw": 0.0, "size": 1.0, "lift": 0.0, "hover": True, "eyes": "glow",
-                            "iris_hue": [160.0, 260.0]}
+                            "iris_hue": [160.0, 260.0], "click": "spin"}
 
 
 def model_options(raw: Any) -> dict[str, Any]:
@@ -46,6 +48,8 @@ def model_options(raw: Any) -> dict[str, Any]:
         options["hover"] = raw["hover"]
     if raw.get("eyes") in EYE_MODES:
         options["eyes"] = raw["eyes"]
+    if raw.get("click") in CLICK_MODES:
+        options["click"] = raw["click"]
     hue = raw.get("iris_hue")
     if (isinstance(hue, list) and len(hue) == 2
             and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in hue)):

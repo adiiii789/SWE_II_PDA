@@ -12,8 +12,8 @@ from tests.qt_helpers import qt_app
 
 from backend.bridge.function_registry import FunctionRegistry
 from backend.bridge.web_bridge import WebBridge
-from backend.desktop.companion_window import CompanionWindow, companion_geometry
-from backend.events import COMPANION, EventBus
+from backend.desktop.companion_window import CompanionWindow, companion_geometry, lap_frame
+from backend.events import COMPANION, COMPANION_LAP, EventBus
 
 SCREEN = QRect(0, 0, 1920, 1040)
 
@@ -45,6 +45,38 @@ class GeometryTest(unittest.TestCase):
         popup = QRect(0, 416, 576, 624)
         rect = companion_geometry(popup, SCREEN, 0.34, 0.7, 4)
         self.assertEqual(rect.left(), popup.right() + 1 + 4)
+
+
+class LapFrameTest(unittest.TestCase):
+    """Runde ums Popup: Kreis in die Tiefe - erst nach hinten, vor dem Popup zurück."""
+    popup = QRect(1000, 400, 500, 600)
+    left_home = QRect(796, 700, 200, 300)
+
+    def test_starts_and_ends_at_home_driving_away_first(self):
+        start, end = lap_frame(self.left_home, self.popup, 0), lap_frame(self.left_home, self.popup, 1)
+        self.assertEqual((start.position, end.position), (self.left_home.topLeft(), self.left_home.topLeft()))
+        self.assertAlmostEqual(start.heading, 180)   # Heck zum Betrachter: fährt nach hinten weg
+
+    def test_behind_the_popup_smaller_and_higher(self):
+        far = lap_frame(self.left_home, self.popup, 0.25)
+        self.assertTrue(far.behind)
+        self.assertLess(far.scale, 1)
+        self.assertLess(far.position.y(), self.left_home.top())
+        self.assertEqual(far.position.x() + 100, self.popup.center().x() + 1)   # mittig hinter dem Popup
+        self.assertAlmostEqual(far.heading, 90)    # nach rechts
+
+    def test_comes_back_in_front_of_the_popup(self):
+        other_side, near = lap_frame(self.left_home, self.popup, 0.5), lap_frame(self.left_home, self.popup, 0.75)
+        self.assertEqual(other_side.position.x(), self.popup.right() + 1 + 4)
+        self.assertAlmostEqual(other_side.heading, 0, places=5)   # dreht zum Betrachter
+        self.assertFalse(near.behind)
+        self.assertEqual((near.scale, near.position.y()), (1, self.left_home.top()))
+        self.assertAlmostEqual(near.heading, -90)  # zurück nach links
+
+    def test_right_of_the_popup_mirrored(self):
+        home = QRect(1504, 700, 200, 300)
+        self.assertAlmostEqual(lap_frame(home, self.popup, 0.25).heading, -90)
+        self.assertEqual(lap_frame(home, self.popup, 0.5).position.x(), 796)
 
 
 class ImmediateExecutor:
@@ -152,6 +184,27 @@ class CompanionWindowTest(unittest.TestCase):
         pointer = [script for script in self.companion.content.scripts if "Companion.pointer" in script]
         self.assertEqual(len(pointer), 1)
 
+    def test_lap_drives_around_the_popup_and_back(self):
+        self.popup.show()
+        home = self.companion.geometry()
+        self.bus.publish(COMPANION_LAP, True)
+        self.assertTrue(self.companion.lapping)
+        self.assertIn("window.Companion && Companion.drive(180.0, 1.000);", self.companion.content.scripts)
+        self.assertFalse(self.companion.mask().isEmpty())   # hinter dem Popup ausgeblendet
+        self.companion._lap_started -= 60   # Runde sofort beenden
+        self.companion._drive_lap()
+        self.assertFalse(self.companion.lapping)
+        self.assertEqual(self.companion.geometry(), home)
+        self.assertEqual(self.companion.content.scripts[-1], "window.Companion && Companion.drive(null);")
+
+    def test_lap_stops_when_the_popup_hides(self):
+        self.popup.show()
+        self.companion.start_lap()
+        self.popup.hide()
+        self.assertFalse(self.companion.lapping)
+        self.companion.start_lap()   # verborgen: keine Runde
+        self.assertFalse(self.companion.lapping)
+
     def test_resumes_drawing_when_shown_again(self):
         self.popup.show()
         self.popup.hide()
@@ -180,7 +233,7 @@ class ModelQueryTest(unittest.TestCase):
 
 
 class CompanionPageTest(unittest.TestCase):
-    """Echte Seite des Begleiters: Python erreicht sie über window.Companion (pointer, resume)."""
+    """Echte Seite des Begleiters: Python erreicht sie über window.Companion (drive, pointer, resume)."""
 
     def test_page_api_is_reachable_from_python(self):
         from PyQt5.QtCore import QUrl
@@ -196,8 +249,9 @@ class CompanionPageTest(unittest.TestCase):
         view.loadFinished.connect(loaded.append)
         view.load(QUrl.fromLocalFile(str(config.COMPANION_PAGE)))
         self.assertTrue(wait_until(lambda: bool(loaded)))
-        script = "[typeof window.Companion.pointer, typeof window.Companion.resume]"
-        self.assertEqual(run_js(view.page(), script), ["function"] * 2)
+        script = "[typeof window.Companion.drive, typeof window.Companion.pointer, typeof window.Companion.resume]"
+        self.assertEqual(run_js(view.page(), script), ["function"] * 3)
+        self.assertTrue(run_js(view.page(), "window.Companion.drive(90, 0.7); window.Companion.drive(null); true"))
 
 
 if __name__ == "__main__":

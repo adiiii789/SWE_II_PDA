@@ -12,12 +12,16 @@ class OptionsTest(unittest.TestCase):
         self.assertEqual(model_options(None), DEFAULTS)
 
     def test_valid_values_are_taken(self):
-        options = model_options({"yaw": 35, "size": 0.8, "hover": False, "eyes": "iris", "iris_hue": [350, 20]})
-        self.assertEqual((options["yaw"], options["size"], options["hover"], options["eyes"]), (35.0, 0.8, False, "iris"))
+        options = model_options({"yaw": 35, "size": 0.8, "hover": False, "eyes": "iris", "iris_hue": [350, 20],
+                                 "click": "lap"})
+        self.assertEqual((options["yaw"], options["size"], options["hover"], options["eyes"], options["click"]),
+                         (35.0, 0.8, False, "iris", "lap"))
         self.assertEqual(options["iris_hue"], [350.0, 20.0])
 
     def test_invalid_values_fall_back(self):
-        options = model_options({"yaw": "links", "size": 99, "hover": "ja", "eyes": "laser", "iris_hue": [1]})
+        options = model_options({"yaw": "links", "size": 99, "hover": "ja", "eyes": "laser", "iris_hue": [1],
+                                 "click": "fliegen"})
+        self.assertEqual(options["click"], "spin")
         self.assertEqual(options["yaw"], 0.0)
         self.assertEqual(options["size"], 3.0)          # begrenzt
         self.assertTrue(options["hover"])

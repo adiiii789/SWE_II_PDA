@@ -19,7 +19,7 @@ from backend.desktop.hotkey import GlobalHotkey
 from backend.desktop.popup_window import PopupWindow
 from backend.desktop.tray_icon import TrayIcon
 from backend.desktop.web_view import WebView
-from backend.events import COMPANION, COMPANION_READY, POPUP_ENLARGED, PROACTIVE_NOTICE, EventBus, events
+from backend.events import COMPANION, COMPANION_LAP, COMPANION_READY, POPUP_ENLARGED, PROACTIVE_NOTICE, EventBus, events
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def create_companion(popup: PopupWindow) -> CompanionWindow | None:
     if not config.COMPANION_ENABLED:
         return None
     view = WebView(config.COMPANION_PAGE, FunctionRegistry({}), events, "transparent",
-                   notifications=frozenset({COMPANION_READY}), query=companion_query(config.COMPANION_MODEL))
+                   notifications=frozenset({COMPANION_READY, COMPANION_LAP}), query=companion_query(config.COMPANION_MODEL))
     companion = CompanionWindow(view, popup, events)
     popup.companion_geometry = lambda: companion.geometry() if companion.isVisible() else QRect()
     popup.side_reserve = companion.reserve
