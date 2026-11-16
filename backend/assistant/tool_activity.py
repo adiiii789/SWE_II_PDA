@@ -36,6 +36,13 @@ TOOL_LABELS: dict[str, str] = {
     "create_task_list": "Aufgabenliste anlegen",
     "get_current_time": "Uhrzeit abfragen",
     "calculate": "Rechnen",
+    "plan_trip_to_next_appointment": "Weg zum Termin planen",
+    "plan_trip": "Weg planen",
+    "plan_trip_home": "Heimweg planen",
+    "set_home_address": "Heimatadresse merken",
+    "set_place_address": "Ortskürzel merken",
+    "get_weather_forecast": "Wetter abrufen",
+    "get_stock_quotes": "Aktienkurse abrufen",
 }
 
 

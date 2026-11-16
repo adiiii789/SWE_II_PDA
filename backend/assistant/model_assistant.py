@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from backend.assistant.base import AssistantReply, ModelSelection
-from backend.assistant.commands import COMMANDS
+from backend.assistant.commands import COMMANDS, MORNING_BRIEFING, morning_briefing
 from backend.assistant.live_view import LiveView
 from backend.assistant.tool_activity import tool_activity
 from backend.assistant.llm import ChatMessage, LanguageModelError, SelectableLanguageModel, ToolCall
@@ -25,7 +25,7 @@ from backend.assistant.settings import CONFIRMED_TOOLS, SETTINGS_KEYS, Assistant
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult, ToolSpec
 from backend.config import APP_NAME
 from backend.preferences import PreferenceStore
-from backend.views import TemplateView
+from backend.views import TemplateView, View
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +97,8 @@ class ModelAssistant:
             self.new_conversation()
         if command == "hilfe":
             return model_help_reply(self.model_commands)
+        if command == MORNING_BRIEFING:
+            return morning_briefing(self.preferences, self.tools, self.clock())
         if command in COMMANDS:
             return COMMANDS[command][1]()
         if command == "modelle":
@@ -158,11 +160,14 @@ class ModelAssistant:
             return None
         return response.message.content.strip() or None
 
-    def _tool_view(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> TemplateView | None:
-        """Anzeige oben: Termine, Aufgaben und Mails grafisch - nur für Gruppen, deren Einstellung
+    def _tool_view(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> View | None:
+        """Anzeige oben: Liefert ein Werkzeug eine eigene Ansicht (z. B. Reiseplan mit Karte), gilt die
+        letzte davon. Sonst Termine, Aufgaben und Mails grafisch - nur für Gruppen, deren Einstellung
         "Anzeige oben" an ist. Nach Änderungen lädt sie die gemerkten Abfragen neu (live_view.py)."""
         done = [(call, result) for call, result in tool_log if result.content != CONFIRM_REQUEST]
-        return self.live_view.after_round(done, self.tools, self.settings, self.clock())
+        live = self.live_view.after_round(done, self.tools, self.settings, self.clock())
+        own = [result.view for _, result in done if result.view is not None]
+        return own[-1] if own else live
 
     def refresh_view(self) -> TemplateView | None:
         """Anzeige oben mit frischen Daten (ohne Sprachmodell); None, wenn es nichts zu aktualisieren gibt."""

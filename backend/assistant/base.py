@@ -17,6 +17,7 @@ class AssistantReply:
     text: str
     view: View | None = None   # TemplateView oder HtmlView; None = aktuelle Ansicht beibehalten
     attachments: tuple[Attachment, ...] = ()   # Dateien im Chat, z. B. Mail-Anhänge (backend/attachments.py)
+    view_button: str | None = None              # öffnet die Ansicht erneut aus dem Chat
 
 
 @runtime_checkable

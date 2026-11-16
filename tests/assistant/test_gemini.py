@@ -9,9 +9,6 @@ from backend.preferences import JsonPreferenceStore
 
 
 def test_gemini_round_trip_preserves_signatures_and_parallel_call_ids(tmp_path, monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    key_file = tmp_path / "gemini-api-key.txt"
-    key_file.write_text("test-key\n", encoding="utf-8")
     signed_turn = {"role": "model", "parts": [
         {"functionCall": {"name": "echo", "id": "call-1", "args": {"text": "eins"}},
          "thoughtSignature": "c2lnbmF0dXJl"},
@@ -33,7 +30,7 @@ def test_gemini_round_trip_preserves_signatures_and_parallel_call_ids(tmp_path, 
     preferences_path = tmp_path / "preferences.json"
     preferences = JsonPreferenceStore(preferences_path)
     preferences.set("ollama_model", "altes-ollama-modell")
-    model = GeminiModel("", key_file, timeout=1)
+    model = GeminiModel("", timeout=1, api_key=lambda: "test-key\n")
     assistant = GeminiAssistant(model, Echo(), preferences)
     responses = [io.BytesIO(json.dumps({"candidates": [{"content": turn}]}).encode())
                  for turn in (signed_turn, final_turn, final_turn)]

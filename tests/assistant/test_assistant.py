@@ -1,13 +1,17 @@
 import re
 import unittest
+from unittest import mock
 
 from backend import config
 from backend.assistant import Assistant, ModelSelection, create_assistant
 from backend.assistant.gemini_assistant import GeminiAssistant
 from backend.assistant import commands
 from backend.assistant.commands import CommandAssistant
+from backend.assistant.skills import travel
+from backend.integrations.mcp_client import MCPToolProvider
 from backend.rendering import ViewRenderer
 from backend.views import START_VIEW
+from tests.assistant.test_settings import MemoryStore
 
 
 class CommandAssistantTest(unittest.TestCase):
@@ -17,7 +21,8 @@ class CommandAssistantTest(unittest.TestCase):
     def test_implements_assistant_protocol(self):
         self.assertIsInstance(self.assistant, Assistant)
 
-    def test_every_command_renders_with_the_real_template(self):
+    @mock.patch.object(commands, "default_store", return_value=MemoryStore())
+    def test_every_command_renders_with_the_real_template(self, _store):
         # Vertrag Assistent ↔ Template: jede Ansicht lässt sich mit dem echten Template rendern.
         renderer = ViewRenderer(config.TEMPLATE_DIR, config.FRONTEND_DIR)
         for name, (_, handler) in commands.COMMANDS.items():
@@ -63,7 +68,9 @@ class CreateAssistantTest(unittest.TestCase):
         assistant = create_assistant("gemini")
         self.assertIsInstance(assistant, GeminiAssistant)
         self.assertIsInstance(assistant, ModelSelection)
-        self.assertEqual([p.name for p in assistant.tools._providers], ["pda"])   # "demo" ist abgeschaltet
+        providers = assistant.tools._providers
+        self.assertEqual([p.name for p in providers if isinstance(p, MCPToolProvider)], ["pda"])   # "demo" ist abgeschaltet
+        self.assertIn(travel.SKILL.tools, providers)   # Werkzeuge der Fähigkeiten kommen dazu
 
     def test_unknown_backend_raises(self):
         with self.assertRaisesRegex(ValueError, "does_not_exist"):

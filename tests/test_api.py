@@ -1,4 +1,5 @@
 import json
+import subprocess
 import unittest
 from unittest import mock
 
@@ -83,14 +84,47 @@ class SpeechApiTest(unittest.TestCase):
 
 
 class OpenLinkTest(unittest.TestCase):
+    TRACK_ID = "0ACACkoHUwgfgY5CxVIL4N"
+    SPOTIFY_URL = f"https://open.spotify.com/track/{TRACK_ID}"
+
     def test_opens_web_links_in_browser(self):
         with mock.patch("webbrowser.open") as browser:
             api.open_link("https://ollama.com")
         browser.assert_called_once_with("https://ollama.com")
 
+    def test_spotify_track_opens_in_macos_app(self):
+        with mock.patch.object(api.sys, "platform", "darwin"), \
+                mock.patch.object(api.subprocess, "run") as launch, mock.patch("webbrowser.open") as browser:
+            api.open_link(self.SPOTIFY_URL)
+        launch.assert_called_once_with(
+            ["/usr/bin/open", "-b", "com.spotify.client", f"spotify:track:{self.TRACK_ID}"],
+            check=True, capture_output=True, timeout=5)
+        browser.assert_not_called()
+
+    def test_spotify_track_opens_in_windows_app(self):
+        with mock.patch.object(api.sys, "platform", "win32"), \
+                mock.patch.object(api.os, "startfile", create=True) as launch, mock.patch("webbrowser.open") as browser:
+            api.open_link(self.SPOTIFY_URL)
+        launch.assert_called_once_with(f"spotify:track:{self.TRACK_ID}")
+        browser.assert_not_called()
+
+    def test_spotify_launch_failure_opens_browser(self):
+        with mock.patch.object(api.sys, "platform", "darwin"), \
+                mock.patch.object(api.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "open")), \
+                mock.patch("webbrowser.open") as browser:
+            api.open_link(self.SPOTIFY_URL)
+        browser.assert_called_once_with(self.SPOTIFY_URL)
+
+    def test_similar_spotify_host_opens_only_in_browser(self):
+        url = self.SPOTIFY_URL.replace("spotify.com", "spotify.com.example")
+        with mock.patch.object(api, "_open_spotify_track") as launch, mock.patch("webbrowser.open") as browser:
+            api.open_link(url)
+        launch.assert_not_called()
+        browser.assert_called_once_with(url)
+
     def test_rejects_other_schemes(self):
         with mock.patch("webbrowser.open") as browser:
-            for url in ("javascript:alert(1)", "file:///C:/Windows/System32/cmd.exe"):
+            for url in ("javascript:alert(1)", "file:///C:/Windows/System32/cmd.exe", f"spotify:track:{self.TRACK_ID}"):
                 with self.assertRaises(ValueError):
                     api.open_link(url)
         browser.assert_not_called()

@@ -2,6 +2,7 @@
 import tempfile
 import threading
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -10,13 +11,16 @@ from PyQt5.QtCore import QPoint, Qt
 from tests.assistant.test_settings import MemoryStore
 from tests.qt_helpers import qt_app, run_js, wait_until
 
-from backend import api, presenter, proactive
+from backend import api, api_keys, presenter, proactive
 from backend.assistant import AssistantReply
+from backend.assistant.skills import morning
 from backend.assistant.tools import Attachment
 from backend.attachments import AttachmentStore
 from backend.assistant.settings import AssistantSettings
 from backend.desktop.application import create_popup
 from backend.events import events
+from backend.assistant.skills.travel.planner import TravelSettings
+from backend.assistant.skills.travel.settings import TravelSettingsForm
 from backend.proactive_settings import ProactiveSettings
 from backend.startup import Startup, Step
 from backend.views import TemplateView
@@ -191,6 +195,17 @@ class PopupPageTest(unittest.TestCase):
         self.assertIn("blabla", answer)
         self.assertEqual(run_js(self.page, IFRAME_HTML), before)
 
+    def test_manual_briefing_is_listed_and_restores_the_view(self):
+        self.addCleanup(run_js, self.page, "if (chatMaximized) toggleChatMaximized(); showView(" + repr(self.initial_html) + ")")
+        self._send("hilfe")
+        self.assertIn("morning briefing", run_js(self.page, IFRAME_HTML))
+        run_js(self.page, "toggleChatMaximized()")
+        with mock.patch("backend.assistant.commands.default_store", return_value=MemoryStore()):
+            answer = self._send("Morning Briefing")
+        self.assertIn("Auf Spotify anhören", answer)
+        self.assertFalse(run_js(self.page, "chatMaximized"))
+        self.assertIn("Song des Tages", run_js(self.page, IFRAME_HTML))
+
     def test_render_view_is_callable_from_javascript(self):
         script = "render_view({html: '<b>x</b>'}).then(h => window._rendered = h)"
         run_js(self.page, script)
@@ -228,6 +243,33 @@ class PopupPageTest(unittest.TestCase):
         run_js(self.page, ALERT_CLICK)
         self.assertTrue(wait_until(lambda: not run_js(self.page, ALERT_THERE)))
         self.assertEqual(run_js(self.page, LAST_VISIBILITY), "visible")
+
+    def test_morning_briefing_opens_and_reopens_from_chat(self):
+        briefing = morning.compose(datetime(2026, 11, 9, 7), {"weather_location": "", "stock_symbols": ""}, [])
+        self.addCleanup(run_js, self.page, "if (chatMaximized) toggleChatMaximized(); showView(" + repr(self.initial_html) + ")")
+        api._deliver_proactive(briefing, formulate=False, speak=False, display="chat")
+        self.assertTrue(wait_until(lambda: "Song des Tages" in run_js(self.page, IFRAME_HTML)))
+        button = "Array.from(document.querySelectorAll('.view-action')).pop()"
+        self.assertEqual(run_js(self.page, button + ".textContent"), "Briefing anzeigen")
+
+        api._deliver_proactive(proactive.OCCASIONS[proactive.DEMO], formulate=False, speak=False, display="chat")
+        self.assertTrue(wait_until(lambda: proactive.OCCASIONS[proactive.DEMO].fallback in run_js(self.page, MESSAGES)[-1]))
+        self.assertIn("Song des Tages", run_js(self.page, IFRAME_HTML))
+
+        run_js(self.page, "showView('<h2>Eine andere Ansicht</h2>'); toggleChatMaximized()")
+        run_js(self.page, button + ".click()")
+        self.assertFalse(run_js(self.page, "chatMaximized"))
+        self.assertIn("Song des Tages", run_js(self.page, IFRAME_HTML))
+        with mock.patch.object(api, "_open_spotify_track", return_value=True) as open_track:
+            run_js(self.page, """
+              onBriefingLink({source: window,
+                data: {type: 'eve:spotify-track', url: 'https://open.spotify.com/track/0ACACkoHUwgfgY5CxVIL4N'}});
+              onBriefingLink({source: viewFrame.contentWindow,
+                data: {type: 'eve:spotify-track', url: 'https://example.com/'}});
+            """)
+            run_js(self.page, button + ".parentElement.querySelector('a').click()")
+            self.assertTrue(wait_until(lambda: open_track.called))
+            open_track.assert_called_once_with(briefing.view.data["song"]["url"].rsplit("/", 1)[1])
 
     def test_attachments_can_be_opened_and_saved(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -436,7 +478,8 @@ class SettingsPanelTest(unittest.TestCase):
     def setUp(self):
         self.store = MemoryStore()
         for name, settings in (("_settings", AssistantSettings(self.store)),
-                               ("_proactive_settings", ProactiveSettings(self.store))):
+                               ("_proactive_settings", ProactiveSettings(self.store)),
+                               ("_travel_settings", TravelSettingsForm(self.store))):
             patcher = mock.patch.object(api, name, return_value=settings)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -467,15 +510,67 @@ class SettingsPanelTest(unittest.TestCase):
         self.open()
         self.js("document.querySelector('#settings-tabs [data-tab=proactive]').click()")
         self.assertEqual(self.js("Array.from(document.querySelectorAll('[data-tab=proactive] .settings-group'))"
-                                 ".map(g => g.dataset.group)"), ["general", "mail", "tasks", "calendar"])
+                                 ".map(g => g.dataset.group)"), ["general", "morning", "mail", "tasks", "calendar"])
+        self.assertEqual(self.js("document.querySelector('[data-group=morning] [data-key=time] input').value"),
+                         "07:00")
         self.js("""
           document.querySelector('[data-group=general] [data-key=quiet_from] input').value = '21:30';
           document.querySelector('[data-tab=proactive] [data-group=mail] [data-key=criteria] textarea').value = 'Uni';
+          document.querySelector('[data-group=morning] [data-key=enabled] input').click();
+          document.querySelector('[data-group=morning] [data-key=weather_location] textarea').value = 'Berlin,DE';
+          document.querySelector('[data-group=morning] [data-key=stock_symbols] textarea').value = 'IBM';
+          document.querySelector('[data-group=morning] [data-key=music_genre] select').value = 'jazz';
           document.getElementById('settings-save').click();""")
         self.assertTrue(wait_until(lambda: self.js("document.getElementById('settings-panel').hidden")))
         settings = ProactiveSettings(self.store)
         self.assertEqual(settings.values("general")["quiet_from"], "21:30")
         self.assertEqual(settings.values("mail")["criteria"], "Uni")
+        self.assertEqual(settings.values("morning"), {
+            "enabled": True, "time": "07:00", "weather_location": "Berlin,DE", "stock_symbols": "IBM",
+            "music_genre": "jazz",
+        })
+
+    def test_travel_tab_saves_decimal_values(self):
+        self.open()
+        self.js("document.querySelector('#settings-tabs [data-tab=travel]').click()")
+        self.assertEqual(self.js("Array.from(document.querySelectorAll('[data-tab=travel] .settings-group'))"
+                                 ".map(g => g.dataset.group)"),
+                         ["general", "transit", "car", "bike_walk", "weather", "reminder", "fares"])
+        self.js("""
+          document.querySelector('[data-tab=travel] [data-key=home_address] textarea').value = 'Hauptstraße 1, Mannheim';
+          document.querySelector('[data-tab=travel] [data-key=consumption] input').value = '6.5';
+          document.querySelector('[data-tab=travel] [data-key=train_transfers] select').value = '0';
+          document.querySelector('[data-tab=travel] [data-key=modes] input[value=taxi]').checked = false;
+          document.getElementById('settings-save').click();""")
+        self.assertTrue(wait_until(lambda: self.js("document.getElementById('settings-panel').hidden")))
+        settings = TravelSettings.from_preferences(self.store)
+        self.assertEqual((settings.consumption, settings.train_transfers), (6.5, 0))
+        self.assertEqual(settings.modes, ("train", "bike", "foot", "car"))   # Taxi abgewählt
+        self.assertEqual(self.store.get("travel_home_address"), "Hauptstraße 1, Mannheim")
+
+    def test_keys_tab_shows_only_whether_a_key_is_set(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        env = Path(folder.name) / ".env"
+        env.write_text("GEMINI_API_KEY=geheimer-gemini-key\nPDA_SMTP_HOST=smtp.example.com\n", encoding="utf-8")
+        patcher = mock.patch.object(api_keys.config, "ENV_FILE", env)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.open()
+        self.js("document.querySelector('#settings-tabs [data-tab=keys]').click()")
+        self.addCleanup(self.js, "showSettingsTab('answer')")
+        self.assertNotIn("geheimer-gemini-key", self.js("document.documentElement.outerHTML"))   # nie im Frontend
+        badge = "document.querySelector('[data-key={}] .settings-badge').textContent"
+        self.assertEqual(self.js(badge.format("GEMINI_API_KEY")), "gespeichert")
+        self.assertEqual(self.js(badge.format("PDA_ORS_KEY")), "fehlt")
+        self.assertEqual(self.js("document.querySelector('[data-key=GEMINI_API_KEY] input[type=password]').value"), "")
+        self.js("""
+          document.querySelector('[data-key=PDA_ORS_KEY] input').value = 'neuer-ors-key';
+          document.querySelector('[data-key=GEMINI_API_KEY] input[type=checkbox]').click();
+          document.getElementById('settings-save').click();""")
+        self.assertTrue(wait_until(lambda: self.js("document.getElementById('settings-panel').hidden")))
+        self.assertEqual(env.read_text(encoding="utf-8"),
+                         "GEMINI_API_KEY=\nPDA_SMTP_HOST=smtp.example.com\nPDA_ORS_KEY=neuer-ors-key\n")
 
     def test_save_changes_and_confirm_in_chat(self):
         self.open()

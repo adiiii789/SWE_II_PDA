@@ -202,7 +202,6 @@ body.history-closed:not(.chat-maximized) #input-form { margin-top: 0; }
   display: flex;
   flex-direction: column;
 }
-
 #chat-scroll { flex: 1; min-height: 0; position: relative; }
 
 #chat-history {
@@ -258,6 +257,9 @@ body.history-closed:not(.chat-maximized) #input-form { margin-top: 0; }
 /* Proaktive Meldung (backend/proactive.py): der PDA hat sich von sich aus gemeldet */
 .message.assistant.proactive { padding-left: 10px; border-left: 2px solid var(--warning); }
 .proactive-label { font-size: 11px; font-weight: 600; color: var(--warning); margin-bottom: 0.3em; }
+/* "Anzeigen"-Knopf unter einer Antwort mit eigener Ansicht (z. B. Reiseplan) */
+.assistant.with-view-action > p + p { display: inline-block; margin-right: 8px; }
+.assistant .view-action { padding: 3px 10px; font-size: 12px; }
 
 /* Antworten als Markdown (frontend/markdown.js): Abstände kommen von den Elementen, nicht von pre-wrap */
 .message.assistant { white-space: normal; overflow-x: auto; }
@@ -486,17 +488,23 @@ body[data-agent=transcribing] #input-form::before {
   padding: 12px;
   box-sizing: border-box;
 }
-#settings-header { display: flex; align-items: center; margin-bottom: 12px; }
-#settings-header strong { font-family: var(--font-heading); font-size: 15px; font-weight: 600; }
+/* Titel und ✕ oben, die Reiter (sieben) in einer eigenen Zeile über die volle Breite - wird es eng
+   (breite Schrift mancher Designs), scrollt die Zeile seitlich statt Reiter abzuschneiden. */
+#settings-header { display: flex; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+#settings-header strong { flex: 1; font-family: var(--font-heading); font-size: 15px; font-weight: 600; }
 #settings-tabs {
+  order: 3;
+  flex: 1 0 100%;
   display: flex;
-  margin: 0 auto 0 12px;
+  margin-top: 8px;
   padding: 2px;
+  overflow-x: auto;
   border-radius: var(--radius-sm);
   background: var(--control);
   box-shadow: var(--inset-shadow);
 }
-#settings-tabs button { padding: 3px 11px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); box-shadow: none; }
+#settings-tabs::-webkit-scrollbar { height: 3px; }
+#settings-tabs button { flex: 1 0 auto; padding: 3px 8px; white-space: nowrap; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--text-muted); box-shadow: none; }
 #settings-tabs button + button { margin-left: 2px; }
 #settings-tabs button:hover { color: var(--text); }
 #settings-tabs button.active { background: var(--surface-2); color: var(--text); box-shadow: var(--control-shadow); }
@@ -513,6 +521,11 @@ body[data-agent=transcribing] #input-form::before {
 .setting select, .setting input[type=number], .setting input[type=time] { flex: 1; min-width: 8em; max-width: 22em; }
 .setting-bool .setting-label { flex: 1; display: flex; align-items: center; cursor: pointer; }
 .setting-bool .setting-label input { margin-right: 10px; }   /* kein gap: Chromium 83 kann es bei Flexbox nicht */
+/* Zugangsdaten (⚙ → Zugangsdaten): Werte sind nie zu sehen, nur ob einer gesetzt ist */
+.setting input[type=password] { flex: 1; min-width: 8em; }
+.setting input[type=password]:disabled { opacity: 0.45; }
+.settings-badge.ok { color: var(--text-muted); }
+.settings-badge.missing { color: var(--warning); }
 .setting-text { flex-direction: column; align-items: stretch; }
 .setting-text .setting-label { flex: none; }
 .setting-text > * + * { margin-left: 0; margin-top: 6px; }

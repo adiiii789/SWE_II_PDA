@@ -11,7 +11,8 @@ from typing import Any
 from PyQt5.QtCore import QRect, QUrl, QUrlQuery
 from PyQt5.QtWidgets import QApplication
 
-from backend import api, config
+from backend import api, api_keys, config
+from backend.assistant.skills import start_triggers
 from backend.bridge.function_registry import FunctionRegistry
 from backend.companion_models import is_model, model_entry
 from backend.desktop.companion_window import CompanionWindow
@@ -128,6 +129,10 @@ class Application:
 
     def __init__(self, qt_app: QApplication):
         qt_app.setQuitOnLastWindowClosed(False)
+        try:   # frühere Key-Dateien (z. B. gemini-api-key.txt) in die .env übernehmen
+            api_keys.migrate_legacy_files()
+        except Exception:  # noqa: BLE001  # die App startet trotzdem; der Key fehlt dann eben
+            log.exception("Keys nicht in die .env übernommen")
 
         self.popup = create_popup()
         self.companion = create_companion(self.popup)
@@ -153,10 +158,12 @@ class Application:
         self.watcher = api._proactive_watcher() if config.PROACTIVE_WATCH else None
         if self.watcher is not None:
             self.watcher.start()   # meldet sich von selbst bei Mails, Aufgaben und Terminen
+        self.stop_triggers = start_triggers()   # autonome Fähigkeiten, z. B. Reise-Erinnerung
         qt_app.aboutToQuit.connect(self.shutdown)
 
     def shutdown(self) -> None:
         """Bridge-Thread beenden und Web-View freigeben (vermeidet WebEngine-Warnungen)."""
+        self.stop_triggers()
         if self.watcher is not None:
             self.watcher.stop()
         for unsubscribe in self._unsubscribe:

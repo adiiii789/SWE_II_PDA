@@ -29,7 +29,8 @@ ANSWER_KEY = "answer_settings"
 TOOLS_KEY = "tool_settings"
 PROACTIVE_KEY = "proactive_settings"      # Schema: backend/proactive_settings.py
 VOICE_KEY = "voice_settings"              # Schema: backend/voice_settings.py
-SETTINGS_KEYS = (ANSWER_KEY, TOOLS_KEY, PROACTIVE_KEY, VOICE_KEY)   # nicht als "Bekanntes über den Nutzer" ans Modell
+TRAVEL_KEY = "travel_settings"            # Schema: backend/assistant/skills/travel/settings.py
+SETTINGS_KEYS = (ANSWER_KEY, TOOLS_KEY, PROACTIVE_KEY, VOICE_KEY, TRAVEL_KEY)   # nicht als "Bekanntes über den Nutzer" ans Modell
 
 MAX_TEXT_CHARS = 1000                     # Freitext - schützt das Kontextfenster
 INTERNAL_TOOL_PREFIX = "watch_"           # nur für den Wächter (backend/watcher.py), nie fürs Sprachmodell
@@ -61,8 +62,9 @@ class Setting:
     help: str = ""
     instruction: str = ""
     instruction_off: str = ""    # nur bool: Satz, wenn ausgeschaltet
-    minimum: int = 0             # nur number
-    maximum: int = 100
+    minimum: float = 0           # nur number
+    maximum: float = 100
+    step: float = 1              # nur number: kleiner als 1 = Kommazahlen erlaubt (z. B. 0.1)
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {"key": self.key, "label": self.label, "kind": self.kind,
@@ -70,7 +72,7 @@ class Setting:
         if self.choices:
             data["choices"] = [{"value": c.value, "label": c.label} for c in self.choices]
         if self.kind == "number":
-            data["minimum"], data["maximum"] = self.minimum, self.maximum
+            data["minimum"], data["maximum"], data["step"] = self.minimum, self.maximum, self.step
         return data
 
     def clean(self, value: Any) -> Any:
@@ -89,11 +91,12 @@ class Setting:
                 raise ValueError(f"{self.label}: ja oder nein erwartet")
             return value
         if self.kind == "number":
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or value != int(value):
-                raise ValueError(f"{self.label}: ganze Zahl erwartet")
+            decimal = self.step < 1
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or (not decimal and value != int(value)):
+                raise ValueError(f"{self.label}: {'Zahl' if decimal else 'ganze Zahl'} erwartet")
             if not self.minimum <= value <= self.maximum:
-                raise ValueError(f"{self.label}: zwischen {self.minimum} und {self.maximum}")
-            return int(value)
+                raise ValueError(f"{self.label}: zwischen {self.minimum:g} und {self.maximum:g}")
+            return round(float(value), 2) if decimal else int(value)
         if self.kind == "time":
             if not isinstance(value, str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", value):
                 raise ValueError(f"{self.label}: Uhrzeit wie 18:30 erwartet")
@@ -259,6 +262,13 @@ TOOL_GROUPS: tuple[ToolGroup, ...] = (
               "Aufgaben lesen, erstellen, ändern, erledigen, löschen und verschieben", TASKS_SETTINGS),
     ToolGroup("basics", "Uhrzeit und Rechnen", ("get_current_time", "calculate"),
               "Aktuelle Uhrzeit, Rechenaufgaben"),
+    ToolGroup("travel", "Reise-Assistent", ("plan_trip_to_next_appointment", "plan_trip", "plan_trip_home",
+                                            "set_home_address", "set_place_address"),
+              "Weg zum nächsten Termin, zu anderen Zielen und nach Hause planen; Heimatadresse und Ortskürzel "
+              "merken (Einstellungen dazu unter ⚙ → Reise)"),
+    ToolGroup("weather_stocks", "Wetter und Börse", ("get_weather_forecast", "get_stock_quotes"),
+              "Wettervorhersage (Open-Meteo) und Aktienkurse (Alpha Vantage) - dieselben Quellen wie das "
+              "Morning-Briefing, das sie auch abgeschaltet nutzt"),
 )
 
 

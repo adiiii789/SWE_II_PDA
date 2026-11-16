@@ -49,8 +49,7 @@ def _model_assistant(backend: str) -> Assistant:
     from backend.events import TOOL_ACTIVITY, events
     # eine Anzeige für alle Anbieter; laufende Werkzeugaufrufe gehen ans Popup ("Termine abrufen …")
     shared = {"live_view": LiveView(), "on_tool": partial(events.publish, TOOL_ACTIVITY)}
-    gemini = GeminiAssistant(GeminiModel(config.GEMINI_MODEL, config.GEMINI_KEY_FILE, config.GEMINI_TIMEOUT_S),
-                             *args, **shared)
+    gemini = GeminiAssistant(GeminiModel(config.GEMINI_MODEL, config.GEMINI_TIMEOUT_S), *args, **shared)
     ollama = OllamaAssistant(OllamaModel(OllamaClient(config.OLLAMA_TIMEOUT_S, config.OLLAMA_CATALOG_TIMEOUT_S)),
                              *args, **shared)
     claude = ClaudeCodeAssistant(ClaudeCodeModel(config.CLAUDE_MODEL, config.CLAUDE_WORK_DIR,

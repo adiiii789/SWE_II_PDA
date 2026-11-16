@@ -1,0 +1,170 @@
+/* Morning-Briefing (morning.html.j2). Nur Theme-Variablen, damit es zu jedem Design passt (wie dashboard.css).
+   Chromium 83 (Qt 5.15): kein gap bei Flexbox (Grid: grid-gap), kein margin-inline - Abstände über margin.
+   Flächen entstehen aus neutralem Grau mit Deckkraft: Manche Designs haben --border: transparent. */
+html, body { background: var(--surface); }
+body {
+  box-sizing: border-box;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 10px 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+:focus { outline: none; }   /* kein Fokusrahmen */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+h1, h2, h3, p, ul { margin: 0; }
+h1, h2, h3 { font-family: var(--font-heading); }
+.date, .secondary { color: var(--text-muted); }
+.date { font-size: 11px; }
+h1 { font-size: 20px; font-weight: 600; line-height: 1.2; }
+
+.briefing-header { display: flex; align-items: center; margin-bottom: 10px; padding: 2px 0; }
+.sunrise {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  height: 36px;
+  margin-right: 11px;
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  background: rgba(128, 128, 128, 0.12);
+}
+.sunrise svg { width: 22px; height: 22px; }
+
+.briefing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  grid-gap: 8px;
+}
+.card {
+  min-width: 0;
+  padding: 8px 10px 10px;
+  box-sizing: border-box;
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(128, 128, 128, 0.07);
+  box-shadow: var(--card-shadow);
+}
+.card h2 { display: flex; align-items: center; margin-bottom: 6px; font-size: 14px; font-weight: 600; line-height: 1.35; }
+.count {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: rgba(128, 128, 128, 0.15);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Termine */
+.agenda { list-style: none; padding: 0; }
+.agenda li { display: flex; align-items: baseline; }
+.agenda li + li { margin-top: 6px; }
+.event-time {
+  flex: 0 0 72px;
+  margin-right: 8px;
+  color: var(--accent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.more { margin-top: 6px; font-size: 11px; }
+
+/* Wetter */
+.weather-overview { display: flex; align-items: center; justify-content: space-between; }
+.weather-overview .weather-icon { margin-left: 10px; }
+.temperature { font-size: 24px; font-weight: 600; line-height: 1.25; }
+.temperature span { font-size: 14px; }
+.weather-place { margin-bottom: 2px; font-size: 12px; font-weight: 600; }
+.weather-icon { width: 24px; height: 24px; flex: none; color: var(--text-muted); }
+.weather-overview .weather-icon { width: 44px; height: 44px; }
+.weather-icon.sun, .weather-icon .weather-sun { color: var(--warning); }
+.weather-icon.rain { color: var(--link); }
+.weather-icon.storm, .weather-icon.wind { color: var(--warning); }
+.weather-icon .weather-cloud { color: var(--text-muted); }
+.weather-hours-title { margin: 10px 0 5px; font-size: 11px; font-weight: 500; color: var(--text-muted); }
+.weather-hours {
+  display: flex;
+  padding: 2px 1px 5px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  list-style: none;
+}
+.weather-hours li {
+  position: relative;
+  box-sizing: border-box;
+  display: grid;
+  flex: 0 0 52px;
+  justify-items: center;
+  grid-gap: 3px;
+  padding: 5px;
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(128, 128, 128, 0.07);
+  font-variant-numeric: tabular-nums;
+  scroll-snap-align: start;
+}
+.weather-hours li + li { margin-left: 6px; }
+.weather-hour-time, .weather-source { color: var(--text-muted); font-size: 11px; }
+.weather-hour-unknown { height: 24px; }
+.weather-hour-condition {   /* nur für Screenreader */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.weather-source { margin-top: 5px; }
+.weather-source a { color: var(--link); }
+
+/* Börse */
+.weather, .calendar, .market, .song { grid-column: 1 / -1; }
+.market table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.market th, .market td { text-align: right; padding: 5px 0 5px 8px; }
+.market th:first-child { text-align: left; padding-left: 0; }
+.market td { white-space: nowrap; }
+.market thead { color: var(--text-muted); font-size: 11px; }
+.market thead th { font-weight: 500; }
+.trend-caption { margin-bottom: 4px; font-size: 11px; }
+.market tbody tr { border-top: var(--bw) solid var(--border); }
+.market tbody th { font-weight: 600; }
+.quote-label { display: flex; flex-wrap: wrap; align-items: center; }
+.quote-day { margin-left: 4px; color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.quote-trend { width: 56px; height: 20px; flex: none; margin: 1px 0 1px auto; padding-left: 8px; color: var(--link); }
+.change { font-weight: 600; }
+.change.up { color: #3FA66B; }
+.change.down { color: var(--danger); }
+
+/* Song des Tages */
+.song-details { display: flex; align-items: center; }
+.song-cover { flex: 0 0 64px; margin-right: 11px; }
+.song-cover img, .cover-placeholder { width: 64px; height: 64px; border-radius: var(--radius-sm); }
+.song-cover img { display: block; object-fit: contain; }
+.cover-placeholder { display: flex; align-items: center; justify-content: center; color: var(--accent);
+  background: rgba(128, 128, 128, 0.12); }
+.cover-placeholder svg { width: 24px; height: 24px; }
+.song-cover img + .cover-placeholder { display: none; }
+.song-title { font-weight: 600; }
+.spotify-link {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border: var(--bw) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--control);
+  color: var(--text);
+  text-decoration: none;
+}
+.spotify-link > span + span { margin-left: 8px; }
+.spotify-link:hover { background: var(--control-hover); }
+.spotify-link svg { display: block; width: 72px; height: auto; }
+
+@media (min-width: 630px) {
+  .weather, .calendar, .market, .song { grid-column: auto; }
+}

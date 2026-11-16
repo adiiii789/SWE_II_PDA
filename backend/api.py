@@ -10,15 +10,20 @@ das Popup nicht ein.
 from __future__ import annotations
 
 import logging
+import os
 import re
+import subprocess
+import sys
 import threading
 import webbrowser
 from functools import cache
 from typing import Any
 
-from backend import config, proactive
+from backend import api_keys, config, proactive
 from backend.assistant import Assistant, ConsultingAssistant, ModelPreloading, ModelSelection, create_assistant
+from backend.assistant.base import AssistantReply
 from backend.assistant.settings import AssistantSettings, is_internal_tool
+from backend.assistant.skills.travel.settings import TravelSettingsForm
 from backend.assistant.tools import ToolResult
 from backend.companion_models import BUILT_IN, is_model, list_models as list_companion_models
 from backend.preferences import JsonPreferenceStore, default_store
@@ -179,10 +184,29 @@ def stop_speaking() -> None:
 
 
 def open_link(url: str) -> None:
-    """Link aus einer Antwort im Standardbrowser öffnen (nur http, https und mailto)."""
+    """Web- und Mail-Links öffnen. Spotify-Tracks bevorzugt in der Desktop-App."""
     if not url.lower().startswith(("http://", "https://", "mailto:")):
         raise ValueError(f"Diesen Link öffne ich nicht: {url}")
+    track = re.fullmatch(r"https://open\.spotify\.com/track/([A-Za-z0-9]{22})", url)
+    if track is not None and _open_spotify_track(track.group(1)):
+        return
     webbrowser.open(url)
+
+
+def _open_spotify_track(track_id: str) -> bool:
+    """Übergibt einen geprüften Track an Spotify, sofern die App verfügbar ist."""
+    uri = f"spotify:track:{track_id}"
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["/usr/bin/open", "-b", "com.spotify.client", uri],
+                           check=True, capture_output=True, timeout=5)
+        elif sys.platform == "win32":
+            os.startfile(uri)  # noqa: S606  # Windows öffnet den registrierten Spotify-Protokollhandler.
+        else:
+            return False
+    except (OSError, NotImplementedError, subprocess.SubprocessError):
+        return False
+    return True
 
 
 def enlarge_popup(enlarged: bool) -> bool:
@@ -208,12 +232,28 @@ def _deliver_proactive(occasion: proactive.Occasion, formulate: bool = True, spe
     with _assistant_lock:
         reply = proactive.compose(_assistant() if formulate else None, occasion)
     message = proactive.announce(present(reply), occasion, events, display)
-    if speak and (speech_output := _speech_output()) is not None:
+    if speak:
+        _speak(occasion.fallback if occasion.chat_text is not None else reply.text)
+    return message
+
+
+def _announce_reply(reply: AssistantReply, title: str, trigger: str, display: str | None = None,
+                    speak: bool = False) -> dict[str, Any]:
+    """Fertige Antwort (mit eigener Ansicht) als proaktive Meldung zeigen, z. B. die Reise-Erinnerung.
+    display wie bei proactive.announce. Aus jedem Thread aufrufbar."""
+    occasion = proactive.Occasion(title, "", reply.text, trigger)
+    message = proactive.announce(present(reply), occasion, events, display)
+    if speak:
+        _speak(reply.text)
+    return message
+
+
+def _speak(text: str) -> None:
+    if (speech_output := _speech_output()) is not None:
         try:
-            speech_output.speak(reply.text)
+            speech_output.speak(text)
         except Exception:  # noqa: BLE001  # Meldung ist schon da - Vorlesen ist Zugabe
             log.exception("Proaktive Meldung konnte nicht vorgelesen werden")
-    return message
 
 
 def _watch_tool(name: str, arguments: dict[str, Any]) -> ToolResult:
@@ -245,6 +285,14 @@ def _proactive_watcher() -> ProactiveWatcher:
     """Der eine Wächter der App; application.py startet ihn."""
     return ProactiveWatcher(_proactive_settings(), JsonPreferenceStore(config.PROACTIVE_STATE_FILE), _watch_tool,
                             _consult_model, _deliver_proactive)
+
+
+@cache
+def _travel_settings() -> TravelSettingsForm:
+    """Reise-Einstellungen (⚙ → Reise) auf demselben Store wie der Reise-Assistent."""
+    return TravelSettingsForm(default_store(), lambda: {
+        "ors": bool(api_keys.get("PDA_ORS_KEY")),
+        "rail": bool(api_keys.get("PDA_DB_CLIENT_ID") and api_keys.get("PDA_DB_API_KEY"))})
 
 
 @cache
@@ -280,31 +328,40 @@ def get_settings() -> dict[str, Any]:
     {"answer": {"fields": [...], "values": {...}},
      "tools": [{"id", "title", "description", "tools", "available", "fields", "values"}, ...],
      "proactive": [gleicher Aufbau wie "tools", siehe backend/proactive_settings.py],
-     "voice": {"fields", "values", "sample"} (backend/voice_settings.py)}
+     "voice": {"fields", "values", "sample"} (backend/voice_settings.py),
+     "travel": [gleicher Aufbau, siehe backend/assistant/skills/travel/settings.py],
+     "keys": [{"name", "label", "group", "help", "set", "source"}] - ohne Werte (backend/api_keys.py)}
     fields: [{"key", "label", "kind": "choice"|"multi"|"bool"|"number"|"text"|"time", "default", "help",
-              "choices"?: [{"value", "label"}], "minimum"?, "maximum"?}]"""
+              "choices"?: [{"value", "label"}], "minimum"?, "maximum"?, "step"?}]"""
     return {**_settings().form(_available_tools()), "proactive": _proactive_settings().form(),
-            "voice": _voice_settings().form()}
+            "voice": _voice_settings().form(), "travel": _travel_settings().form(), "keys": api_keys.status()}
 
 
 def save_settings(changes: dict[str, Any]) -> dict[str, Any]:
     """Einstellungen speichern: {"answer": {key: value}, "tools": {group_id: {key: value}},
-    "proactive": {bereich: {key: value}}, "voice": {key: value}} - alles optional, nur geänderte Werte nötig. Ungültige
+    "proactive": {bereich: {key: value}}, "voice": {key: value}, "travel": {gruppe: {key: value}},
+    "keys": {NAME: neuer Wert, "" = löschen}} - alles optional, nur geänderte Werte nötig. Ungültige
     Werte: ValueError, dann wird nichts gespeichert. Gilt ab der nächsten Nachricht bzw. Prüfung.
     Gibt das aktualisierte Formular zurück."""
     proactive_values = _proactive_settings().validated(changes.get("proactive"))
     voice_values = _voice_settings().validated(changes.get("voice"))
+    travel_values = _travel_settings().validated(changes.get("travel"))
+    key_values = api_keys.validated(changes.get("keys"))
     _settings().save(changes.get("answer"), changes.get("tools"))
     _proactive_settings().store_validated(proactive_values)
     _voice_settings().store_validated(voice_values)
+    _travel_settings().store_validated(travel_values)
+    api_keys.store(key_values)
     return get_settings()
 
 
 def reset_settings() -> dict[str, Any]:
-    """Alle Einstellungen auf die Standardwerte. Gibt das Formular zurück."""
+    """Alle Einstellungen auf die Standardwerte (die Heimatadresse und die Zugangsdaten bleiben).
+    Gibt das Formular zurück."""
     _settings().reset()
     _proactive_settings().reset()
     _voice_settings().reset()
+    _travel_settings().reset()
     return get_settings()
 
 

@@ -11,12 +11,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from backend.assistant.settings import PROACTIVE_KEY, Choice, Setting, _cleaned, _merged
+from backend.assistant.skills.morning_music import MUSIC_GENRES
 from backend.preferences import PreferenceStore
 
 GENERAL = "general"
 MAIL = "mail"
 TASKS = "tasks"
 CALENDAR = "calendar"
+MORNING = "morning"
 
 _WEEKDAYS = (Choice("0", "Mo"), Choice("1", "Di"), Choice("2", "Mi"), Choice("3", "Do"),
              Choice("4", "Fr"), Choice("5", "Sa"), Choice("6", "So"))
@@ -121,6 +123,17 @@ _CALENDAR: tuple[Setting, ...] = (
     Setting("ignore_words", "Termine mit diesen Wörtern im Titel auslassen", "text", "", help="Durch Komma getrennt"),
 )
 
+_MORNING: tuple[Setting, ...] = (
+    Setting("enabled", "Tägliches Morning-Briefing", "bool", False),
+    Setting("time", "Uhrzeit des Briefings", "time", "07:00"),
+    Setting("weather_location", "Wetterort", "text", "", help="Stadt und Länderkürzel, z. B. Berlin,DE"),
+    Setting("stock_symbols", "Aktienkürzel", "text", "",
+            help="Die ersten fünf verschiedenen Kürzel, kommagetrennt, z. B. AAPL, MSFT, IBM"),
+    Setting("music_genre", "Musikgeschmack", "choice", "mixed",
+            tuple(Choice(key, label) for key, label in MUSIC_GENRES),
+            help="Genre für den täglichen Songvorschlag"),
+)
+
 
 @dataclass(frozen=True)
 class Section:
@@ -132,6 +145,7 @@ class Section:
 
 SECTIONS: tuple[Section, ...] = (
     Section(GENERAL, "Allgemein", "Wie und wann sich der PDA überhaupt meldet", _GENERAL),
+    Section(MORNING, "Morning Assistant", "Termine, Wetter, Aktienrückblick und ein Song für den Morgen", _MORNING),
     Section(MAIL, "E-Mail", "Neue Mails. Sie bleiben dabei ungelesen.", _MAIL),
     Section(TASKS, "Aufgaben", "Google Tasks kennt nur Tage, deshalb zählt eine Uhrzeit in der Notiz", _TASKS),
     Section(CALENDAR, "Kalender", "Erinnerungen an Termine und neue Einladungen", _CALENDAR),

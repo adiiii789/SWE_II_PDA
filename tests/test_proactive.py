@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 
 from backend import api, proactive
-from backend.assistant import ProactiveAssistant
+from backend.assistant import AssistantReply, ProactiveAssistant
 from backend.assistant.commands import CommandAssistant
 from backend.events import ASSISTANT_MESSAGE, PROACTIVE_NOTICE, EventBus, events
 from backend.views import TemplateView
@@ -121,6 +121,22 @@ class ApiProactiveMessageTest(unittest.TestCase):
         with mock.patch.object(api.config, "PROACTIVE_SPEAK", True), self.assertLogs("backend.api", "ERROR"):
             message = api.proactive_message("demo")
         self.assertTrue(message["proactive"])
+
+    def test_finished_reply_keeps_its_view(self):
+        # z. B. die Reise-Erinnerung: eigener Text und eigene Ansicht, nicht vom Sprachmodell formuliert
+        reply = AssistantReply("In 15 Minuten los.", TemplateView("default", {"title": "Reiseplan", "text": "x"}))
+        message = api._announce_reply(reply, "Zeit loszufahren", "Reise-Assistent", "notice", speak=True)
+        self.assertEqual((message["text"], message["title"]), ("In 15 Minuten los.", "Zeit loszufahren"))
+        self.assertIn("Reiseplan", message["html"])
+        notice = self.received[-1]
+        self.assertEqual(notice, (PROACTIVE_NOTICE, {"title": "Zeit loszufahren", "text": "In 15 Minuten los.",
+                                                      "display": "notice"}))
+        self.speech.speak.assert_called_once_with("In 15 Minuten los.")
+
+    def test_finished_reply_only_in_chat(self):
+        api._announce_reply(AssistantReply("Los.", None), "Zeit loszufahren", "Reise-Assistent", "chat")
+        self.assertEqual([name for name, _ in self.received], [ASSISTANT_MESSAGE])
+        self.speech.speak.assert_not_called()
 
 
 if __name__ == "__main__":

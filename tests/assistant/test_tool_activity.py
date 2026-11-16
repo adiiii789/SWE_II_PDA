@@ -12,7 +12,11 @@ class LabelTest(unittest.TestCase):
         self.assertEqual(tool_label("complete_task"), "Aufgabe erledigen")
 
     def test_unknown_tools_use_their_name(self):
-        self.assertEqual(tool_label("plan_trip"), "Plan trip")
+        self.assertEqual(tool_label("book_flight"), "Book flight")
+
+    def test_new_sprint_tools_have_german_labels(self):
+        self.assertEqual(tool_label("plan_trip_home"), "Heimweg planen")
+        self.assertEqual(tool_label("get_weather_forecast"), "Wetter abrufen")
 
     def test_error_flag_only_at_the_end(self):
         self.assertNotIn("error", tool_activity("start", "calculate"))
