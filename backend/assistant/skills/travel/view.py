@@ -57,7 +57,8 @@ MIN_BAR_PERCENT = 6   # so breit ist eine Etappe im Balken mindestens (sonst ist
 def summary(plan: TripPlan, title: str = "", home: bool = False) -> str:
     """Kurzfassung für den Chat und als Werkzeugergebnis fürs Sprachmodell.
     home: Heimweg, title ist dann der Termin, von dem es heimgeht."""
-    heading = (f"Heimweg von „{title}“" if title else "Heimweg") if home else         (f"Weg zu „{title}“" if title else "Weg")
+    heading = (f"Heimweg von „{title}“" if title else "Heimweg") if home else \
+        (f"Weg zu „{title}“" if title else "Weg")
     best = plan.recommended
     if plan.same_place:
         return f"{heading}: Start und Ziel liegen am selben Ort ({plan.destination.label}) – kein Weg nötig."

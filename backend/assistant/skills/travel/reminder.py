@@ -17,7 +17,7 @@ import threading
 from collections.abc import Callable
 
 from backend.assistant.base import AssistantReply
-from backend.assistant.skills.travel.planner import TravelSettings
+from backend.assistant.skills.travel.planner import TRAIN, TravelSettings
 from backend.assistant.skills.travel.service import TravelService, TravelSetupError
 from backend.assistant.skills.travel.view import summary, trip_view
 from backend.integrations.http import IntegrationError
@@ -67,10 +67,14 @@ class TravelReminder:
         key = ("home" if trip.home else "to", trip.event.id, trip.event.start)
         now = self.service.clock()
         self._reminded.add(key)
-        minutes = max(0, round((best.depart_at - now).total_seconds() / 60))
+        minutes = _minutes(best.depart_at - now)
         when = f"In {minutes} Minuten" if minutes else "Jetzt"
         if trip.home:
-            text = f"{when} geht es nach Hause (nach „{trip.event.title}“). "
+            left = _minutes(trip.event.end - now)
+            ends = f"„{trip.event.title}“ endet in {left} Minuten" if left else f"„{trip.event.title}“ ist zu Ende"
+            next_one = "Nächste Verbindung nach Hause" if best.mode == TRAIN else f"Nach Hause ({best.label})"
+            text = (f"{ends}. {next_one} {'in ' + str(minutes) + ' Minuten' if minutes else 'jetzt'} "
+                    f"(los {best.depart_at:%H:%M}). ")
         else:
             text = f"{when} solltest du los zu „{trip.event.title}“. "
         self.notify(AssistantReply(text + summary(trip.plan, trip.event.title, trip.home),
@@ -78,16 +82,18 @@ class TravelReminder:
         return True
 
     def _due(self, trip, settings: TravelSettings) -> bool:
-        """Ist es Zeit für die Erinnerung (Abfahrt minus Vorlauf erreicht, Termin noch nicht begonnen)
-        und war sie für diesen Termin noch nicht da?"""
+        """Ist es Zeit für die Erinnerung und war sie für diesen Termin noch nicht da? Zum Termin:
+        Vorlauf vor der empfohlenen Abfahrt, bis der Termin beginnt. Heimweg: Vorlauf vor dem
+        Terminende (egal, wann die nächste Verbindung fährt), bis HOME_GRACE danach."""
         best = trip.plan.recommended if trip else None
         if best is None or best.depart_at is None or trip.plan.same_place:   # z. B. nächste Vorlesung im selben Haus
             return False
         key = ("home" if trip.home else "to", trip.event.id, trip.event.start)
         now = self.service.clock()
-        until = trip.event.end + HOME_GRACE if trip.home else trip.event.start
+        anchor, until = (trip.event.end, trip.event.end + HOME_GRACE) if trip.home else (best.depart_at,
+                                                                                          trip.event.start)
         lead = datetime.timedelta(minutes=settings.reminder_minutes)
-        return key not in self._reminded and best.depart_at - lead <= now < until
+        return key not in self._reminded and anchor - lead <= now < until
 
     def start(self) -> Callable[[], None]:
         """Im Hintergrund prüfen, bis die zurückgegebene Funktion aufgerufen wird."""
@@ -103,3 +109,7 @@ class TravelReminder:
 
         threading.Thread(target=run, name="travel-reminder", daemon=True).start()
         return stop.set
+
+
+def _minutes(delta: datetime.timedelta) -> int:
+    return max(0, round(delta.total_seconds() / 60))

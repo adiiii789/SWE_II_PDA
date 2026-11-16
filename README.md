@@ -161,7 +161,8 @@ Linie ohne Karte.
   Im Chat geht auch „Wie komme ich heim?“ (Werkzeug `plan_trip_home`).
 - **Erinnerung:** 15 Minuten vor der empfohlenen Abfahrt meldet sich EVE von selbst – wie die
   proaktiven Meldungen als Popup, Systembenachrichtigung oder nur im Chat, auf Wunsch vorgelesen.
-  Das gilt auch für den Heimweg, also z. B. 15 Minuten vor Ende des letzten Termins. Kurz vorher
+  Beim Heimweg zählt der Vorlauf ab dem Ende des letzten Termins, egal wann die nächste Verbindung
+  fährt („„Seminar“ endet in 15 Minuten. Nächste Verbindung nach Hause in 22 Minuten …“). Kurz vorher
   rechnet sie den Weg neu (aktuelle Abfahrten und Verspätungen); liegt der nächste Termin im selben
   Gebäude, meldet sie sich nicht. Gelesen werden alle in Google Calendar sichtbaren Kalender, auch
   abonnierte (z. B. ein Vorlesungsplan).

@@ -495,9 +495,23 @@ class ReminderTest(unittest.TestCase):
         self.assertFalse(self.reminder.check())
         self.at(last.end - datetime.timedelta(minutes=15))
         self.assertTrue(self.reminder.check())
-        self.assertTrue(self.pushed[0].text.startswith("In 15 Minuten geht es nach Hause (nach „Seminar“)."))
+        self.assertTrue(self.pushed[0].text.startswith("„Seminar“ endet in 15 Minuten. "), self.pushed[0].text)
         self.assertEqual(self.pushed[0].view.data["title"], "Heimweg von: Seminar")
         self.assertFalse(self.reminder.check())
+
+    def test_way_home_counts_from_the_end_not_from_the_next_connection(self):
+        # die nächste Bahn fährt erst 25 Min. nach Terminende - erinnert wird trotzdem 15 Min. vor dem Ende
+        last = event("letzter", "Seminar", start=NOW - datetime.timedelta(minutes=30), minutes=60)   # bis 08:30
+        transit = FakeTransit(lambda departure: transit_journey(departure + datetime.timedelta(minutes=25)))
+        service = make_service(calendar=FakeCalendar(last), transit=transit, modes=["train"])
+        reminder = TravelReminder(service, self.notify, interval_s=60)
+        service.test_clock["now"] = last.end - datetime.timedelta(minutes=16)
+        self.assertFalse(reminder.check())
+        service.test_clock["now"] = last.end - datetime.timedelta(minutes=15)
+        self.assertTrue(reminder.check())
+        self.assertTrue(self.pushed[0].text.startswith(
+            "„Seminar“ endet in 15 Minuten. Nächste Verbindung nach Hause in 40 Minuten (los 08:55). "),
+            self.pushed[0].text)
 
     def test_way_home_reminder_ends_after_departure(self):
         last = event("letzter", "Seminar", start=NOW - datetime.timedelta(minutes=30), minutes=60)

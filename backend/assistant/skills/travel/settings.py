@@ -95,7 +95,8 @@ GROUPS: tuple[Group, ...] = (
     )),
     Group("reminder", "Erinnerung und Heimweg", "Meldet sich von selbst, bevor du losmusst", (
         _setting("reminder", "Vor der Abfahrt erinnern"),
-        _setting("reminder_minutes", "… Minuten vor der Abfahrt", minimum=0, maximum=120),
+        _setting("reminder_minutes", "… Minuten vor der Abfahrt", minimum=0, maximum=120,
+                 help="Beim Heimweg: so lange vor Ende des letzten Termins, egal wann die nächste Verbindung fährt"),
         Setting("reminder_display", "Wie melden", "choice", _DEFAULTS["reminder_display"], (
             Choice("popup", "Popup öffnen"),
             Choice("notice", "Systembenachrichtigung"),
