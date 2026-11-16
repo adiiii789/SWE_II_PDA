@@ -1079,3 +1079,6 @@ const Companion = (() => {
 
   return {pointer: setPointer, setState, gesture, setAccent, resume, get state() { return state; }};
 })();
+// const landet nicht auf window - Python ruft aber "window.Companion && Companion...." auf
+// (backend/desktop/companion_window.py: pointer, resume)
+window.Companion = Companion;

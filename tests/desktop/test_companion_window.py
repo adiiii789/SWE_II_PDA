@@ -179,5 +179,26 @@ class ModelQueryTest(unittest.TestCase):
             self.assertEqual(companion_query(Path(folder) / "fehlt.glb"), "")
 
 
+class CompanionPageTest(unittest.TestCase):
+    """Echte Seite des Begleiters: Python erreicht sie über window.Companion (pointer, resume)."""
+
+    def test_page_api_is_reachable_from_python(self):
+        from PyQt5.QtCore import QUrl
+        from PyQt5.QtWebEngineWidgets import QWebEngineView
+
+        from backend import config
+        from tests.qt_helpers import run_js, wait_until
+
+        qt_app()
+        view = QWebEngineView()
+        self.addCleanup(view.deleteLater)
+        loaded = []
+        view.loadFinished.connect(loaded.append)
+        view.load(QUrl.fromLocalFile(str(config.COMPANION_PAGE)))
+        self.assertTrue(wait_until(lambda: bool(loaded)))
+        script = "[typeof window.Companion.pointer, typeof window.Companion.resume]"
+        self.assertEqual(run_js(view.page(), script), ["function"] * 2)
+
+
 if __name__ == "__main__":
     unittest.main()
