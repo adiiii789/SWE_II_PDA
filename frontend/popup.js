@@ -7,6 +7,7 @@ const inputForm = document.getElementById("input-form");
 const messageInput = document.getElementById("message-input");
 const modelSelect = document.getElementById("model-select");
 const recordButton = document.getElementById("record-button");
+const speakButton = document.getElementById("speak-button");
 const chatPanel = document.getElementById("chat-panel");
 const splitter = document.getElementById("splitter");
 const chatMaxButton = document.getElementById("chat-max-button");
@@ -16,6 +17,7 @@ const chatScroll = document.getElementById("chat-scroll");
 
 // Sprache (backend/speech.py): was verfügbar ist, kommt von speech_support().
 let speech = {input: false, output: false};
+let readAloud = true;       // Antworten vorlesen? (Präferenz im Backend, Lautsprecher-Knopf in der Chatleiste)
 let recordState = "idle";   // "idle" | "recording" | "transcribing"
 let replyPending = false;   // Bridge-Aufrufe laufen nacheinander - während chat() keine Aufnahme starten
 
@@ -39,7 +41,7 @@ const SNAP_PX = 32;        // so nah an der Eingabe rastet die Ansicht ganz unte
 let viewSize = null;
 let manualSplit = false;
 
-let speaking = false;       // liest gerade vor (nur für den Avatar)
+let speaking = false;       // liest gerade vor - meldet das Backend (Ereignis speech_output)
 let viewHtml = "";          // zuletzt gezeigte Ansicht - bei Design-Wechsel neu eingefärbt
 let viewTaskState = {};     // in dieser Ansicht abgehakt/geöffnet: Aufgaben-ID -> erledigt
 let viewUiState = null;     // Reiter und Scrollpositionen der Ansicht - bleiben beim Aktualisieren erhalten
@@ -413,8 +415,8 @@ function showToolActivity(activity) {
   if (isNearBottom()) scrollToBottom();
 }
 
-// spoken: Nachricht kam per Spracheingabe - dann wird die Antwort vorgelesen.
-async function submitText(text, spoken = false) {
+// Ist Vorlesen an (Lautsprecher-Knopf), wird die Antwort vorgelesen - getippt wie gesprochen.
+async function submitText(text) {
   if (modelSelect.disabled) {
     messageInput.value = text;
     return;
@@ -430,16 +432,7 @@ async function submitText(text, spoken = false) {
     const reply = await chat(text);
     showReply(reply);
     if (/^modell(?:e$|\s)/i.test(text)) await loadModels();
-    if (spoken && speech.output && reply.text) {
-      speaking = true;
-      updateAgentState();
-      try {
-        await speak(reply.text);
-      } finally {
-        speaking = false;
-        updateAgentState();
-      }
-    }
+    if (readAloud && speech.output && reply.text) await speak(reply.text);   // kehrt sofort zurück
   } catch (error) {
     addMessage(error.message, "error");
   } finally {
@@ -495,7 +488,7 @@ async function toggleRecording() {
       addMessage(error.message, "error");
     }
     setRecordState("idle");
-    if (text) await submitText(text, true);
+    if (text) await submitText(text);
     else addMessage("Ich habe nichts verstanden.", "error");
   }
 }
@@ -511,7 +504,49 @@ async function onKeyDown(event) {
       addMessage(error.message, "error");
     }
   }
-  if (speech.output) stop_speaking().catch(() => {});
+  if (speech.output) stopSpeaking();
+}
+
+// Lautsprecher-Knopf: zeigt, ob vorgelesen wird (an/aus); während des Vorlesens wird er zum Stopp-Knopf.
+function updateSpeakButton() {
+  speakButton.hidden = !speech.output;
+  speakButton.classList.toggle("speaking", speaking);
+  speakButton.classList.toggle("muted", !readAloud && !speaking);
+  speakButton.setAttribute("aria-pressed", String(readAloud));
+  speakButton.textContent = speaking ? "⏹" : readAloud ? "🔊" : "🔇";
+  speakButton.title = speaking ? "Vorlesen unterbrechen (Escape)"
+    : readAloud ? "Vorlesen ausschalten" : "Vorlesen einschalten";
+}
+
+function setSpeaking(value) {
+  speaking = Boolean(value);
+  updateSpeakButton();
+  updateAgentState();
+}
+
+// Sofort über den EventBus (auch während chat() den Bridge-Thread belegt), dazu über die Bridge,
+// falls die Seite ohne Application läuft - doppelt anhalten schadet nicht.
+function stopSpeaking() {
+  if (window.notifyPython) notifyPython("stop_speaking", null);
+  stop_speaking().catch(() => {});
+}
+
+async function onSpeakButton() {
+  if (speaking) {
+    setSpeaking(false);   // gleich zurückmelden; das Backend bestätigt mit speech_output
+    stopSpeaking();
+    return;
+  }
+  const wanted = !readAloud;
+  readAloud = wanted;
+  updateSpeakButton();
+  try {
+    readAloud = await set_read_aloud(wanted);
+  } catch (error) {
+    readAloud = !wanted;
+    addMessage(`Vorlesen nicht umgeschaltet: ${error.message}`, "error");
+  }
+  updateSpeakButton();
 }
 
 async function loadSpeechSupport() {
@@ -520,7 +555,13 @@ async function loadSpeechSupport() {
   } catch (error) {
     speech = {input: false, output: false};
   }
+  try {
+    readAloud = await read_aloud();
+  } catch (error) {
+    readAloud = true;
+  }
   recordButton.hidden = !speech.input;
+  updateSpeakButton();
 }
 
 // Sprachmodelle in die Auswahl laden, getrennt nach lokal, Gemini und Claude-Abo.
@@ -706,6 +747,7 @@ setInterval(() => { if (document.hasFocus()) refreshView(); }, VIEW_REFRESH_MS /
 chatHistory.addEventListener("click", onChatClick);
 window.addEventListener("message", onBriefingLink);
 recordButton.addEventListener("click", toggleRecording);
+speakButton.addEventListener("click", onSpeakButton);
 chatHistory.addEventListener("scroll", onChatScroll);
 scrollDownButton.addEventListener("click", scrollToBottom);
 new ResizeObserver(onChatResize).observe(chatHistory);
@@ -721,6 +763,7 @@ document.addEventListener("keydown", onKeyDown);
 onPythonEvent("assistant_message", showReply);   // Nachrichten, die das Backend von sich aus schickt
 onPythonEvent("companion_ready", syncCompanion);  // 3D-Begleiter geladen
 onPythonEvent("tool_activity", showToolActivity);  // welches Werkzeug der Assistent gerade aufruft
+onPythonEvent("speech_output", (state) => setSpeaking(state && state.speaking));   // Vorlesen läuft/endet
 document.addEventListener("appearancechange", syncCompanion);
 // Popup geht auf: der Begleiter winkt
 document.addEventListener("visibilitychange", () => { if (!document.hidden) tellCompanion("hello"); });

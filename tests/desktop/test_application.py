@@ -11,11 +11,11 @@ from tests.qt_helpers import qt_app, wait_until
 
 from backend import api, config
 from backend.desktop.application import (Application, ProactiveTrigger, create_popup, forward_proactive_notices,
-                                         open_when_page_loaded)
+                                         forward_speech_stop, open_when_page_loaded)
 from backend.desktop.popup_window import PopupWindow, popup_geometry
 from backend.desktop.tray_icon import TrayIcon
 from backend.desktop.web_view import WebView
-from backend.events import PROACTIVE_NOTICE, EventBus, events
+from backend.events import PROACTIVE_NOTICE, STOP_SPEAKING, EventBus, events
 
 
 def settle(seconds: float = 0.3) -> None:
@@ -36,7 +36,7 @@ class CreatePopupTest(unittest.TestCase):
         self.assertIsInstance(popup.content, WebView)
         script = popup.content.page().scripts().findScript("python-bridge").sourceCode()
         self.assertTrue(callable(api.chat))
-        self.assertIn('["cancel_recording", "chat", "companion_models", "complete_task_from_view", "enlarge_popup", "get_settings", "list_models", "loading_status", "open_attachment", "open_link", "preview_voice", "proactive_message", "refresh_view", "render_view", "reset_settings", "save_attachment", "save_settings", "select_model", "speak", "speech_support", "start_recording", "start_view", "stop_recording", "stop_speaking"]', script)
+        self.assertIn('["cancel_recording", "chat", "companion_models", "complete_task_from_view", "enlarge_popup", "get_settings", "list_models", "loading_status", "open_attachment", "open_link", "preview_voice", "proactive_message", "read_aloud", "refresh_view", "render_view", "reset_settings", "save_attachment", "save_settings", "select_model", "set_read_aloud", "speak", "speech_support", "start_recording", "start_view", "stop_recording", "stop_speaking"]', script)
         expected = QUrl.fromLocalFile(str(config.POPUP_PAGE))
         self.assertTrue(wait_until(lambda: popup.content.url() == expected))
 
@@ -153,6 +153,20 @@ class ForwardProactiveNoticesTest(unittest.TestCase):
         self.bus.publish(PROACTIVE_NOTICE, {"title": "T", "text": "Hallo"})
         self.assertEqual(self.notices, [("T", "Hallo", config.PROACTIVE_NOTICE_MS)])
         self.assertEqual(self.opened, [])
+
+
+class ForwardSpeechStopTest(unittest.TestCase):
+    def test_stop_notification_stops_speaking(self):
+        bus = EventBus()
+        with mock.patch.object(api, "stop_speaking") as stop:
+            unsubscribe = forward_speech_stop(bus)
+            bus.publish("anderes_ereignis", None)
+            stop.assert_not_called()
+            bus.publish(STOP_SPEAKING, None)
+            stop.assert_called_once()
+            unsubscribe()
+            bus.publish(STOP_SPEAKING, None)
+            stop.assert_called_once()
 
 
 class FakeContent(QObject):

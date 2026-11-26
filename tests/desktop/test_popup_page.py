@@ -18,7 +18,7 @@ from backend.assistant.tools import Attachment
 from backend.attachments import AttachmentStore
 from backend.assistant.settings import AssistantSettings
 from backend.desktop.application import create_popup
-from backend.events import events
+from backend.events import SPEECH_OUTPUT, events
 from backend.assistant.skills.travel.planner import TravelSettings
 from backend.assistant.skills.travel.settings import TravelSettingsForm
 from backend.proactive_settings import ProactiveSettings
@@ -40,6 +40,8 @@ IFRAME_HTML ="document.getElementById('view-frame').srcdoc"
 IFRAME_SANDBOX = "document.getElementById('view-frame').getAttribute('sandbox')"
 RECORD = "document.getElementById('record-button').click()"
 RECORD_LABEL = "document.getElementById('record-button').textContent"
+SPEAK = "document.getElementById('speak-button').click()"
+SPEAK_BUTTON = "(b => [b.hidden, b.textContent, b.className])(document.getElementById('speak-button'))"
 ESCAPE = "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape'}))"
 ALERT_THERE = "Boolean(document.getElementById('proactive-alert'))"
 ALERT_OPEN = "Boolean(document.querySelector('#proactive-alert.open'))"
@@ -132,6 +134,8 @@ class PopupPageTest(unittest.TestCase):
             raise TimeoutError("Startansicht nicht gesetzt")
         cls.initial_html = run_js(cls.page, IFRAME_HTML)
         cls.initial_messages = run_js(cls.page, MESSAGES)
+        # Getippte Testnachrichten nicht wirklich vorlesen; Sprach-Tests schalten es gezielt ein.
+        run_js(cls.page, "readAloud = false; updateSpeakButton()")
 
     @classmethod
     def tearDownClass(cls):
@@ -301,7 +305,12 @@ class PopupPageTest(unittest.TestCase):
             patcher = mock.patch.object(api, name, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        run_js(self.page, "speech = {input: true, output: true}")
+        run_js(self.page, "speech = {input: true, output: true}; readAloud = true; updateSpeakButton()")
+        self.addCleanup(run_js, self.page, "readAloud = false; setSpeaking(false)")
+        store = MemoryStore()
+        patcher = mock.patch.object(api, "default_store", return_value=store)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         return speech_input, speech_output
 
     def test_voice_message_is_sent_and_reply_spoken(self):
@@ -319,6 +328,42 @@ class PopupPageTest(unittest.TestCase):
         self.assertTrue(wait_until(lambda: speech_output.speak.called))
         speech_output.speak.assert_called_once_with("Hier sind die Systeminfos.")
         self.assertTrue(wait_until(lambda: run_js(self.page, RECORD_LABEL) == "🎤"))
+
+    def test_typed_message_is_read_aloud_when_switched_on(self):
+        _speech_input, speech_output = self._patch_speech()
+        self._send("system")
+        self.assertTrue(wait_until(lambda: speech_output.speak.called))
+        speech_output.speak.assert_called_once_with("Hier sind die Systeminfos.")
+
+    def test_speak_button_switches_read_aloud_off_and_on(self):
+        _speech_input, speech_output = self._patch_speech()
+        self.assertEqual(run_js(self.page, SPEAK_BUTTON), [False, "🔊", "icon-button"])
+        run_js(self.page, SPEAK)
+        self.assertTrue(wait_until(lambda: api.default_store().get(api.READ_ALOUD) is False))
+        self.assertEqual(run_js(self.page, SPEAK_BUTTON), [False, "🔇", "icon-button muted"])
+        self._send("system")
+        speech_output.speak.assert_not_called()
+        run_js(self.page, SPEAK)
+        self.assertTrue(wait_until(lambda: api.default_store().get(api.READ_ALOUD) is True))
+        self.assertEqual(run_js(self.page, SPEAK_BUTTON)[1], "🔊")
+
+    def test_speak_button_interrupts_reading(self):
+        _speech_input, speech_output = self._patch_speech()
+        events.publish(SPEECH_OUTPUT, {"speaking": True})
+        self.assertTrue(wait_until(lambda: run_js(self.page, SPEAK_BUTTON)[1] == "⏹"))
+        self.assertIn("speaking", run_js(self.page, SPEAK_BUTTON)[2])
+        self.assertEqual(run_js(self.page, "Avatar.state"), "speaking")
+        run_js(self.page, SPEAK)
+        self.assertTrue(wait_until(lambda: speech_output.stop.called))
+        self.assertEqual(run_js(self.page, SPEAK_BUTTON)[1], "🔊")   # Vorlesen bleibt an, nur unterbrochen
+        self.assertIsNone(api.default_store().get(api.READ_ALOUD))
+        events.publish(SPEECH_OUTPUT, {"speaking": False})
+
+    def test_speak_button_hidden_without_speech_output(self):
+        self._patch_speech()
+        run_js(self.page, "speech = {input: true, output: false}; updateSpeakButton()")
+        self.assertTrue(run_js(self.page, SPEAK_BUTTON)[0])
+        run_js(self.page, "speech = {input: true, output: true}; updateSpeakButton()")
 
     def test_escape_cancels_recording(self):
         speech_input, _speech_output = self._patch_speech()

@@ -27,7 +27,7 @@ from backend.assistant.skills.travel.settings import TravelSettingsForm
 from backend.assistant.tools import ToolResult
 from backend.companion_models import BUILT_IN, is_model, list_models as list_companion_models
 from backend.preferences import JsonPreferenceStore, default_store
-from backend.events import POPUP_ENLARGED, events
+from backend.events import POPUP_ENLARGED, SPEECH_OUTPUT, events
 from backend.presenter import attachment_store, present, renderer
 from backend.proactive_settings import ProactiveSettings
 from backend.speech import SpeechInput, SpeechOutput, create_speech_input, create_speech_output
@@ -140,7 +140,11 @@ def _voice_settings() -> VoiceSettings:
 
 @cache
 def _speech_output() -> SpeechOutput | None:
-    return create_speech_output(lambda: _voice_settings().voice())   # Stimme aus den Einstellungen
+    return create_speech_output(lambda: _voice_settings().voice(),   # Stimme aus den Einstellungen
+                                lambda speaking: events.publish(SPEECH_OUTPUT, {"speaking": speaking}))
+
+
+READ_ALOUD = "read_aloud"   # Präferenz: Antworten und Meldungen vorlesen (Lautsprecher-Knopf im Chat)
 
 
 def speech_support() -> dict[str, bool]:
@@ -181,6 +185,21 @@ def stop_speaking() -> None:
     """Vorlesen abbrechen."""
     if (speech_output := _speech_output()) is not None:
         speech_output.stop()
+
+
+def read_aloud() -> bool:
+    """Ob Antworten im Chat und proaktive Meldungen vorgelesen werden (Standard: ja)."""
+    return bool(default_store().get(READ_ALOUD, True))
+
+
+def set_read_aloud(enabled: bool) -> bool:
+    """Vorlesen ein- oder ausschalten (bleibt gespeichert); ausschalten bricht laufendes Vorlesen ab.
+    Gibt den neuen Zustand zurück."""
+    enabled = bool(enabled)
+    default_store().set(READ_ALOUD, enabled)
+    if not enabled:
+        stop_speaking()
+    return enabled
 
 
 def open_link(url: str) -> None:
@@ -249,6 +268,8 @@ def _announce_reply(reply: AssistantReply, title: str, trigger: str, display: st
 
 
 def _speak(text: str) -> None:
+    if not read_aloud():
+        return
     if (speech_output := _speech_output()) is not None:
         try:
             speech_output.speak(text)

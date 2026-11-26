@@ -44,6 +44,12 @@ COMPANION_LAP = "companion_lap"
 # Der Assistent ruft gerade ein Werkzeug auf (backend/assistant/tool_activity.py):
 # {"phase": "start" | "end", "tool", "label", "group", "error" (nur bei "end")}
 TOOL_ACTIVITY = "tool_activity"
+# Vorlesen fängt an oder hört auf (backend/speech.py, VoiceOutput): {"speaking": bool} - das Popup
+# macht daraus den Knopf zum Unterbrechen und den Zustand "spricht" des Avatars
+SPEECH_OUTPUT = "speech_output"
+# Das Popup will das Vorlesen sofort anhalten (Stopp-Knopf, Escape) - per notifyPython, also auch
+# während ein Bridge-Aufruf (Sprachmodell) läuft; backend/desktop/application.py ruft api.stop_speaking()
+STOP_SPEAKING = "stop_speaking"
 
 
 class EventBus:

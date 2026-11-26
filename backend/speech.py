@@ -315,12 +315,18 @@ class FallbackSynthesizer:
 
 
 class AudioPlayer:
-    """Spielt über das Standard-Ausgabegerät; play() kehrt sofort zurück."""
+    """Spielt über das Standard-Ausgabegerät; play() kehrt sofort zurück, wait() wartet aufs Ende."""
 
     def play(self, audio: Any, sample_rate: int) -> None:
         import sounddevice as sd
 
         sd.play(audio, sample_rate)
+
+    def wait(self) -> None:
+        """Bis das Abspielen fertig oder per stop() abgebrochen ist."""
+        import sounddevice as sd
+
+        sd.wait()
 
     def stop(self) -> None:
         import sounddevice as sd
@@ -329,12 +335,18 @@ class AudioPlayer:
 
 
 class VoiceOutput:
-    """SpeechOutput: erzeugt das Audio in einem eigenen Thread und spielt es ab."""
+    """SpeechOutput: erzeugt das Audio in einem eigenen Thread und spielt es ab.
 
-    def __init__(self, synthesizer: Synthesizer, player: Any):
+    on_change(speaking) meldet, ob gerade vorgelesen wird: True, sobald ein Text angenommen ist (die
+    Stimme rechnet noch oder spielt), False, wenn er fertig, abgebrochen oder fehlgeschlagen ist -
+    das Popup zeigt damit den Knopf zum Unterbrechen (frontend/popup.js)."""
+
+    def __init__(self, synthesizer: Synthesizer, player: Any, on_change: Callable[[bool], None] | None = None):
         self._synthesizer = synthesizer
         self._player = player
+        self._on_change = on_change
         self._generation = 0          # stop()/speak() machen ältere, noch laufende Aufträge ungültig
+        self._speaking = False
         self._lock = threading.Lock()
 
     def speak(self, text: str, voice: Voice | None = None) -> None:
@@ -342,6 +354,7 @@ class VoiceOutput:
         with self._lock:
             self._generation += 1
             generation = self._generation
+            self._report(bool(text))
         self._player.stop()
         if text:
             threading.Thread(target=self._speak, args=(text, generation, voice), name="speech-out",
@@ -350,6 +363,7 @@ class VoiceOutput:
     def stop(self) -> None:
         with self._lock:
             self._generation += 1
+            self._report(False)
         self._player.stop()
 
     def _speak(self, text: str, generation: int, voice: Voice | None) -> None:
@@ -357,10 +371,34 @@ class VoiceOutput:
             audio, sample_rate = self._synthesizer.synthesize(text, voice)
         except Exception:  # noqa: BLE001  # läuft im eigenen Thread - nur protokollieren
             log.exception("Vorlesen fehlgeschlagen")
+            self._finish(generation)
             return
         with self._lock:
+            if generation != self._generation:
+                return
+            self._player.play(audio, sample_rate)
+        try:
+            self._player.wait()
+        except Exception:  # noqa: BLE001  # z. B. Gerät weg - dann ist das Vorlesen eben vorbei
+            log.exception("Warten aufs Vorlesen fehlgeschlagen")
+        self._finish(generation)
+
+    def _finish(self, generation: int) -> None:
+        """Auftrag ist durch - nur melden, wenn inzwischen kein neuer angefangen hat."""
+        with self._lock:
             if generation == self._generation:
-                self._player.play(audio, sample_rate)
+                self._report(False)
+
+    def _report(self, speaking: bool) -> None:
+        """Nur Änderungen melden; läuft unter self._lock, damit die Reihenfolge stimmt."""
+        if speaking == self._speaking:
+            return
+        self._speaking = speaking
+        if self._on_change is not None:
+            try:
+                self._on_change(speaking)
+            except Exception:  # noqa: BLE001  # Anzeige ist Zugabe - Vorlesen geht trotzdem
+                log.exception("Vorlese-Zustand nicht gemeldet")
 
 
 _MARKDOWN = re.compile(r"[*_#`>|~]+")
@@ -407,9 +445,11 @@ def create_speech_input() -> SpeechInput | None:
     return VoiceInput(Microphone(), transcriber)
 
 
-def create_speech_output(voice: Callable[[], Voice] | None = None) -> SpeechOutput | None:
+def create_speech_output(voice: Callable[[], Voice] | None = None,
+                         on_change: Callable[[bool], None] | None = None) -> SpeechOutput | None:
     """Sprachausgabe mit Piper und plattformspezifischer Ersatzstimme.
-    voice: liefert die eingestellte Piper-Stimme (backend/voice_settings.py); ohne gilt config.PIPER_VOICE."""
+    voice: liefert die eingestellte Piper-Stimme (backend/voice_settings.py); ohne gilt config.PIPER_VOICE.
+    on_change: bekommt True/False, wenn das Vorlesen anfängt/aufhört (siehe VoiceOutput)."""
     if not _installed("sounddevice", "numpy"):
         log.info("Sprachausgabe aus: sounddevice nicht installiert")
         return None
@@ -423,4 +463,4 @@ def create_speech_output(voice: Callable[[], Voice] | None = None) -> SpeechOutp
     if not synthesizers:
         log.info("Sprachausgabe aus: keine Stimme verfügbar")
         return None
-    return VoiceOutput(FallbackSynthesizer(synthesizers), AudioPlayer())
+    return VoiceOutput(FallbackSynthesizer(synthesizers), AudioPlayer(), on_change)

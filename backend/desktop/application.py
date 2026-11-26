@@ -20,15 +20,17 @@ from backend.desktop.hotkey import GlobalHotkey
 from backend.desktop.popup_window import PopupWindow
 from backend.desktop.tray_icon import TrayIcon
 from backend.desktop.web_view import WebView
-from backend.events import COMPANION, COMPANION_LAP, COMPANION_READY, POPUP_ENLARGED, PROACTIVE_NOTICE, EventBus, events
+from backend.events import (COMPANION, COMPANION_LAP, COMPANION_READY, POPUP_ENLARGED, PROACTIVE_NOTICE,
+                            STOP_SPEAKING, EventBus, events)
 
 log = logging.getLogger(__name__)
 
 
 def create_popup() -> PopupWindow:
     # COMPANION: Zustand und Gesten für den 3D-Begleiter, sofort und am Bridge-Thread vorbei
+    # STOP_SPEAKING: Vorlesen anhalten, ohne auf eine laufende Antwort zu warten (forward_speech_stop)
     view = WebView(config.POPUP_PAGE, FunctionRegistry.from_module(api), events, config.POPUP_BACKGROUND,
-                   notifications=frozenset({COMPANION}))
+                   notifications=frozenset({COMPANION, STOP_SPEAKING}))
     return PopupWindow(view)
 
 
@@ -66,6 +68,15 @@ def forward_popup_events(popup: PopupWindow, event_bus: EventBus) -> Callable[[]
         # Läuft im Thread des Senders - deshalb über das Signal statt direkt am Fenster.
         if name == POPUP_ENLARGED:
             popup.enlarge_requested.emit(bool(payload))
+
+    return event_bus.subscribe(forward)
+
+
+def forward_speech_stop(event_bus: EventBus) -> Callable[[], None]:
+    """Stopp-Knopf und Escape im Popup (STOP_SPEAKING) halten das Vorlesen sofort an. Gibt die Abmeldung zurück."""
+    def forward(name: str, payload: Any) -> None:  # noqa: ARG001 (EventHandler)
+        if name == STOP_SPEAKING:
+            api.stop_speaking()
 
     return event_bus.subscribe(forward)
 
@@ -155,6 +166,7 @@ class Application:
             self.tray.setToolTip(f"{config.APP_NAME} - Test-Meldung: {config.PROACTIVE_HOTKEY}")
 
         self._unsubscribe = [forward_popup_events(self.popup, events),
+                             forward_speech_stop(events),
                              forward_proactive_notices(self.tray, self.popup, events)]
         self.watcher = api._proactive_watcher() if config.PROACTIVE_WATCH else None
         if self.watcher is not None:

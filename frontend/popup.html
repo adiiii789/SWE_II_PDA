@@ -64,6 +64,8 @@
       <!-- Sprachmodell; bleibt versteckt, wenn der Assistent keins nutzt -->
       <select id="model-select" title="Sprachmodell" hidden></select>
       <span class="composer-gap"></span>
+      <!-- Vorlesen: Klick schaltet es ein/aus, während vorgelesen wird unterbricht er; versteckt ohne Sprachausgabe -->
+      <button type="button" id="speak-button" class="icon-button" data-icon="speaker" title="Vorlesen ausschalten" aria-pressed="true" hidden>🔊</button>
       <!-- Spracheingabe: Klick startet, zweiter Klick sendet, Escape bricht ab; versteckt ohne Mikrofon-Pakete -->
       <button type="button" id="record-button" class="icon-button" data-icon="mic" title="Spracheingabe starten" hidden>🎤</button>
       <button type="submit" id="send-button" class="icon-button" data-icon="send" title="Senden (Enter)">Senden</button>

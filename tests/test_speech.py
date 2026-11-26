@@ -145,9 +145,16 @@ class FakePlayer:
     def __init__(self):
         self.played = []
         self.stopped = 0
+        self.waited = 0
+        self.during_wait = None   # läuft, während "abgespielt" wird
 
     def play(self, audio, sample_rate):
         self.played.append(sample_rate)
+
+    def wait(self):
+        self.waited += 1
+        if self.during_wait is not None:
+            self.during_wait()
 
     def stop(self):
         self.stopped += 1
@@ -207,6 +214,50 @@ class VoiceOutputTest(unittest.TestCase):
         with self.assertLogs(speech.log, "ERROR"):
             speech.VoiceOutput(FakeSynthesizer(RuntimeError("kaputt")), player).speak("Hallo")
         self.assertEqual(player.played, [])
+
+    def test_reports_start_and_end_of_speaking(self):
+        changes, player = [], FakePlayer()
+        output = speech.VoiceOutput(FakeSynthesizer(), player, changes.append)
+        player.during_wait = lambda: self.assertEqual(changes, [True])   # spielt noch
+        output.speak("Hallo")
+        self.assertEqual(player.waited, 1)
+        self.assertEqual(changes, [True, False])
+
+    def test_stop_reports_end_once(self):
+        changes, player = [], FakePlayer()
+        output = speech.VoiceOutput(FakeSynthesizer(), player, changes.append)
+        player.during_wait = output.stop   # Stopp-Knopf mitten im Vorlesen
+        output.speak("Hallo")
+        output.stop()   # nochmal: nichts Neues zu melden
+        self.assertEqual(changes, [True, False])
+
+    def test_newer_text_keeps_speaking_state(self):
+        changes, player = [], FakePlayer()
+        output = speech.VoiceOutput(FakeSynthesizer(), player, changes.append)
+        texts = iter(["Zweiter Text"])
+        # während der erste Text spielt, kommt der nächste - erst dessen Ende zählt
+        player.during_wait = lambda: output.speak(next(texts, ""))
+        output.speak("Erster Text")
+        self.assertEqual(player.played, [22050, 22050])
+        self.assertEqual(changes[0], True)
+        self.assertEqual(changes.count(True), 1)
+
+    def test_synthesis_error_reports_end(self):
+        changes = []
+        with self.assertLogs(speech.log, "ERROR"):
+            speech.VoiceOutput(FakeSynthesizer(RuntimeError("kaputt")), FakePlayer(), changes.append).speak("Hallo")
+        self.assertEqual(changes, [True, False])
+
+    def test_empty_text_reports_nothing(self):
+        changes = []
+        speech.VoiceOutput(FakeSynthesizer(), FakePlayer(), changes.append).speak(" ** ")
+        self.assertEqual(changes, [])
+
+    def test_broken_listener_does_not_stop_speaking(self):
+        player = FakePlayer()
+        with self.assertLogs(speech.log, "ERROR"):
+            speech.VoiceOutput(FakeSynthesizer(), player, mock.Mock(side_effect=RuntimeError)).speak("Hallo")
+        self.assertEqual(player.played, [22050])
 
 
 class FallbackSynthesizerTest(unittest.TestCase):
@@ -321,12 +372,14 @@ class SapiSynthesizerTest(unittest.TestCase):
 
 
 class AudioPlayerTest(unittest.TestCase):
-    def test_play_and_stop(self):
-        with mock.patch("sounddevice.play") as play, mock.patch("sounddevice.stop") as stop:
+    def test_play_wait_and_stop(self):
+        with mock.patch("sounddevice.play") as play, mock.patch("sounddevice.wait") as wait,                 mock.patch("sounddevice.stop") as stop:
             player = speech.AudioPlayer()
             player.play("audio", 22050)
+            player.wait()
             player.stop()
         play.assert_called_once_with("audio", 22050)
+        wait.assert_called_once()
         stop.assert_called_once()
 
 

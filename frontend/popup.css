@@ -103,6 +103,9 @@ option, optgroup { background: var(--surface); color: var(--text); }
 [data-icon=enlarge].active { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M19 10h-5V5M5 14h5v5M14 10l6-6M10 14l-6 6'/></svg>"); }
 [data-icon=mic]      { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='3' width='6' height='11' rx='3'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21'/></svg>"); }
 [data-icon=mic].recording { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='7' y='7' width='10' height='10' rx='2' fill='black'/></svg>"); }
+[data-icon=speaker]  { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13l-4.5-4H4z'/><path d='M15.5 9a4.2 4.2 0 0 1 0 6M18.2 6.3a8 8 0 0 1 0 11.4'/></svg>"); }
+[data-icon=speaker].muted { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M4 9.5h3.5L12 5.5v13l-4.5-4H4z'/><path d='M16 9.5l5 5M21 9.5l-5 5'/></svg>"); }
+[data-icon=speaker].speaking { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='7' y='7' width='10' height='10' rx='2' fill='black'/></svg>"); }
 [data-icon=send]     { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 19V5M6 11l6-6 6 6'/></svg>"); }
 [data-icon=down]     { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M6 13l6 6 6-6'/></svg>"); }
 [data-icon=close]    { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'><path d='M6 6l12 12M18 6L6 18'/></svg>"); }
@@ -417,7 +420,27 @@ body[data-agent=transcribing] #input-form::before {
 #model-select optgroup { color: var(--text-muted); font-style: normal; font-weight: bold; }
 #model-select option { color: var(--text); font-weight: normal; padding-left: 12px; }
 #input-form > button { margin-left: 4px; border-radius: 50%; }
-#record-button.recording { color: #fff; background: var(--danger); }
+#record-button.recording, #speak-button.speaking { color: #fff; background: var(--danger); }
+/* Vorlesen aus: Symbol tritt zurück; beim Vorlesen pulsiert ein Ring - Klick unterbricht */
+#speak-button { position: relative; }
+#speak-button.muted { opacity: 0.55; }
+#speak-button.muted:hover { opacity: 1; }
+#speak-button.speaking::after {
+  content: "";
+  position: absolute;
+  top: -3px; right: -3px; bottom: -3px; left: -3px;
+  border-radius: inherit;
+  border: 2px solid var(--danger);
+  pointer-events: none;
+  animation: speak-ring 1.4s ease-out infinite;
+}
+@keyframes speak-ring {
+  from { opacity: 0.7; transform: scale(0.92); }
+  to { opacity: 0; transform: scale(1.25); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #speak-button.speaking::after { animation: none; opacity: 0.5; }
+}
 #send-button { color: var(--accent-text); background: var(--accent); }
 #send-button:hover { opacity: 0.9; }
 /* leeres Eingabefeld: Senden tritt zurück (Bedienung bleibt gleich) */
@@ -630,7 +653,7 @@ html[data-theme=neumorph] #input-form > button { box-shadow: var(--control-shado
 html[data-theme=neumorph] #input-form > button:active,
 html[data-theme=neumorph] button:not(.icon-button):active { box-shadow: var(--inset-shadow); }
 html[data-theme=neumorph] #send-button { color: var(--accent); background: var(--control); }
-html[data-theme=neumorph] #record-button.recording { color: var(--danger); background: var(--control); box-shadow: var(--inset-shadow); }
+html[data-theme=neumorph] #record-button.recording, html[data-theme=neumorph] #speak-button.speaking { color: var(--danger); background: var(--control); box-shadow: var(--inset-shadow); }
 html[data-theme=neumorph] #message-input { box-shadow: var(--inset-shadow); border-radius: var(--radius-sm); margin-bottom: 8px; padding: 8px 10px; }
 html[data-theme=neumorph] .message.user { font-weight: 500; }
 html[data-theme=neumorph] .assistant code, html[data-theme=neumorph] .assistant pre { background: var(--control); box-shadow: var(--inset-shadow); }
@@ -782,6 +805,21 @@ html[data-theme=gameboy] #record-button { transform: translateY(12px); }
 html[data-theme=gameboy] #send-button { transform: translateY(-6px); margin-right: 6px; }
 html[data-theme=gameboy] #message-input:placeholder-shown ~ #send-button { opacity: 0.75; }
 html[data-theme=gameboy] #record-button.recording { background: #0F380F; color: #9BBC0F; }
+html[data-theme=gameboy] #input-form > #speak-button {
+  width: 34px;
+  height: 16px;
+  margin-left: 6px;
+  border-radius: 8px;
+  color: #2E2D3A;
+  background: #8E8B95;
+  box-shadow: inset -1px -2px 0 rgba(0, 0, 0, 0.2), 1px 1px 0 rgba(0, 0, 0, 0.2);
+  transform: translateY(22px);
+}
+html[data-theme=gameboy] #input-form > #speak-button::before { width: 11px; height: 11px; }
+html[data-theme=gameboy] #input-form > #speak-button.muted { opacity: 0.75; }
+html[data-theme=gameboy] #input-form > #speak-button.speaking { background: #0F380F; color: #9BBC0F; }
+html[data-theme=gameboy] #speak-button.speaking::after { border-color: #0F380F; }
+html[data-theme=gameboy] #input-form > #speak-button:active { transform: translateY(23px); box-shadow: inset -1px -1px 0 rgba(0, 0, 0, 0.25); }
 html[data-theme=gameboy] #record-button:active { transform: translateY(13px); box-shadow: inset -1px -1px 0 rgba(0, 0, 0, 0.25); }
 html[data-theme=gameboy] #send-button:active { transform: translateY(-5px); box-shadow: inset -1px -1px 0 rgba(0, 0, 0, 0.25); }
 html[data-theme=gameboy] #model-select { color: #4A4870; background-color: rgba(0, 0, 0, 0.07); }
@@ -856,8 +894,8 @@ html[data-theme=brutal] .assistant pre code { background: none; border: none; co
 html[data-theme=brutal] .message.assistant.proactive { border-left: 6px solid #000; }
 html[data-theme=brutal] .proactive-label { color: #000; }
 html[data-theme=brutal] #input-form > button { border: 2px solid #000; box-shadow: 2px 2px 0 #000; }
-html[data-theme=brutal] #record-button { background: #90A8FF; color: #000; }
-html[data-theme=brutal] #record-button.recording { background: #E0002B; color: #fff; }
+html[data-theme=brutal] #record-button, html[data-theme=brutal] #speak-button { background: #90A8FF; color: #000; }
+html[data-theme=brutal] #record-button.recording, html[data-theme=brutal] #speak-button.speaking { background: #E0002B; color: #fff; }
 html[data-theme=brutal] button:active,
 html[data-theme=brutal] #input-form > button:active { transform: translate(2px, 2px); box-shadow: none; }
 html[data-theme=brutal] button.primary { font-weight: 800; }
@@ -893,8 +931,8 @@ html[data-theme=eco] .assistant code { background: #E9B7A9; color: #000; border-
 html[data-theme=eco] .assistant pre { background: #F4F4F4; }
 html[data-theme=eco] #input-form > button { border-radius: 0; }
 html[data-theme=eco] #send-button { background: #000; color: #fff; }
-html[data-theme=eco] #record-button { border: 2px solid #000; color: #000; background: #7ED957; }
-html[data-theme=eco] #record-button.recording { background: #D7261E; color: #fff; }
+html[data-theme=eco] #record-button, html[data-theme=eco] #speak-button { border: 2px solid #000; color: #000; background: #7ED957; }
+html[data-theme=eco] #record-button.recording, html[data-theme=eco] #speak-button.speaking { background: #D7261E; color: #fff; }
 html[data-theme=eco] #listening-overlay { background: #7ED957; border-top: 2px solid #000; }
 html[data-theme=eco] #listening-hint { color: #000; }
 html[data-theme=eco] button:not(.icon-button) { font-weight: 600; }
@@ -969,7 +1007,8 @@ html[data-theme=win95] #input-form > button:active { box-shadow: var(--inset-sha
 html[data-theme=win95] #send-button { width: auto; padding: 0 14px 0 10px; font-size: 12px; }
 html[data-theme=win95] #send-button::before { margin-right: 6px; }
 html[data-theme=win95] #message-input:placeholder-shown ~ #send-button { opacity: 1; color: #808080; }
-html[data-theme=win95] #record-button.recording { color: #C00000; }
+html[data-theme=win95] #record-button.recording, html[data-theme=win95] #speak-button.speaking { color: #C00000; background: #C0C0C0; box-shadow: var(--inset-shadow); }
+html[data-theme=win95] #speak-button.speaking::after { content: none; }
 html[data-theme=win95] button:active { box-shadow: var(--inset-shadow); }
 html[data-theme=win95] #view-frame { background: #FFFFFF; }
 html[data-theme=win95] #listening-overlay { background: #C0C0C0; border-top: 2px solid #808080; }
@@ -1076,7 +1115,7 @@ html[data-theme=comic] .message.assistant::after { left: -12px; border-right: 12
 html[data-theme=comic] .message.assistant.proactive { border-left-width: 3px; background: #FFE066; }
 html[data-theme=comic] .proactive-label { color: #E63946; text-transform: uppercase; }
 html[data-theme=comic] #input-form > button { border: 3px solid #111; }
-html[data-theme=comic] #record-button { background: #FFD23F; color: #111; }
+html[data-theme=comic] #record-button, html[data-theme=comic] #speak-button { background: #FFD23F; color: #111; }
 html[data-theme=comic] button:active, html[data-theme=comic] #input-form > button:active { transform: translate(2px, 2px); box-shadow: none; }
 html[data-theme=comic] .icon-button:hover, html[data-theme=comic] .icon-button.active { background: #FFD23F; color: #111; }
 
@@ -1090,8 +1129,8 @@ html[data-theme=bauhaus] .message.user { border-left: 8px solid #F9C80E; }
 html[data-theme=bauhaus] .message.assistant.proactive { border-left: 8px solid #E53935; }
 html[data-theme=bauhaus] .proactive-label { color: #E53935; }
 html[data-theme=bauhaus] #send-button { border-radius: 50%; }
-html[data-theme=bauhaus] #record-button { border-radius: 0; background: #F9C80E; color: #111; border: 2px solid #111; }
-html[data-theme=bauhaus] #record-button.recording { background: #E53935; color: #fff; }
+html[data-theme=bauhaus] #record-button, html[data-theme=bauhaus] #speak-button { border-radius: 0; background: #F9C80E; color: #111; border: 2px solid #111; }
+html[data-theme=bauhaus] #record-button.recording, html[data-theme=bauhaus] #speak-button.speaking { background: #E53935; color: #fff; }
 html[data-theme=bauhaus] .icon-button:hover, html[data-theme=bauhaus] .icon-button.active { background: #F9C80E; color: #111; }
 
 /* ---- Cyberpunk: abgeschnittene Ecken (clip-path, statisch) ---------------------------------- */
@@ -1162,7 +1201,7 @@ html[data-theme=minecraft] #chat-scroll { background: var(--surface); border: 2p
 html[data-theme=minecraft] #chat-history { padding: 6px 10px 8px; }
 html[data-theme=minecraft] #input-form > button { border-radius: 0; }
 html[data-theme=minecraft] #input-form { background: rgba(24, 18, 13, 0.9); }
-html[data-theme=minecraft] #record-button { background: #8B5A2B; }
+html[data-theme=minecraft] #record-button, html[data-theme=minecraft] #speak-button { background: #8B5A2B; }
 html[data-theme=minecraft] .icon-button { color: #FFFFFF; }
 html[data-theme=minecraft] .icon-button:hover, html[data-theme=minecraft] .icon-button.active { background: #858585; }
 html[data-theme=minecraft] button:active { box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.45), inset -2px -2px 0 rgba(255, 255, 255, 0.25); }
@@ -1177,7 +1216,7 @@ html[data-theme=roblox] #chat-scroll { background: var(--surface); border-radius
 html[data-theme=roblox] #chat-history { padding: 8px 12px 10px; }
 html[data-theme=roblox] #input-form > button { border-radius: var(--radius-sm); }
 html[data-theme=roblox] #send-button { background: #D81E15; color: #FFFFFF; }
-html[data-theme=roblox] #record-button { background: #F5CD30; color: #1B1F27; }
+html[data-theme=roblox] #record-button, html[data-theme=roblox] #speak-button { background: #F5CD30; color: #1B1F27; }
 html[data-theme=roblox] .message.assistant.proactive { border-left: 6px solid #F5CD30; }
 html[data-theme=roblox] .proactive-label { color: #C4160E; }
 html[data-theme=roblox] button:active, html[data-theme=roblox] #input-form > button:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25); }
@@ -1189,7 +1228,7 @@ html[data-theme=white-monster] .message.user { font-style: italic; }
 html[data-theme=white-monster] .message.assistant.proactive { border-left: 4px solid #8FD8F0; }
 html[data-theme=white-monster] .proactive-label { color: #00789F; text-transform: uppercase; }
 html[data-theme=white-monster] #send-button { background: linear-gradient(90deg, #AEB8C2, #FFFFFF 45%, #C4CDD6); color: #0C0D0F; border: 1px solid #0C0D0F; }
-html[data-theme=white-monster] #record-button { background: #0C0D0F; color: #8FD8F0; }
+html[data-theme=white-monster] #record-button, html[data-theme=white-monster] #speak-button { background: #0C0D0F; color: #8FD8F0; }
 html[data-theme=white-monster] .icon-button:hover, html[data-theme=white-monster] .icon-button.active { background: #0C0D0F; color: #FFFFFF; }
 
 /* Paulaner Spezi: Rautenband oben, Glasflächen in Creme, Cola-Orange-Verlauf dahinter */
@@ -1202,6 +1241,6 @@ html[data-theme=spezi] #agent-orb { border: 2px solid #4A2210; border-radius: 50
 html[data-theme=spezi] #chat-toolbar .icon-button { color: #FFF8EC; }
 html[data-theme=spezi] #chat-toolbar .icon-button:hover, html[data-theme=spezi] #chat-toolbar .icon-button.active { color: #33190C; background: #FFE3B8; }
 html[data-theme=spezi] #send-button { border-radius: 50%; }
-html[data-theme=spezi] #record-button { background: #F28C1E; color: #2A1208; }
+html[data-theme=spezi] #record-button, html[data-theme=spezi] #speak-button { background: #F28C1E; color: #2A1208; }
 html[data-theme=spezi] .message.assistant.proactive { border-left: 5px solid #F28C1E; }
 html[data-theme=spezi] .proactive-label { color: #B8560A; }

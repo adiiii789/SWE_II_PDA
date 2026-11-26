@@ -4,7 +4,8 @@ import unittest
 from unittest import mock
 
 from backend import api
-from backend.events import POPUP_ENLARGED, events
+from backend.events import POPUP_ENLARGED, SPEECH_OUTPUT, events
+from tests.assistant.test_settings import MemoryStore
 from backend.views import InvalidViewRequestError
 
 
@@ -71,6 +72,25 @@ class SpeechApiTest(unittest.TestCase):
         api.stop_speaking()
         self.speech_output.stop.assert_called_once()
 
+    def test_read_aloud_is_on_by_default_and_remembered(self):
+        store = MemoryStore()
+        with mock.patch.object(api, "default_store", return_value=store):
+            self.assertTrue(api.read_aloud())
+            self.assertFalse(api.set_read_aloud(False))
+            self.assertFalse(api.read_aloud())
+            self.assertEqual(store.values, {api.READ_ALOUD: False})
+            self.speech_output.stop.assert_called_once()   # ausschalten bricht laufendes Vorlesen ab
+            self.assertTrue(api.set_read_aloud(True))
+            self.speech_output.stop.assert_called_once()
+
+    def test_messages_are_not_spoken_when_read_aloud_is_off(self):
+        with mock.patch.object(api, "default_store", return_value=MemoryStore(read_aloud=False)):
+            api._speak("Hallo")
+        self.speech_output.speak.assert_not_called()
+        with mock.patch.object(api, "default_store", return_value=MemoryStore()):
+            api._speak("Hallo")
+        self.speech_output.speak.assert_called_once_with("Hallo")
+
     def test_without_speech_packages(self):
         with mock.patch.object(api, "_speech_input", return_value=None), \
                 mock.patch.object(api, "_speech_output", return_value=None):
@@ -81,6 +101,17 @@ class SpeechApiTest(unittest.TestCase):
                 api.start_recording()
             with self.assertRaisesRegex(RuntimeError, "Sprachausgabe"):
                 api.speak("Hallo")
+
+
+class SpeakingStateTest(unittest.TestCase):
+    def test_speaking_state_goes_to_the_popup(self):
+        received = []
+        self.addCleanup(events.subscribe(lambda name, payload: received.append((name, payload))))
+        with mock.patch.object(api, "create_speech_output") as create:
+            api._speech_output.__wrapped__()   # ohne Cache: erzeugt eine eigene Sprachausgabe
+        on_change = create.call_args.args[1]
+        on_change(True)
+        self.assertEqual(received, [(SPEECH_OUTPUT, {"speaking": True})])
 
 
 class OpenLinkTest(unittest.TestCase):

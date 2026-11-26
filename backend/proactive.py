@@ -9,7 +9,7 @@ Ablauf:
     → announce()    Ereignis ASSISTANT_MESSAGE: Nachricht im Chat (mit "proactive": true)
                     Ereignis PROACTIVE_NOTICE: Windows-Benachrichtigung am Tray-Icon,
                     ein Klick darauf öffnet das Popup
-    → vorlesen, wenn config.PROACTIVE_SPEAK und Sprachausgabe verfügbar
+    → vorlesen, wenn config.PROACTIVE_SPEAK, Vorlesen im Chat an (api.read_aloud) und Sprachausgabe verfügbar
 
 Neuer Anlass: ein Occasion-Objekt in OCCASIONS eintragen und den Auslöser
 api.proactive_message("<name>") aufrufen lassen - aus beliebigem Thread.
