@@ -1,6 +1,6 @@
 """E-Mails per SMTP senden - nur an Empfänger, die der Nutzer vorher freigegeben hat.
 
-Einstellungen kommen aus Umgebungsvariablen oder aus der Datei mcp_servers/.env
+Einstellungen kommen aus Umgebungsvariablen oder aus der .env im Projektordner
 (Vorlage: .env.example; die .env steht in .gitignore, das Passwort landet so nicht im Repo):
 
   PDA_SMTP_HOST         z. B. smtp.gmail.com
@@ -30,7 +30,8 @@ from email.message import EmailMessage
 from email.utils import getaddresses
 from pathlib import Path
 
-ENV_FILE = Path(__file__).with_name(".env")
+# dieselbe Datei wie backend/config.py (ENV_FILE)
+ENV_FILE = Path(os.environ.get("PDA_ENV_FILE") or Path(__file__).resolve().parent.parent / ".env")
 MAX_BODY_CHARS = 20_000
 # Wie backend.config.APP_NAME. Nicht importiert, weil der Server eigenständig läuft (sys.path = mcp_servers).
 APP_NAME = "EVE"
@@ -100,7 +101,7 @@ class MailSettings:
 
 
 def read_env_file(path: Path) -> dict[str, str]:
-    """KEY=VALUE pro Zeile; leere Zeilen und # Kommentare werden ignoriert."""
+    """KEY=VALUE pro Zeile; leere Zeilen und # Kommentare werden ignoriert. Wie in backend/config.py."""
     if not path.exists():
         return {}
     values = {}

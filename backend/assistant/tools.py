@@ -14,6 +14,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from backend.views import View
+
 
 @dataclass(frozen=True)
 class ToolSpec:
@@ -40,6 +42,9 @@ class ToolResult:
     # Dieselben Daten maschinenlesbar (MCP "structuredContent"), z. B. Termine für die Kalenderansicht
     # (backend/business_views.py). Das Sprachmodell sieht nur content.
     data: dict[str, Any] | None = None
+    # Eigene Ansicht fürs iframe, z. B. Reiseplan mit Karte. Nur eigene Integrationen -
+    # MCP-Server liefern keine. Ohne zeigt der Assistent die Tabelle der Werkzeugaufrufe.
+    view: View | None = None
 
 
 @runtime_checkable

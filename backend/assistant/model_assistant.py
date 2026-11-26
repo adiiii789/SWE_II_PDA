@@ -17,14 +17,14 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from backend.assistant.base import AssistantReply, ModelSelection
-from backend.assistant.commands import COMMANDS
+from backend.assistant.commands import COMMANDS, MORNING_BRIEFING, morning_briefing
 from backend.assistant.live_view import LiveView
 from backend.assistant.llm import ChatMessage, LanguageModelError, SelectableLanguageModel, ToolCall
 from backend.assistant.settings import CONFIRMED_TOOLS, SETTINGS_KEYS, AssistantSettings, is_internal_tool
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult, ToolSpec
 from backend.config import APP_NAME
 from backend.preferences import PreferenceStore
-from backend.views import TemplateView
+from backend.views import TemplateView, View
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +95,8 @@ class ModelAssistant:
             self.new_conversation()
         if command == "hilfe":
             return model_help_reply(self.model_commands)
+        if command == MORNING_BRIEFING:
+            return morning_briefing(self.preferences, self.tools, self.clock())
         if command in COMMANDS:
             return COMMANDS[command][1]()
         if command == "modelle":
@@ -120,7 +122,7 @@ class ModelAssistant:
             del self.history[start:]   # misslungene Runde nicht im Verlauf behalten
             return AssistantReply(f"Fehler von {self.provider} ({self.model.name}): {error}")
         self._trim_history()
-        return AssistantReply(text, self._tool_view(tool_log), _attachments(tool_log))
+        return AssistantReply(text, self._view(tool_log), _attachments(tool_log))
 
     # --- ProactiveAssistant ------------------------------------------------------------
     def announce(self, instruction: str) -> str | None:
@@ -155,6 +157,11 @@ class ModelAssistant:
             log.warning("Sprachmodell nicht erreichbar: %s", error)
             return None
         return response.message.content.strip() or None
+
+    def _view(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> View | None:
+        """Ansicht des letzten Werkzeugs, das eine mitliefert (z. B. Reiseplan); sonst die Anzeige oben."""
+        views = [result.view for _, result in tool_log if result.view is not None]
+        return views[-1] if views else self._tool_view(tool_log)
 
     def _tool_view(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> TemplateView | None:
         """Anzeige oben: Termine, Aufgaben und Mails grafisch - nur für Gruppen, deren Einstellung

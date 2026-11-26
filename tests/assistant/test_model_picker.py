@@ -20,7 +20,7 @@ def _picker(path):
     prefs = JsonPreferenceStore(path)
     tools = CompositeToolProvider([])
     client = OllamaClient(chat_timeout=1, catalog_timeout=1)
-    gemini = GeminiAssistant(GeminiModel("", path.parent / "gemini-api-key.txt", timeout=1), tools, prefs)
+    gemini = GeminiAssistant(GeminiModel("", timeout=1), tools, prefs)
     ollama = OllamaAssistant(OllamaModel(client), tools, prefs)
     return ModelPicker(gemini, ollama, prefs), client
 

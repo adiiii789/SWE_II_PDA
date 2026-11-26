@@ -39,8 +39,8 @@ deckt drei Aufgabenbereiche ab, im Code **Fähigkeiten** (Skills) genannt:
 
 | Fähigkeit | Wofür | Integrationen |
 |---|---|---|
-| `morning` | kurzes Briefing über den Tag | Google Calendar, OpenWeather, Aktien-API, Musik |
-| `travel` | wie komme ich zum nächsten Termin? | Google Calendar, Google Routes, Tankerkönig |
+| `morning` | kurzes Briefing über den Tag | Google Calendar, Open-Meteo, Aktien-API, Musik – Kalender, Wetter und Börse über MCP-Werkzeuge (`watch_calendar_events`, `watch_morning_weather`, `watch_stock_quotes`) |
+| `travel` | wie komme ich zum nächsten Termin? | Google Calendar, openrouteservice, DB Timetables, Tankerkönig |
 | `organization` („Assistant²“) | Nachrichten verfassen, Tag organisieren | Google Calendar, Gmail, Google Keep |
 
 **Warum ein Assistent statt drei?** Präferenzen, Gesprächsverlauf und Rückfragen gehören zu einer
@@ -53,8 +53,8 @@ Integrationen sind **noch nicht umgesetzt**. Jede Anforderung hat einen festen P
 
 | Anforderung | Wo im Code | Stand |
 |---|---|---|
-| Fähigkeiten (morning, travel, organization) | `backend/assistant/skills/` – je ein `Skill` mit Integrationen und Anweisungen | `Skill`-Typ und Liste `SKILLS`, noch leer |
-| Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – je ein `ToolProvider`, gebündelt per `CompositeToolProvider` | Ort, Konvention und Sammel-Provider |
+| Fähigkeiten (morning, travel, organization) | `backend/assistant/skills/` – je ein `Skill` mit Integrationen, Anweisungen und optionalem Auslöser | travel fertig (`skills/travel/`), morning und organization offen |
+| Integrationen (Calendar, Wetter, Gmail …) | `backend/integrations/` – Clients für externe Dienste, als Werkzeuge über die Fähigkeiten | Google Calendar, openrouteservice, DB Timetables, Tankerkönig |
 | MCP-Server als Werkzeuge | `MCPToolProvider` in `backend/integrations/mcp_client.py`, Liste in `mcp_servers.json` | fertig (stdio), eigener Server `mcp_servers/pda_server.py` |
 | Google Gemini | `GeminiModel` in `backend/assistant/gemini.py`, `GeminiAssistant` in `gemini_assistant.py` | fertig, Modellwahl im Popup |
 | Claude (Abo) | `ClaudeCodeModel` in `backend/assistant/claude_code.py`, `ClaudeCodeAssistant` in `claude_code_assistant.py` | fertig, optional (`requirements-claude.txt`) |
@@ -74,13 +74,14 @@ Die Konventionen für Fähigkeiten und Integrationen stehen jeweils in der `__in
 ```
 main.py                       Einstiegspunkt – startet das Programm
 mcp_servers.json              MCP-Server, deren Werkzeuge der Assistent nutzt
+.env.example                  Vorlage für .env: API-Keys und Zugangsdaten (.env wird nicht eingecheckt)
 mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von backend/)
   pda_server.py               Server mit offiziellem SDK: Uhrzeit, Rechnen, E-Mail senden und lesen
   basic_tools.py              Uhrzeit und Rechnen (ohne Abhängigkeiten)
   mailer.py                   E-Mail per SMTP, nur an freigegebene Empfänger
   inbox.py                    E-Mail und Anhänge lesen per IMAP, nur lesend
+  morning_sources.py          Wetter (Open-Meteo) und Börse (Alpha Vantage) für Werkzeuge und Morning-Briefing
   file_text.py                Text aus PDF, Word, Excel, PowerPoint, HTML, Textdateien
-  .env.example                Vorlage für die Mail-Einstellungen (.env wird nicht eingecheckt)
   demo_server.py              Server ohne SDK: zeigt das Protokoll, Gegenpart in den Tests
 
 frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
@@ -104,6 +105,7 @@ backend/                      BACKEND: läuft in Python
   startup.py                  Hochfahren im Hintergrund: Einstellungen, Assistent/Werkzeuge, Modell vorladen
   attachments.py              Dateien im Chat (z. B. Mail-Anhänge): öffnen, speichern
   config.py                   alle Einstellungen
+  api_keys.py                 API-Keys und Passwörter in der .env: lesen, im Popup setzen (ohne Werte ans Frontend)
   views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
   rendering.py                macht aus einer Anfrage HTML (Jinja2 bzw. eigenes HTML)
   preferences.py              Kontextwissen, persönliche Präferenzen (JsonPreferenceStore)
@@ -118,9 +120,17 @@ backend/                      BACKEND: läuft in Python
     claude_code_assistant.py  ClaudeCodeAssistant: Werkzeuge über _call_tool, Verlauf als Text
     tools.py                  ToolProvider-Protokoll + CompositeToolProvider
     settings.py               Einstellungen aus dem Popup: Schema, Prüfen, Anweisungen fürs Modell
-    skills/                   Fähigkeiten des Assistenten (Skill-Typ, noch keine)
-  integrations/               externe Dienste als ToolProvider
+    skills/                   Fähigkeiten des Assistenten (SKILLS, start_triggers)
+      base.py                 Skill-Typ
+      travel/                 Reise-Assistent: planner, service, view, tools, reminder
+  integrations/               externe Dienste
     mcp_client.py             MCPToolProvider: Werkzeuge eines MCP-Servers (stdio)
+    http.py                   JsonHttp: gemeinsamer HTTP-Client (urllib), IntegrationError
+    google_calendar.py        Termine lesen (OAuth, Desktop-App)
+    geo.py                    Place, Luftlinie
+    openrouteservice.py       Adressen + Routen (Auto, Fahrrad, zu Fuß)
+    db_timetables.py          DB-Fahrplan: Bahnhöfe, Direktverbindungen
+    tankerkoenig.py           Spritpreise
   bridge/                     Verbindung Frontend ↔ Backend (muss nicht angepasst werden)
     function_registry.py      findet die Funktionen aus api.py
     web_bridge.py             Python-Seite der Brücke (QWebChannel)
@@ -608,8 +618,8 @@ Gesprächsverlauf.
 `GeminiModel` implementiert `LanguageModel` und ruft Googles `generateContent` per HTTPS auf.
 Systemanweisungen, Gesprächsverlauf und freigegebene Funktionsbeschreibungen bilden die Anfrage.
 Bei Werkzeugaufrufen bleiben die originalen Antwortteile mit ihren Signaturen erhalten. Die
-`functionResponse` enthält dieselbe ID wie der zugehörige Aufruf. Der Schlüssel kommt aus
-`GEMINI_API_KEY` oder aus der Schlüsseldatei im App-Datenordner.
+`functionResponse` enthält dieselbe ID wie der zugehörige Aufruf. Den Schlüssel liest
+`api_keys.get("GEMINI_API_KEY")` bei jeder Anfrage: Umgebungsvariable, sonst die `.env`.
 
 ### Der KI-Assistent – [gemini_assistant.py](backend/assistant/gemini_assistant.py)
 
@@ -670,7 +680,9 @@ unter AppData um, die `claude.exe` dann nicht sieht).
 
 - `ToolSpec(name, description, input_schema)` entspricht einem MCP-Tool und lässt sich direkt
   in die Funktionsbeschreibungen von Gemini übersetzen.
-- `ToolResult(content, is_error)`.
+- `ToolResult(content, is_error, attachments, view)`. `view` ist eine eigene Ansicht fürs iframe
+  (z. B. der Reiseplan); der Assistent zeigt die letzte mitgelieferte, sonst die Tabelle der
+  Werkzeugaufrufe. MCP-Server liefern keine Ansicht.
 - `ToolProvider` mit `list_tools()` und `call_tool(name, arguments)`. Das ist entweder eine
   eigene Integration in [backend/integrations/](backend/integrations/__init__.py) (z. B. Wetter)
   oder ein `MCPToolProvider`, der die Tools eines MCP-Servers bereitstellt (siehe unten).
@@ -753,7 +765,7 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   `isError` beim Modell an. Andere Exceptions verbirgt das SDK. Weil es ein normaler MCP-Server ist, läuft er auch in anderen
   MCP-Clients (Claude Desktop, VS Code, MCP Inspector über `mcp dev`).
 - **E-Mail** (`send_email`, Logik in [mailer.py](mcp_servers/mailer.py)): Versand per SMTP,
-  Zugangsdaten aus Umgebungsvariablen oder `mcp_servers/.env`. Der Assistent darf nur an
+  Zugangsdaten aus Umgebungsvariablen oder der `.env` im Projektordner. Der Assistent darf nur an
   Adressen aus `PDA_MAIL_RECIPIENTS` schreiben. Das Modell entscheidet selbst über Tool-Aufrufe,
   und eingeschleuster Text (z. B. aus einem Tool-Ergebnis) könnte es sonst an fremde Adressen
   schreiben lassen. Die erlaubten Adressen stehen in der Werkzeugbeschreibung, damit das Modell
@@ -774,6 +786,13 @@ call_tool():     tools/call {name, arguments} → content[] als Text → ToolRes
   weitergeleitete Mails, Textdateien – in Teilen zu 7000 Zeichen, damit jeder Teil in ein
   Tool-Ergebnis passt. Bilder und eingescannte PDFs haben keinen Text, werden aber angehängt.
   Dateinamen aus der Mail werden bereinigt (keine Pfadanteile, keine unter Windows verbotenen Namen).
+- **Wetter und Börse** (`get_weather_forecast`, `get_stock_quotes`, Logik in
+  [morning_sources.py](mcp_servers/morning_sources.py)): Open-Meteo ohne Key; Alpha Vantage mit
+  `PDA_ALPHAVANTAGE_KEY` aus der `.env` (gelesen wie in `backend/api_keys.py`), höchstens fünf Kürzel,
+  geprüft gegen ein enges Muster, mit 1,2 s Abstand zwischen den Anfragen. Die Quellen liefern
+  Daten (dict); daraus machen die Werkzeuge Text fürs Modell und die internen `watch_morning_weather` /
+  `watch_stock_quotes` JSON fürs Morning-Briefing. Die Darstellung (Kurslinie, Formatierung) bleibt
+  in `backend/assistant/skills/morning.py`.
 - **Dateien im Chat:** `MCPToolProvider` macht aus jedem `resource_link` ein `Attachment`
   (`ToolResult.attachments`); das Modell sieht nur `[Datei im Chat angehängt: name]`. Der
   `GeminiAssistant` sammelt die Anhänge einer Runde in `AssistantReply.attachments`. `present()`
@@ -798,9 +817,11 @@ GeminiAssistant (erfüllt Assistant + ModelSelection)
   ├─ tools: CompositeToolProvider
   │    ├─ MCPToolProvider "pda"  ──stdio──► mcp_servers/pda_server.py (SDK) ──SMTP/IMAP──► Mail
   │    ├─ MCPToolProvider …      ──stdio──► weitere Server aus mcp_servers.json
-  │    └─ Werkzeuge der Fähigkeiten (skills/, noch keine)
-  └─ preferences: JsonPreferenceStore
-proaktiv: Auslöser (heute Makro, später z. B. 7 Uhr Briefing) → api.proactive_message → announce()
+  │    └─ Werkzeuge der Fähigkeiten (skills/): TravelTools ──HTTP──► Google Calendar, ORS, DB, Tankerkönig
+  └─ preferences: default_store() (eine JsonPreferenceStore für die ganze App)
+autonom: Auslöser einer Fähigkeit (Skill.start, beim App-Start) → presenter.push(reply),
+         z. B. TravelReminder: 15 Min. vor der empfohlenen Abfahrt
+proaktiv: Makro oder Wächter (u. a. Morning-Briefing) → api._deliver_proactive → announce()
 ```
 
 Sind es für ein kleines Modell zu viele Werkzeuge, kann der Assistent später je Anfrage nur die
@@ -815,6 +836,17 @@ Beispiel-Implementierungen, dass die Schnittstellen erfüllbar sind und zusammen
 
 Alle Einstellungen stehen in [backend/config.py](backend/config.py): Pfade, Name, Icon, Popup-Größe,
 Farbe, Animationsdauer und das Assistant-Backend.
+
+- API-Keys und Zugangsdaten stehen nicht im Code, sondern in der `.env` im Projektordner
+  (Vorlage [.env.example](.env.example), nicht eingecheckt; im gepackten Programm im
+  App-Datenordner, `PDA_ENV_FILE` nennt eine andere Datei) oder in Umgebungsvariablen, die
+  Vorrang haben. `config.py` liest beides in `_ENV`, lässt `os.environ` aber unverändert: Die
+  MCP-Server lesen dieselbe Datei selbst (`mcp_servers/mailer.py`), bei jedem Aufruf neu.
+- Keys liest [api_keys.py](backend/api_keys.py) bei jedem Zugriff neu (`get`), damit ein im
+  Popup eingetragener Key ohne Neustart gilt. Der Reise-Dienst wird neu gebaut, sobald sich
+  einer seiner Keys ändert. Das Formular (⚙ → Zugangsdaten) bekommt nur `status()` ohne Werte.
+  `save` schreibt nur Namen aus `KEYS`, ohne Zeilenumbrüche und Steuerzeichen, atomar und
+  unter macOS/Linux mit 0600.
 
 - `ROOT_DIR` wird aus dem Ort der Datei berechnet, nicht aus dem aktuellen Arbeitsordner. Das
   Programm funktioniert deshalb unabhängig davon, von wo es gestartet wird.
@@ -865,6 +897,9 @@ pytest-Stil (Funktionen mit `assert`) geschrieben werden.
 | `test_attachments` | `AttachmentStore`: nur Dateien aus dem Anhang-Ordner, keine ausführbaren öffnen, Speichern ohne Überschreiben |
 | `test_demo_mcp_server`, `test_preferences` | Demo-Server direkt, `JsonPreferenceStore` |
 | `test_tools` | `CompositeToolProvider`: Bündeln, Weiterleiten, doppelte/unbekannte Werkzeuge |
+| `assistant/travel/` | Reise-Assistent: Kostenrechnung, Planung mit Attrappen der Dienste, Werkzeuge, Ansicht, Erinnerung |
+| `integrations/` | ORS, DB Timetables, Tankerkönig, Google Calendar mit `FakeHttp`; `JsonHttp` gegen einen lokalen Testserver |
+| `test_skills` | `start_triggers`: Auslöser starten und beenden, defekte stoppen die anderen nicht |
 | `test_events` | `EventBus`: An- und Abmelden, defekte Handler, Aufruf aus anderem Thread |
 | `test_presenter` | Antwort → `{"text", "html", "attachments"}`, `push()` |
 | `test_proactive` | Meldung formulieren (Modell/Ersatztext), Chat + Benachrichtigung, `api.proactive_message` |

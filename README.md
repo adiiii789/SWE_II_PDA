@@ -6,13 +6,14 @@ Desktop-Anwendung für macOS und Windows: Ein Klick auf das Symbol öffnet ein P
 **Anzeigebereich** (oben) und einem **Chat mit einem Assistenten** (unten). Rechtsklick öffnet
 das Kontextmenü mit „Proaktive Meldung testen“ und „Beenden“.
 
-Das Projekt ist die **Grundlage** für einen persönlichen Assistenten mit Gemini als
-Sprachmodell (wahlweise lokal mit Ollama). Geplant sind drei **Fähigkeiten**: Morning-Briefing,
-Weg zum nächsten Termin (Travel) und Organisation von Nachrichten und Terminen (im Projektplan
-„Assistant²“). Die Fähigkeiten selbst sind noch nicht umgesetzt. Schon heute nutzt der Assistent
-Werkzeuge von **MCP-Servern** (eingetragen in [mcp_servers.json](mcp_servers.json)): E-Mail,
-Google Kalender und Google Tasks. Feste Befehle wie `hilfe`, `uhrzeit`, `system`, `start` und
-`neu` funktionieren auch ohne Modell.
+EVE ist ein persönlicher Assistent mit Gemini als Sprachmodell, wahlweise lokal mit Ollama.
+Er hat drei **Fähigkeiten**: Morning-Briefing, Weg zum nächsten Termin (Travel) und Organisation
+von Nachrichten und Terminen (im Projektplan „Assistant²“). Umgesetzt sind der **Morning
+Assistant**, der auf Wunsch ein tägliches Briefing liefert, und der **Reise-Assistent** (beide
+siehe unten); die Organisation folgt. Außerdem nutzt der Assistent Werkzeuge von **MCP-Servern**
+(eingetragen in [mcp_servers.json](mcp_servers.json)): E-Mail, Google Kalender und Google Tasks.
+Feste Befehle wie `hilfe`, `uhrzeit`, `system`, `start`, `neu`, `reise` und `morning briefing`
+funktionieren auch ohne Modell.
 
 ## Starten
 
@@ -52,31 +53,11 @@ Als Projektinterpreter die lokale Umgebung auswählen: `.venv/bin/python` am Mac
 ### Sprachmodell
 
 Standardmäßig verwendet der Assistent **Gemini 3.5 Flash-Lite** über die Google Gemini API.
-Erstelle in [Google AI Studio](https://aistudio.google.com/api-keys) einen API-Schlüssel.
-Speichere ihn als einzige Zeile in `gemini-api-key.txt` im App-Datenordner, außerhalb des Git-Projekts.
-Die Datei ist Klartext und sollte nur für dein Benutzerkonto lesbar sein.
-
-- macOS: `~/Library/Application Support/PersonalDigitalAgent/gemini-api-key.txt`
-- Windows: `%APPDATA%\PersonalDigitalAgent\gemini-api-key.txt`
-
-Auf macOS kannst du den Schlüssel im Terminal verdeckt einfügen und mit Enter speichern:
-
-```zsh
-(
-  umask 077
-  dir="$HOME/Library/Application Support/PersonalDigitalAgent"
-  mkdir -p "$dir" || exit
-  read -rs "key?Gemini-API-Schlüssel: "
-  printf '\n'
-  if [[ -n "$key" ]]; then
-    printf '%s\n' "$key" > "$dir/gemini-api-key.txt"
-    chmod 600 "$dir/gemini-api-key.txt"
-  fi
-)
-```
-
-Alternativ liest das Programm die Umgebungsvariable `GEMINI_API_KEY`. Sie hat Vorrang
-vor der Datei und wird nicht an MCP-Server weitergegeben. Welche Modelle dein Konto nutzen kann,
+Erstelle in [Google AI Studio](https://aistudio.google.com/api-keys) einen API-Schlüssel und trag
+ihn unter **⚙ Einstellungen → Zugangsdaten** ein. Er landet als `GEMINI_API_KEY` in der `.env`
+(siehe [Keys und Zugangsdaten](#keys-und-zugangsdaten-env)) und gilt ab der nächsten Nachricht.
+Eine (nicht leere) Umgebungsvariable `GEMINI_API_KEY` hat Vorrang vor der Datei; sie wird nicht an
+MCP-Server weitergegeben. Welche Modelle dein Konto nutzen kann,
 hängt von den [Kontingenten deines Projekts](https://ai.google.dev/gemini-api/docs/rate-limits) ab.
 Bei Gemini gehen Gesprächskontext und benötigte Werkzeugergebnisse (z. B. gelesene Mails) an Google.
 
@@ -146,6 +127,135 @@ beim Start aus PyCharm kann die Freigabe PyCharm oder Python zugeordnet sein. An
 `PDA_WHISPER_MODEL` (`tiny`, `base`, `medium` …), `PDA_PIPER_VOICE` und `PDA_SPEECH_LANGUAGE`
 (siehe [config.py](backend/config.py)). `PDA_MAC_VOICE` legt optional eine installierte Mac-Stimme fest.
 
+### Keys und Zugangsdaten (`.env`)
+
+Alle API-Keys und Zugangsdaten stehen in **einer** Datei `.env` im Projektordner (im gepackten
+Programm im App-Datenordner). Die `.env` steht in `.gitignore` und wird nicht eingecheckt.
+
+**Am einfachsten im Programm:** ⚙ Einstellungen → **Zugangsdaten**. Dort lassen sich Gemini,
+openrouteservice, DB API, Tankerkönig, Alpha Vantage und die Mail-Passwörter eintragen, ersetzen
+oder löschen. Ein neuer Key gilt ab der nächsten Anfrage, ohne Neustart. Nur die
+Reise-Erinnerung startet erst beim nächsten Programmstart, wenn der openrouteservice-Key neu ist.
+Gespeicherte Werte zeigt das Formular nie an, nur „gespeichert“ oder „fehlt“:
+[backend/api_keys.py](backend/api_keys.py) schickt keine Werte ans Frontend. Es schreibt nur
+die bekannten Namen und lehnt Zeilenumbrüche ab, damit sich über das Formular nichts anderes in
+die `.env` einschleusen lässt (z. B. weitere erlaubte Mail-Empfänger).
+
+Von Hand geht es auch: [.env.example](.env.example) nach `.env` kopieren und ausfüllen. Gelesen
+wird sie von [backend/config.py](backend/config.py) und [backend/api_keys.py](backend/api_keys.py)
+sowie von den Mail-Werkzeugen in `mcp_servers/`. Gesetzte Umgebungsvariablen haben Vorrang
+vor der Datei und lassen sich im Formular nicht ändern. Auch die übrigen `PDA_…`-Einstellungen
+(Sprache, proaktive Meldungen, Modell) lassen sich in der `.env` setzen; die gelten nach einem
+Neustart.
+
+Früher lagen der Gemini- und der Alpha-Vantage-Schlüssel als `gemini-api-key.txt` bzw.
+`alphavantage-api-key.txt` im App-Datenordner. Beim Start übernimmt EVE sie in die `.env` und
+löscht die Textdatei. Steht der Key schon in der `.env`, bleibt die Datei liegen, wird aber nicht
+mehr gelesen.
+
+Die `.env` ist Klartext wie vorher die Textdateien. Sie sollte also nur für dein Benutzerkonto
+lesbar sein (unter macOS/Linux setzt EVE beim Speichern `chmod 600`).
+
+### Reise-Assistent
+
+„Wie komme ich zum nächsten Termin?“ – oder der feste Befehl `reise`. Der Assistent nimmt den
+nächsten Termin mit Ort aus Google Calendar. Start ist der Ort des vorigen Termins, beim ersten
+Termin des Tages die Heimatadresse (fragt der Assistent beim ersten Mal ab). Verglichen werden
+Auto, Bahn/ÖPNV (mit Bus und Tram), Taxi, Fahrrad und zu Fuß; empfohlen wird das Verkehrsmittel mit den
+geringsten **Kosten = Preis + Reisezeit × Zeitwert × Wetterfaktor** (Standard 25 €/h) – Zeit zählt
+also mit. **Kostenlose Verkehrsmittel** (zu Fuß, Fahrrad, mit Deutschlandticket auch Bus und Bahn)
+stehen grundsätzlich vorn – außer Rad und zu Fuß bei schlechtem Wetter; wäre nach Kosten etwas anderes
+besser, sagt die Ansicht das dazu. Die Ansicht hat **je Verkehrsmittel einen Reiter** (zuerst ist die
+Empfehlung gewählt; auch ein Klick auf eine Zeile der Vergleichstabelle wählt) mit Zeiten, Preis,
+Wegbeschreibung und Karte. **Bus und Bahn** sehen aus wie in der DB- bzw. VVS-App: oben Abfahrt –
+Ankunft, Dauer, Umstiege und ein Balken aus den Etappen in Linienfarben, darunter die Zeitleiste mit
+Soll-Zeit und Prognose (grün pünktlich, rot verspätet), Gleis/Steig, Linie mit Richtung,
+aufklappbaren Zwischenhalten, Hinweisen, Fußwegen und Umstiegszeiten. Die Karte zeigt jede Fahrt in
+der Farbe ihrer Linie, Fußwege gepunktet, Umstiege gelb. Die OpenStreetMap-Kacheln holt das
+Backend und bettet sie ein, jede nur einmal für alle Karten – das iframe lädt selbst nichts aus dem
+Netz; gespeichert werden sie zwei Wochen in `map_tiles/` im App-Datenordner. Ohne Netz bleibt die
+Linie ohne Karte.
+
+- **Heimweg:** Steht heute kein Termin mit Ort mehr an, zeigt `reise` den Weg vom letzten Termin
+  nach Hause, mit Abfahrt zum Terminende – bis 3 Stunden danach, dann wieder den nächsten Termin.
+  Im Chat geht auch „Wie komme ich heim?“ (Werkzeug `plan_trip_home`).
+- **Erinnerung:** 15 Minuten vor der empfohlenen Abfahrt meldet sich EVE von selbst – wie die
+  proaktiven Meldungen als Popup, Systembenachrichtigung oder nur im Chat, auf Wunsch vorgelesen.
+  Beim Heimweg zählt der Vorlauf ab dem Ende des letzten Termins, egal wann die nächste Verbindung
+  fährt („„Seminar“ endet in 15 Minuten. Nächste Verbindung nach Hause in 22 Minuten …“). Kurz vorher
+  rechnet sie den Weg neu (aktuelle Abfahrten und Verspätungen); liegt der nächste Termin im selben
+  Gebäude, meldet sie sich nicht. Gelesen werden alle in Google Calendar sichtbaren Kalender, auch
+  abonnierte (z. B. ein Vorlesungsplan).
+- **Orte aus dem Kalender:** Steht als Ort nur ein Raum (z. B. „LE1-C3.05 Vorlesung“), trag unter
+  ⚙ → Reise → Allgemein ein Ortskürzel ein (`LE1 = Lerchenstraße 1, 70174 Stuttgart`) – oder sag es
+  dem Assistenten, er speichert es selbst. Ein einfaches Kürzel zählt als eigenes Wort (Groß/klein egal).
+  Mit Regex-Zeichen ist es ein regulärer Ausdruck für den ganzen Ort, genau wie geschrieben:
+  `LE.* = Lerchenstraße 1, 70174 Stuttgart` heißt „beginnt mit LE“ (nicht „Leonberg“),
+  `.*LE\d.*` „enthält LE und eine Ziffer“. Einfache Kürzel gehen vor, dann die Ausdrücke von oben nach unten.
+- **Wetter:** Bei Regen oder Schnee zählt die Zeit auf dem Rad und zu Fuß doppelt, bei Kälte und
+  (nur Rad) starkem Wind zusätzlich ×1,3. So gewinnt bei Regen eher Auto oder Bahn. Die Vorhersage
+  kommt von Open-Meteo, für den Startort zur Abfahrt.
+- **Bahn/ÖPNV:** Liegen Start und Ziel im **VVS-Gebiet** (Stuttgart und Umland), fragt der
+  Assistent die **VVS-Auskunft** – mit Echtzeit, Gleisen/Steigen und dem echten Preis
+  (EinzelTicket Erwachsene; mit Deutschlandticket 0 €). Sonst sucht er bei
+  **[Transitous](https://transitous.org)** – wie im DB Navigator von Tür zu Tür, mit Bus, Tram,
+  S-Bahn und Fernzügen, deutschlandweit. Beide ohne Key. Hat der VVS keine Verbindung oder ist nicht
+  erreichbar, kommt Transitous dran. Erlaubt sind **bis zu zwei Umstiege** (einstellbar: 0 bis 3, je mindestens 5 Minuten); ein
+  Umstieg zählt beim Vergleich wie 10 Minuten mehr Fahrzeit. Transitous ist ein ehrenamtliches
+  Projekt für nicht-kommerzielle Nutzung, ohne Garantie und mit Echtzeit nur, wo Verbünde sie
+  liefern. Fällt es aus oder findet nichts, sucht der Assistent wie früher über die DB-Tafeln (nur
+  Züge, siehe unten). Abschalten bzw. eigene MOTIS-Instanz: `PDA_TRANSITOUS_URL`, VVS abschalten:
+  `PDA_VVS_URL=` in der `.env`. Die VVS-Auskunft ist die Schnittstelle der VVS-Website (EFA) ohne
+  dokumentierte Nutzungsbedingungen; die offizielle für Baden-Württemberg wäre TRIAS über
+  [MobiData BW](https://mobidata-bw.de/dataset/trias) (Zugang auf Antrag).
+
+**Einstellungen:** alles unter ⚙ Einstellungen → **Reise**:
+- **Allgemein:** Heimatadresse, welche Verkehrsmittel verglichen werden (z. B. ohne Auto),
+  „Kostenlose Verkehrsmittel zuerst“ (Standard an, optional nur bis zu einer Mehrdauer in Minuten),
+  Zeitwert, Puffer vor dem Termin
+- **Bus und Bahn:** Deutschlandticket, Umstiege (0–3), Umsteigezeit, längster Fußweg zur Haltestelle
+- **Auto und Taxi**, **Fahrrad und zu Fuß**, **Wetter**, **Erinnerung und Heimweg**
+- **Preise schätzen:** nur wo die Auskunft keinen Preis kennt (außerhalb des VVS)
+
+Gruppen, deren Dienst keinen Key hat, sind als „gerade nicht verfügbar“ markiert.
+
+Einrichtung – ohne Key fällt nur der betroffene Teil weg:
+
+| Was | Wofür | Einrichtung |
+|---|---|---|
+| openrouteservice (Pflicht) | Adressen, Routen und Fahrzeiten für Auto, Taxi, Fahrrad, zu Fuß | kostenloser Key: [openrouteservice.org](https://openrouteservice.org/dev/#/signup) → `PDA_ORS_KEY` in der `.env` |
+| VVS-Auskunft | ÖPNV im VVS-Gebiet mit Echtzeit und Preis | nichts – ohne Key |
+| Transitous | Bahn/ÖPNV-Verbindungen mit Bus und Tram | nichts – kostenlos und ohne Key ([Nutzungsregeln](https://transitous.org/api/): nicht-kommerziell) |
+| DB API Marketplace | Bahn-Ersatz, wenn Transitous ausfällt (Fahrplan mit Echtzeit); Bahnhöfe | kostenlos: [developers.deutschebahn.com](https://developers.deutschebahn.com) → Anwendung anlegen, die APIs „OpenBoards“ (Tafeln mit Verspätungen und Störungen), „StaDa - Station Data“ (Bahnhöfe mit Koordinaten) und „Timetables“ (Ersatz) abonnieren → `PDA_DB_CLIENT_ID` und `PDA_DB_API_KEY` in der `.env` |
+| Google Calendar | Termine | dieselbe Anmeldung wie die Kalender-Werkzeuge, Einrichtung unter [Google Kalender](#google-kalender) |
+| Tankerkönig | aktuelle Spritpreise (sonst 1,80 €/l) | kostenloser Key: [creativecommons.tankerkoenig.de](https://creativecommons.tankerkoenig.de) → `PDA_TANKERKOENIG_KEY` in der `.env` |
+| Open-Meteo | Wetter | nichts – kostenlos und ohne Key |
+
+Alle Dienste sind kostenlos. **Grenzen:** openrouteservice kennt keinen Echtzeit-Verkehr; die
+Autofahrzeit wird deshalb mit einem Stau-Aufschlag (Standard 1,15) verlängert. Die
+DB-APIs (Ersatz für Transitous) liefern nur Abfahrts- und Ankunftstafeln, keine Verbindungssuche: Der Assistent setzt
+Verbindungen aus den Laufwegen der Züge selbst zusammen, mit **höchstens drei Umstiegen**, zwischen
+den Bahnhöfen der beiden Orte (Hauptbahnhof bevorzugt) und nur für die nächsten Stunden. Als
+Umstiegsbahnhöfe prüft er je Umstieg zwei bis drei: zuerst die, an denen sich Züge ab dem Start und
+Züge zum Ziel kreuzen (meist die großen Knoten), sonst die größten Bahnhöfe ungefähr auf dem Weg
+(Kategorie und Lage aus StaDa) – deren Tafeln verbinden dann beim nächsten Umstieg. Mit **OpenBoards** rechnet er mit den Prognosezeiten: Verspätete Züge, die zu spät
+ankommen, und geplatzte Anschlüsse fallen weg, ausgefallene Halte ebenso; Verspätungen („09:37 (+5)“)
+und Störungstexte stehen in der Wegbeschreibung. Ist OpenBoards nicht abonniert oder gestört, sucht
+er im Soll-Fahrplan von Timetables und sagt das in den Hinweisen. **Bahnhof zur Adresse:** aus der
+StaDa-Liste aller Bahnhöfe (einmal pro Woche geladen, gespeichert in `db_stations.json` im
+App-Datenordner) der nächste – ein großer Bahnhof darf etwas weiter weg sein als ein kleiner Halt.
+Findet die Suche ab dort nichts, versucht sie es ab den nächsten großen Bahnhöfen (z. B. Heidelberg Hbf
+statt Schwetzingen). Ohne StaDa sucht sie den Bahnhof über den Ortsnamen (Timetables), was bei Namen
+wie „Freiburg(Breisgau) Hbf“ oft danebengeht. Busse und Straßenbahnen kennt er nicht: Ist der Bahnhof mehr
+als 20 Minuten Fußweg entfernt, schätzt er die Zeit für Bus/Tram. **Bahnpreise** gibt die DB nicht
+heraus, sie sind eine Tarif-Schätzung (mit ≈ markiert). Mit Deutschlandticket kostet der
+Nahverkehr nichts. Das Wetter zählt nur für Fahrrad und zu Fuß, nicht für die Fußwege zum Bahnhof.
+
+Gespeichert wird in `preferences.json` im App-Datenordner (unter `travel_settings`, die
+Heimatadresse unter `travel_home_address`). Ältere, von Hand eingetragene Werte wie
+`"travel_value_of_time": 40` gelten weiter, die Werte aus den Einstellungen haben Vorrang.
+„Standard wiederherstellen“ setzt alles zurück außer der Heimatadresse.
+
 ### MCP-Server einbinden
 
 In [mcp_servers.json](mcp_servers.json) eintragen – dasselbe Format wie bei Claude Desktop, sodass
@@ -169,7 +279,8 @@ offiziellen MCP-SDK. Er bietet `get_current_time`, `calculate`, `send_email`, `l
 `read_attachment`, `reply_email`, `save_email_draft`, `organize_email`, `delete_email`,
 `list_calendar_events`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`,
 `find_free_time`, `respond_to_calendar_invitation`, `list_tasks`, `create_task`, `update_task`,
-`complete_task`, `delete_task`, `move_task` und `create_task_list`. Ein neues Tool ist dort eine
+`complete_task`, `delete_task`, `move_task`, `create_task_list` sowie für Wetter und Börse
+`get_weather_forecast` und `get_stock_quotes` (siehe [Morning Assistant](#morning-assistant)). Ein neues Tool ist dort eine
 Funktion mit `@mcp.tool()`. Mit `mcp dev mcp_servers/pda_server.py` lässt er sich ohne Assistent im
 Browser ausprobieren. Werkzeuge mit dem Präfix `watch_` sind nur für den Wächter (siehe
 [Proaktive Meldungen](#proaktive-meldungen)) und für das Sprachmodell unsichtbar.
@@ -181,7 +292,7 @@ Einladung nichts allein auslösen.
 
 #### E-Mail
 
-`mcp_servers/.env.example` nach `mcp_servers/.env` kopieren und SMTP-Zugang sowie
+In der `.env` (siehe [Keys und Zugangsdaten](#keys-und-zugangsdaten-env)) SMTP-Zugang sowie
 die erlaubten Empfänger (`PDA_MAIL_RECIPIENTS`) eintragen. Bei Gmail braucht ihr ein App-Passwort.
 Der Assistent kann nur an diese Adressen schreiben. Steht ein Name davor
 (`Mama <mama@example.com>, Anna Müller <anna@example.com>`), reicht beim Senden der Name („schick
@@ -285,6 +396,7 @@ Im Betrieb prüft ein **Wächter** im Hintergrund alle paar Minuten Postfach, Au
 
 - **Allgemein:** Prüfabstand, Art der Meldung (Popup, Systembenachrichtigung, nur Chat), Vorlesen,
   Formulierung, Ruhezeit, Wochentage, Höchstzahl pro Stunde.
+- **Morning Assistant:** Ein tägliches Briefing mit Terminen, Wetter, Aktien und einem Song.
 - **E-Mail:** Das Sprachmodell entscheidet, was wichtig ist, nach deinen Kriterien. Vorrang haben
   eigene Regeln (Absender und Wörter für „immer“ und „nie“). Newsletter werden an ihren Kopfzeilen
   erkannt. Mails bleiben ungelesen, beim ersten Start gilt das Postfach als gesehen.
@@ -294,6 +406,54 @@ Im Betrieb prüft ein **Wächter** im Hintergrund alle paar Minuten Postfach, Au
   und Titel.
 
 `PDA_PROACTIVE_WATCH=0` schaltet den Wächter ganz ab.
+
+#### Morning Assistant
+
+Unter **⚙ Einstellungen → Proaktive Meldungen → Morning Assistant** das tägliche Briefing
+aktivieren und speichern. Die voreingestellte Zeit ist **07:00 Uhr** in der lokalen Uhrzeit
+des Rechners. Läuft EVE erst später, holt es das Briefing bei der nächsten erlaubten Prüfung
+am selben Tag nach. Wochentage und Ruhezeit aus den allgemeinen Einstellungen gelten auch hier.
+Die vier Themen erscheinen als Karten im oberen Anzeigebereich. Über **Briefing anzeigen**
+im Chat lässt sich die Ansicht erneut öffnen. Der Chatbefehl `morning briefing` ruft
+das heutige Briefing jederzeit manuell ab und steht auch in der Übersicht `hilfe`.
+
+- **Termine** kommen aus den eingeblendeten Google-Kalendern. Die bestehende Google-Anmeldung
+  genügt. Ganztägige und laufende mehrtägige Termine zählen ebenfalls.
+- **Wetter** zeigt die Tiefst- und Höchsttemperatur sowie die vorherrschende Wetterlage
+  tagsüber für den eingestellten Ort (z. B. "Berlin,DE"). Darunter stehen Temperatur
+  und Wettersymbol für jede Stunde des Ortsdatums. Die Werte stammen von
+  [Open-Meteo](https://open-meteo.com/en/docs) und sind für den privaten Gebrauch ohne
+  API-Schlüssel abrufbar.
+- **Aktien** zeigt bis zu fünf eingetragene Kürzel, z. B. `AAPL, MSFT, IBM`. EVE zeigt
+  den Schlusskurs und die Veränderung gegenüber dem vorherigen Handelstag. War gestern
+  die Börse geschlossen, steht das Datum des letzten verfügbaren Handelstags dabei.
+  Eine kleine Kurslinie zeigt die Schlusskurse von bis zu sieben Handelstagen.
+  Den [Alpha-Vantage-Schlüssel](https://www.alphavantage.co/support/#api-key)
+  unter ⚙ Einstellungen → Zugangsdaten eintragen (`PDA_ALPHAVANTAGE_KEY` in der `.env`).
+- **Musik** ist ein wechselnder Songvorschlag. Unter **Musikgeschmack** lässt sich ein Genre
+  auswählen. Das Cover lädt direkt von Spotify. Über das Spotify-Logo in der Karte
+  oder **Auf Spotify anhören** im Chat öffnet sich der Track in der Spotify-App.
+  Falls die App nicht geöffnet werden kann, nutzt EVE den Browser.
+
+Fällt eine Quelle aus oder fehlt ihr Schlüssel, zeigt EVE die übrigen Teile des Briefings an.
+
+**Wetter und Börse als Werkzeuge:** Die beiden Quellen stellt der MCP-Server bereit
+([mcp_servers/morning_sources.py](mcp_servers/morning_sources.py)). So kann der Assistent sie auch
+im Chat nutzen, z. B. „Wie wird das Wetter morgen in Stuttgart?“ oder „Wie steht die SAP-Aktie?“.
+
+| Werkzeug | Liefert | Quelle |
+| --- | --- | --- |
+| `get_weather_forecast(location, days=1)` | Tiefst- und Höchstwert und Wetterlage je Tag (bis 7), am ersten Tag alle drei Stunden | Open-Meteo, ohne Key |
+| `get_stock_quotes(symbols)` | bis zu 5 Kürzel: letzter Schlusskurs, Veränderung zum vorherigen Handelstag | Alpha Vantage, `PDA_ALPHAVANTAGE_KEY` |
+
+Das Briefing holt seine Daten über die internen Gegenstücke `watch_morning_weather` und
+`watch_stock_quotes`. Das sind dieselben Quellen, nur als JSON, und sie sind für das Sprachmodell
+unsichtbar. Unter ⚙ Einstellungen → Werkzeuge → **Wetter und Börse** lassen sich die beiden
+Werkzeuge für den Chat abschalten; das Briefing nutzt die Quellen trotzdem. Der kostenlose
+Alpha-Vantage-Key erlaubt 25 Anfragen am Tag (eine je Kürzel), deshalb fragt das Modell Kurse
+nur auf Wunsch ab. Ohne MCP-Server (`PDA_ASSISTANT_BACKEND=commands`) fehlen im Briefing Wetter
+und Börse, wie schon die Termine. Der Songvorschlag braucht keine Schnittstelle: Er kommt aus
+einer festen Liste und bleibt deshalb im Briefing selbst.
 
 ## Ladebildschirm
 
@@ -325,7 +485,7 @@ Für die eigentliche Projektarbeit braucht ihr nur diese Stellen:
 | Aufgabe | Ort |
 |---|---|
 | Integration eines Dienstes (Calendar, Wetter, Gmail …) | [backend/integrations/](backend/integrations/__init__.py) – Anleitung in der `__init__.py` |
-| Fähigkeit des Assistenten (morning, travel, organization) | [backend/assistant/skills/](backend/assistant/skills/__init__.py) – Anleitung in der `__init__.py` |
+| Fähigkeit des Assistenten (morning, travel, organization) | [backend/assistant/skills/](backend/assistant/skills/__init__.py) – Anleitung in der `__init__.py`, Beispiel: [travel/](backend/assistant/skills/travel/__init__.py) |
 | Darstellung im Anzeigebereich | [frontend/templates/](frontend/templates/) – Vorlage: `default.html.j2` |
 | Funktion, die das Frontend aufrufen kann | [backend/api.py](backend/api.py) |
 | eigenes Werkzeug (MCP) | [mcp_servers/pda_server.py](mcp_servers/pda_server.py) – Funktion mit `@mcp.tool()` |

@@ -1,17 +1,18 @@
 import io
 import json
+import urllib.error
 from unittest.mock import patch
 
-from backend.assistant.gemini import MODELS, GeminiModel
+import pytest
+
+from backend.assistant.gemini import MODELS, RETRY_DELAYS_S, GeminiError, GeminiModel
 from backend.assistant.gemini_assistant import GeminiAssistant
+from backend.assistant.llm import ChatMessage
 from backend.assistant.tools import ToolResult, ToolSpec
 from backend.preferences import JsonPreferenceStore
 
 
 def test_gemini_round_trip_preserves_signatures_and_parallel_call_ids(tmp_path, monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    key_file = tmp_path / "gemini-api-key.txt"
-    key_file.write_text("test-key\n", encoding="utf-8")
     signed_turn = {"role": "model", "parts": [
         {"functionCall": {"name": "echo", "id": "call-1", "args": {"text": "eins"}},
          "thoughtSignature": "c2lnbmF0dXJl"},
@@ -33,7 +34,7 @@ def test_gemini_round_trip_preserves_signatures_and_parallel_call_ids(tmp_path, 
     preferences_path = tmp_path / "preferences.json"
     preferences = JsonPreferenceStore(preferences_path)
     preferences.set("ollama_model", "altes-ollama-modell")
-    model = GeminiModel("", key_file, timeout=1)
+    model = GeminiModel("", timeout=1, api_key=lambda: "test-key\n")
     assistant = GeminiAssistant(model, Echo(), preferences)
     responses = [io.BytesIO(json.dumps({"candidates": [{"content": turn}]}).encode())
                  for turn in (signed_turn, final_turn, final_turn)]
@@ -61,3 +62,44 @@ def test_gemini_round_trip_preserves_signatures_and_parallel_call_ids(tmp_path, 
             {"role": "model", "parts": [{"text": "Fertig."}]},
             {"role": "user", "parts": [{"text": "Weiter bitte."}]},
         ]
+
+
+def _http_error(code):
+    body = io.BytesIO(json.dumps({"error": {"code": code, "status": "UNAVAILABLE"}}).encode())
+    return urllib.error.HTTPError("https://example.invalid", code, "error", {}, body)
+
+
+def _ok():
+    return io.BytesIO(json.dumps({"candidates": [{"content": {"role": "model", "parts": [{"text": "Hallo"}]}}]}).encode())
+
+
+def _model(waits):
+    model = GeminiModel("", timeout=1, api_key=lambda: "test-key", sleep=waits.append)
+    model.name = MODELS[1]
+    return model
+
+
+def test_gemini_retries_when_overloaded():
+    waits = []
+    with patch("backend.assistant.gemini.urllib.request.urlopen", side_effect=[_http_error(503), _ok()]) as http:
+        assert _model(waits).chat([ChatMessage("user", "Hi")]).message.content == "Hallo"
+    assert http.call_count == 2
+    assert waits == [RETRY_DELAYS_S[0]]
+
+
+def test_gemini_gives_up_after_retries_and_suggests_other_models():
+    waits = []
+    errors = [_http_error(503) for _ in range(len(RETRY_DELAYS_S) + 1)]
+    with patch("backend.assistant.gemini.urllib.request.urlopen", side_effect=errors) as http,             pytest.raises(GeminiError, match="überlastet") as raised:
+        _model(waits).chat([ChatMessage("user", "Hi")])
+    assert http.call_count == len(RETRY_DELAYS_S) + 1
+    assert waits == list(RETRY_DELAYS_S)
+    others = str(raised.value).split("(")[-1].rstrip(").").split(", ")
+    assert others == [name for name in MODELS if name != MODELS[1]]
+
+
+def test_gemini_does_not_retry_client_errors():
+    waits = []
+    with patch("backend.assistant.gemini.urllib.request.urlopen", side_effect=[_http_error(429)]) as http,             pytest.raises(GeminiError, match="Kontingent"):
+        _model(waits).chat([ChatMessage("user", "Hi")])
+    assert http.call_count == 1 and waits == []

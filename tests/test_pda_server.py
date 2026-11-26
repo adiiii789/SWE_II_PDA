@@ -32,8 +32,12 @@ class PdaServerTest(unittest.TestCase):
                                        "delete_email", "list_calendar_events", "create_calendar_event",
                                        "update_calendar_event", "delete_calendar_event", "find_free_time",
                                        "respond_to_calendar_invitation", "list_tasks", "create_task", "update_task", "complete_task", "delete_task",
-                                       "move_task", "create_task_list",
-                                       "watch_new_emails", "watch_open_tasks", "watch_calendar_events"})
+                                       "move_task", "create_task_list", "get_weather_forecast", "get_stock_quotes",
+                                       "watch_new_emails", "watch_open_tasks", "watch_calendar_events",
+                                       "watch_morning_weather", "watch_stock_quotes"})
+        self.assertEqual(tools["get_weather_forecast"].input_schema["required"], ["location"])
+        self.assertEqual(tools["get_weather_forecast"].input_schema["properties"]["days"]["maximum"], 7)
+        self.assertEqual(tools["get_stock_quotes"].input_schema["required"], ["symbols"])
         self.assertNotIn("required", tools["list_tasks"].input_schema)
         for name in ("update_task", "complete_task", "delete_task", "move_task"):
             self.assertEqual(tools[name].input_schema["required"], ["task_id"])
@@ -60,6 +64,19 @@ class PdaServerTest(unittest.TestCase):
         result = self.provider.call_tool("calculate", {"expression": "open('x')"})
         self.assertTrue(result.is_error)
         self.assertIn("Ungültiger Ausdruck", result.content)
+
+    def test_morning_sources_report_problems_without_network(self):
+        # Die Tests haben keinen Alpha-Vantage-Key (tests/conftest.py); ein leerer Ort fragt nichts ab.
+        for name, arguments, message in (
+                ("get_stock_quotes", {"symbols": "AAPL"}, "Alpha-Vantage-Schlüssel hinterlegen"),
+                ("watch_stock_quotes", {"symbols": "AAPL", "until": "2026-11-08"}, "Alpha-Vantage-Schlüssel hinterlegen"),
+                ("watch_stock_quotes", {"symbols": "AAPL", "until": "gestern"}, "ISO-Format"),
+                ("get_weather_forecast", {"location": " "}, "Wetterort angeben"),
+                ("watch_morning_weather", {"location": ""}, "Wetterort angeben")):
+            with self.subTest(name=name, arguments=arguments):
+                result = self.provider.call_tool(name, arguments)
+                self.assertTrue(result.is_error)
+                self.assertIn(message, result.content)
 
     def test_tool_error_message_reaches_model(self):
         result = self.provider.call_tool("send_email", {"subject": "Hi", "body": "Text"})

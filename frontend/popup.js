@@ -28,6 +28,7 @@ let stickToBottom = true;   // war der Verlauf zuletzt ganz unten? Dann bleibt e
 let visibleBottom = 0;
 let chatHeight = 0;
 let resizedScrollTop = null;
+let briefingActive = false;   // weitere Hintergrundmeldungen sollen das Briefing nicht verdrängen
 
 const NEAR_BOTTOM_PX = 40;
 const VIEW_MIN_PX = 60;     // Mindesthöhen beim Ziehen am #splitter
@@ -50,7 +51,10 @@ const VIEW_REDRAW_MS = 10 * 60000;  // spätestens dann auch ohne geänderte Dat
 // Zeigt fertig gerendertes HTML (aus frontend/templates/, vom Backend gerendert) im iframe an,
 // in den Farben des gewählten Designs (appearance.js). Neues HTML = neue Ansicht, frische Daten.
 // refreshed: dieselbe Ansicht mit frischen Daten - Reiter und Scrollpositionen bleiben.
-function showView(html, refreshed = false) {
+// briefing: Morning-Briefing - weitere Hintergrundmeldungen verdrängen es nicht (showReply).
+function showView(html, {refreshed = false, briefing = false} = {}) {
+  briefingActive = briefing;
+  document.body.classList.toggle("briefing-view", briefing);
   if (html !== viewHtml) {
     viewTaskState = {};
     viewSize = null;   // bis die neue Ansicht ihre Höhe meldet, bleibt die bisherige Aufteilung
@@ -94,7 +98,7 @@ async function refreshView() {
     return;   // z. B. offline: bisherige Anzeige bleibt
   }
   if (!html || version !== viewVersion || replyPending) return;
-  if (viewContent(html) !== viewContent(viewHtml) || Date.now() - shownAt > VIEW_REDRAW_MS) showView(html, true);
+  if (viewContent(html) !== viewContent(viewHtml) || Date.now() - shownAt > VIEW_REDRAW_MS) showView(html, {refreshed: true});
 }
 
 // Klicks in der Ansicht (frontend/templates/dashboard.html.j2): Das iframe ist abgeschottet und
@@ -269,8 +273,24 @@ function showReply(reply) {
     Avatar.flash();
   }
   if (reply.attachments && reply.attachments.length) addAttachments(message, reply.attachments);
+  if (reply.html && reply.view_button) {
+    message.classList.add("with-view-action");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "view-action";
+    button.textContent = reply.view_button;
+    button.addEventListener("click", () => {
+      if (chatMaximized) toggleChatMaximized();
+      showView(reply.html, {briefing: true});
+      viewFrame.focus();
+    });
+    message.appendChild(button);
+  }
   appendToChat(message);   // erst komplett aufbauen, dann einblenden - so stimmt die Scrollposition
-  if (reply.html) showView(reply.html);
+  if (reply.html && (reply.view_button || !reply.proactive || !briefingActive)) {
+    if (reply.view_button && !reply.proactive && chatMaximized) toggleChatMaximized();
+    showView(reply.html, {briefing: Boolean(reply.view_button)});
+  }
   if (reply.proactive) ProactiveAlert.show(message, reply.title || "Meldung", reply.text);
 }
 
@@ -439,12 +459,25 @@ async function loadModels() {
 }
 
 // Links in Antworten im Standardbrowser öffnen - sonst würde das Popup selbst wegnavigieren.
-async function onChatClick(event) {
+function onChatClick(event) {
   const link = event.target.closest("a[href]");
   if (!link) return;
   event.preventDefault();
+  openLinkInBrowser(link.href);
+}
+
+function onBriefingLink(event) {
+  if (!briefingActive || event.source !== viewFrame.contentWindow || !event.data) return;
+  const {type, url} = event.data;
+  if (typeof url !== "string") return;
+  const spotify = type === "eve:spotify-track" && /^https:\/\/open\.spotify\.com\/track\/[a-z0-9]{22}$/i.test(url);
+  const weather = type === "eve:weather-source" && url === "https://open-meteo.com/";
+  if (spotify || weather) openLinkInBrowser(url);
+}
+
+async function openLinkInBrowser(url) {
   try {
-    await open_link(link.href);
+    await open_link(url);
   } catch (error) {
     addMessage(error.message, "error");
   }
@@ -555,7 +588,7 @@ async function changeModel() {
 }
 
 inputForm.addEventListener("submit", sendMessage);
-document.addEventListener("appearancechange", () => { if (viewHtml) showView(viewHtml); });
+document.addEventListener("appearancechange", () => { if (viewHtml) showView(viewHtml, {briefing: briefingActive}); });
 window.addEventListener("message", onViewMessage);   // Klicks in der Ansicht (Aufgaben, Mails)
 modelSelect.addEventListener("change", changeModel);
 window.addEventListener("focus", () => {
@@ -564,6 +597,7 @@ window.addEventListener("focus", () => {
 });
 setInterval(() => { if (document.hasFocus()) refreshView(); }, VIEW_REFRESH_MS / 2);
 chatHistory.addEventListener("click", onChatClick);
+window.addEventListener("message", onBriefingLink);
 recordButton.addEventListener("click", toggleRecording);
 chatHistory.addEventListener("scroll", onChatScroll);
 scrollDownButton.addEventListener("click", scrollToBottom);

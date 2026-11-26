@@ -8,7 +8,7 @@ from backend.assistant.gemini import MODELS, GeminiError
 from backend.assistant.llm import ModelInfo
 from backend.assistant.gemini_assistant import MODEL_PREFERENCE, PROACTIVE_TRIGGER, GeminiAssistant
 from backend.assistant.tools import Attachment, CompositeToolProvider, ToolResult, ToolSpec
-from backend.views import START_VIEW
+from backend.views import START_VIEW, TemplateView
 
 
 class FakeModel:
@@ -138,6 +138,17 @@ class ReplyTest(unittest.TestCase):
                                              ChatMessage("tool", "echo: b", tool_name="echo")])
         self.assertIsNone(reply.view)   # Werkzeuge ohne grafische Ansicht zeigen oben nichts
         self.assertEqual(reply.attachments, ())
+
+    def test_view_of_a_tool_replaces_the_tool_table(self):
+        class PlanTools(EchoTools):
+            def call_tool(self, name, arguments):
+                view = TemplateView("travel", {"n": arguments["text"]}) if arguments["text"] != "ohne" else None
+                return ToolResult("ok", view=view)
+
+        model = FakeModel(calls(ToolCall("echo", {"text": "1"}), ToolCall("echo", {"text": "2"}),
+                                ToolCall("echo", {"text": "ohne"})), text("Fertig"))
+        reply = make(model, PlanTools()).reply("Wie komme ich hin?")
+        self.assertEqual(reply.view, TemplateView("travel", {"n": "2"}))   # die letzte mitgelieferte Ansicht
 
     def test_attachments_of_all_tool_calls_once(self):
         plan = Attachment("plan.pdf", "file:///C:/a/plan.pdf")

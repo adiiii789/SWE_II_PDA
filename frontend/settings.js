@@ -12,7 +12,7 @@ const settingsResetButton = document.getElementById("settings-reset");
 const settingsTabs = Array.from(document.querySelectorAll("#settings-tabs button"));
 
 let settingsForm = null;       // letzte Antwort von get_settings()
-let settingsTab = "answer";    // "answer" | "tools" | "proactive"
+let settingsTab = "answer";    // "answer" | "tools" | "proactive" | "travel" | "keys"
 let resetArmed = false;        // Zurücksetzen braucht einen zweiten Klick
 
 function element(tag, className, text) {
@@ -70,7 +70,7 @@ function buildField(field, value, idPrefix) {
     input.id = id;
     input.min = field.minimum;
     input.max = field.maximum;
-    input.step = 1;
+    input.step = field.step || 1;   // kleiner als 1: Kommazahlen
     input.value = value;
     row.append(label, input);
     read = () => Number(input.value);
@@ -112,7 +112,7 @@ function renderSettings() {
   while (settingsBody.firstChild) settingsBody.removeChild(settingsBody.firstChild);
   resetArmed = false;
   updateResetButton();
-  const {answer, tools, proactive} = settingsForm;
+  const {answer, tools, proactive, travel} = settingsForm;
 
   const answerSection = element("section", "settings-section");
   answerSection.dataset.tab = "answer";
@@ -133,9 +133,23 @@ function renderSettings() {
     "Wann sich der PDA von selbst meldet. Gilt ab der nächsten Prüfung."));
   const proactiveReaders = buildGroups(proactiveSection, proactive, "proactive");
 
-  settingsBody.append(answerSection, toolSection, proactiveSection);
+  const travelSection = element("section", "settings-section");
+  travelSection.dataset.tab = "travel";
+  travelSection.appendChild(element("p", "settings-intro",
+    "Reise-Assistent: wie er Verkehrsmittel abwägt, an die Abfahrt erinnert und den Heimweg zeigt. Gilt ab dem nächsten Plan."));
+  const travelReaders = buildGroups(travelSection, travel || [], "travel");
+
+  const keySection = element("section", "settings-section");
+  keySection.dataset.tab = "keys";
+  keySection.appendChild(element("p", "settings-intro",
+    "API-Keys und Passwörter - gespeichert nur lokal in der .env. Gespeicherte Werte zeigt EVE hier nie an; " +
+    "leer lassen = unverändert. Gilt ab der nächsten Anfrage (die Reise-Erinnerung ab dem nächsten Start)."));
+  const readKeys = buildKeys(keySection, settingsForm.keys || []);
+
+  settingsBody.append(answerSection, toolSection, proactiveSection, travelSection, keySection);
   const readAll = readers => Object.fromEntries(Object.entries(readers).map(([id, read]) => [id, read()]));
-  readSettings = () => ({answer: readAnswer(), tools: readAll(toolReaders), proactive: readAll(proactiveReaders)});
+  readSettings = () => ({answer: readAnswer(), tools: readAll(toolReaders), proactive: readAll(proactiveReaders),
+                         travel: readAll(travelReaders), keys: readKeys()});
   showSettingsTab(settingsTab);
 }
 
@@ -159,6 +173,58 @@ function buildGroups(container, groups, idPrefix) {
     container.appendChild(details);
   }
   return readers;
+}
+
+// Zugangsdaten (backend/api_keys.py): Das Backend schickt nur, ob ein Key gesetzt ist und woher -
+// nie den Wert. Gibt eine Funktion zurück, die nur die Änderungen liest: {NAME: neuer Wert, "" = löschen}.
+function buildKeys(container, keys) {
+  const fields = [];
+  let details = null;
+  for (const key of keys) {
+    if (!details || details.dataset.group !== key.group) {
+      details = element("details", "settings-group");
+      details.dataset.group = key.group;
+      details.open = true;
+      details.appendChild(element("summary", "", key.group));
+      container.appendChild(details);
+    }
+    const id = `key-${key.name}`;
+    const row = element("div", "setting setting-key");
+    row.dataset.key = key.name;
+    const label = element("label", "setting-label", key.label);
+    label.htmlFor = id;
+    const state = key.source === "env" ? ["aus Umgebungsvariable", "ok"] : key.set ? ["gespeichert", "ok"]
+      : ["fehlt", "missing"];
+    label.appendChild(element("span", `settings-badge ${state[1]}`, state[0]));
+    const input = element("input");
+    input.type = "password";
+    input.id = id;
+    input.autocomplete = "new-password";   // kein Ausfüllen durch den Browser
+    input.spellcheck = false;
+    input.disabled = key.source === "env";
+    input.placeholder = key.source === "env" ? `über ${key.name} gesetzt` : key.set ? "neuer Wert ersetzt den alten" : key.name;
+    row.append(label, input);
+    let remove = null;
+    if (key.source === "file") {
+      const option = element("label", "setting-option");
+      remove = element("input");
+      remove.type = "checkbox";
+      remove.addEventListener("change", () => { input.disabled = remove.checked; });
+      option.append(remove, document.createTextNode("löschen"));
+      row.appendChild(option);
+    }
+    if (key.help) row.appendChild(element("div", "setting-help", key.help));
+    details.appendChild(row);
+    fields.push({name: key.name, input, remove});
+  }
+  return () => {
+    const changes = {};
+    for (const {name, input, remove} of fields) {
+      if (remove && remove.checked) changes[name] = "";
+      else if (!input.disabled && input.value.trim()) changes[name] = input.value;
+    }
+    return changes;
+  };
 }
 
 function showSettingsTab(tab) {
