@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Sequence
@@ -18,6 +19,9 @@ API_URL = "https://generativelanguage.googleapis.com/v1beta/models/"
 MODELS = ("gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash")
 KEY_HELP = ("Gemini braucht einen API-Schlüssel. Trag ihn unter ⚙ Einstellungen → Zugangsdaten ein "
             "(landet als GEMINI_API_KEY in der .env). Die Einrichtung steht in der README.")
+# Überlastung bei Google ("high demand", meist nur Sekunden): kurz warten und noch einmal fragen
+RETRY_CODES = frozenset({500, 503, 504})
+RETRY_DELAYS_S = (1.0, 3.0)
 
 
 class GeminiError(LanguageModelError):
@@ -25,12 +29,14 @@ class GeminiError(LanguageModelError):
 
 
 class GeminiModel:
-    def __init__(self, name: str, timeout: float, api_key: Callable[[], str] = partial(api_keys.get, "GEMINI_API_KEY")):
+    def __init__(self, name: str, timeout: float, api_key: Callable[[], str] = partial(api_keys.get, "GEMINI_API_KEY"),
+                 sleep: Callable[[float], None] = time.sleep):
         """api_key(): der Schlüssel, bei jeder Anfrage neu gelesen (Umgebungsvariable oder .env)."""
         self.name = ""
         self.default_name = name or MODELS[0]
         self.api_key = api_key
         self.timeout = timeout
+        self.sleep = sleep
 
     def available_models(self) -> list[ModelInfo]:
         return [ModelInfo(name, supports_tools=True, cloud=True) for name in self.selectable()]
@@ -59,17 +65,24 @@ class GeminiModel:
             {"Content-Type": "application/json"},
         )
         request.add_unredirected_header("x-goog-api-key", key)
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                data = json.load(response)
-        except urllib.error.HTTPError as error:
-            with error:
-                raise GeminiError(_http_error(error)) from None
-        except OSError:
-            raise GeminiError("Die Gemini API ist gerade nicht erreichbar.") from None
-        except ValueError:
-            raise GeminiError("Die Gemini API hat eine ungültige Antwort geliefert.") from None
-        return ModelResponse(_reply(data, allow_calls=bool(tools)))
+        return ModelResponse(_reply(self._send(request), allow_calls=bool(tools)))
+
+    def _send(self, request: urllib.request.Request) -> dict[str, Any]:
+        """Anfrage senden; bei Überlastung (RETRY_CODES) bis zu len(RETRY_DELAYS_S)-mal wiederholen."""
+        for delay in (*RETRY_DELAYS_S, None):
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    return json.load(response)
+            except urllib.error.HTTPError as error:
+                with error:
+                    if error.code not in RETRY_CODES or delay is None:
+                        raise GeminiError(_http_error(error, self.name)) from None
+            except OSError:
+                raise GeminiError("Die Gemini API ist gerade nicht erreichbar.") from None
+            except ValueError:
+                raise GeminiError("Die Gemini API hat eine ungültige Antwort geliefert.") from None
+            self.sleep(delay)
+        raise AssertionError("unerreichbar")
 
     def _api_key(self) -> str:
         try:
@@ -131,7 +144,7 @@ def _reply(data: dict[str, Any], allow_calls: bool) -> ChatMessage:
     return ChatMessage("assistant", text, calls, provider_content=content)
 
 
-def _http_error(error: urllib.error.HTTPError) -> str:
+def _http_error(error: urllib.error.HTTPError, model: str = "") -> str:
     if error.code == 400:
         try:
             details = json.load(error).get("error", {}).get("details", [])
@@ -146,4 +159,8 @@ def _http_error(error: urllib.error.HTTPError) -> str:
         404: "Das gewählte Gemini-Modell ist für dieses Projekt nicht verfügbar.",
         429: "Das Gemini-Kontingent ist erreicht. Prüfe das Limit deines Projekts oder versuche es später.",
     }
+    if error.code in RETRY_CODES:
+        others = ", ".join(name for name in MODELS if name != model)
+        return (f"Das Gemini-Modell {model} ist bei Google gerade überlastet (HTTP {error.code}). "
+                f"Versuch es gleich noch einmal oder wähle ein anderes Modell ({others}).")
     return hints.get(error.code, f"Die Gemini API antwortet mit HTTP {error.code}.")

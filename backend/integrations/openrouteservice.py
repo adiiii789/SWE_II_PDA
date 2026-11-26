@@ -3,6 +3,10 @@
 Kostenloser Key: https://openrouteservice.org/dev/#/signup → PDA_ORS_KEY.
 Freikontingent u. a. 2.000 Routen und 1.000 Adresssuchen pro Tag. Ohne Echtzeit-Verkehr.
 Kartendaten: © OpenStreetMap contributors. Koordinaten erwartet ORS als [Länge, Breite].
+
+Seit 2026 läuft die API unter api.heigit.org (<Dienst>/<Version>/): Routen unter
+/openrouteservice/v2, Adresssuche (Pelias) unter /pelias/v1. api.openrouteservice.org antwortet
+nur noch mit 410. Der Key geht überall im Authorization-Header mit (Pelias ignoriert api_key).
 """
 from __future__ import annotations
 
@@ -11,7 +15,9 @@ from dataclasses import dataclass, field
 from backend.integrations.geo import Place
 from backend.integrations.http import Http, IntegrationError
 
-BASE_URL = "https://api.openrouteservice.org"
+BASE_URL = "https://api.heigit.org"
+DIRECTIONS_URL = f"{BASE_URL}/openrouteservice/v2/directions"
+GEOCODE_URL = f"{BASE_URL}/pelias/v1"
 ATTRIBUTION = "© openrouteservice.org, Kartendaten © OpenStreetMap contributors"
 
 # Verkehrsmittel → ORS-Profil
@@ -40,8 +46,7 @@ class OpenRouteService:
 
     def geocode(self, text: str) -> Place:
         """Beste Übereinstimmung für eine Adresse oder einen Ortsnamen."""
-        data = self.http.get_json(f"{BASE_URL}/geocode/search",
-                                  {"api_key": self.api_key, "text": text, "size": 1, "lang": "de"})
+        data = self.http.get_json(f"{GEOCODE_URL}/search", {"text": text, "size": 1, "lang": "de"}, self._auth())
         features = data.get("features") or []
         if not features:
             raise IntegrationError(f"Adresse nicht gefunden: {text!r}")
@@ -49,9 +54,9 @@ class OpenRouteService:
 
     def locality(self, place: Place) -> str:
         """Ortsname zu Koordinaten (z. B. "Mannheim"), für die Bahnhofssuche."""
-        data = self.http.get_json(f"{BASE_URL}/geocode/reverse",
-                                  {"api_key": self.api_key, "point.lat": place.lat, "point.lon": place.lon,
-                                   "size": 1, "layers": "locality", "lang": "de"})
+        data = self.http.get_json(f"{GEOCODE_URL}/reverse",
+                                  {"point.lat": place.lat, "point.lon": place.lon,
+                                   "size": 1, "layers": "locality", "lang": "de"}, self._auth())
         features = data.get("features") or []
         if not features:
             raise IntegrationError(f"Kein Ort zu {place.label!r} gefunden")
@@ -60,10 +65,10 @@ class OpenRouteService:
 
     def route(self, profile: str, start: Place, end: Place) -> Route:
         data = self.http.post_json(
-            f"{BASE_URL}/v2/directions/{profile}/geojson",
+            f"{DIRECTIONS_URL}/{profile}/geojson",
             {"coordinates": [[start.lon, start.lat], [end.lon, end.lat]], "language": "de", "instructions": True},
             # Ohne geo+json im Accept antwortet ORS mit 406 ("This response format is not supported")
-            {"Authorization": self.api_key, "Accept": "application/geo+json, application/json"})
+            {**self._auth(), "Accept": "application/geo+json, application/json"})
         features = data.get("features") or []
         if not features:
             raise IntegrationError(f"Keine Route ({profile}) von {start.label!r} nach {end.label!r}")
@@ -73,6 +78,9 @@ class OpenRouteService:
                       for segment in properties.get("segments", []) for step in segment.get("steps", []))
         geometry = tuple((lon, lat) for lon, lat, *_ in features[0].get("geometry", {}).get("coordinates", []))
         return Route(summary.get("distance", 0.0), summary.get("duration", 0.0), steps, geometry)
+
+    def _auth(self) -> dict[str, str]:
+        return {"Authorization": self.api_key}
 
 
 def _place(feature: dict) -> Place:
