@@ -19,6 +19,7 @@ from dataclasses import replace
 from backend.assistant.base import AssistantReply, ModelSelection
 from backend.assistant.commands import COMMANDS, MORNING_BRIEFING, morning_briefing
 from backend.assistant.live_view import LiveView
+from backend.assistant.tool_activity import tool_activity
 from backend.assistant.llm import ChatMessage, LanguageModelError, SelectableLanguageModel, ToolCall
 from backend.assistant.settings import CONFIRMED_TOOLS, SETTINGS_KEYS, AssistantSettings, is_internal_tool
 from backend.assistant.tools import Attachment, ToolProvider, ToolResult, ToolSpec
@@ -68,7 +69,7 @@ class ModelAssistant:
     def __init__(self, model: SelectableLanguageModel, tools: ToolProvider, preferences: PreferenceStore,
                  instructions: str = "", max_tool_rounds: int = 5, max_history: int = 30,
                  clock: Callable[[], datetime.datetime] = datetime.datetime.now,
-                 live_view: LiveView | None = None):
+                 live_view: LiveView | None = None, on_tool: Callable[[dict], None] | None = None):
         self.model = model
         self.tools = tools
         self.preferences = preferences
@@ -78,6 +79,7 @@ class ModelAssistant:
         self.max_history = max_history
         self.clock = clock
         self.live_view = live_view or LiveView()   # Anzeige oben aktuell halten (live_view.py)
+        self.on_tool = on_tool   # meldet laufende Werkzeugaufrufe ans Popup (tool_activity.py)
         self.history: list[ChatMessage] = []
         self._proposed: set[str] = set()   # riskante Aufrufe, zu denen das Modell gerade nachfragt
         self._approved: set[str] = set()   # davon die, denen der Nutzer zugestimmt hat
@@ -122,7 +124,7 @@ class ModelAssistant:
             del self.history[start:]   # misslungene Runde nicht im Verlauf behalten
             return AssistantReply(f"Fehler von {self.provider} ({self.model.name}): {error}")
         self._trim_history()
-        return AssistantReply(text, self._view(tool_log), _attachments(tool_log))
+        return AssistantReply(text, self._tool_view(tool_log), _attachments(tool_log))
 
     # --- ProactiveAssistant ------------------------------------------------------------
     def announce(self, instruction: str) -> str | None:
@@ -158,16 +160,14 @@ class ModelAssistant:
             return None
         return response.message.content.strip() or None
 
-    def _view(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> View | None:
-        """Ansicht des letzten Werkzeugs, das eine mitliefert (z. B. Reiseplan); sonst die Anzeige oben."""
-        views = [result.view for _, result in tool_log if result.view is not None]
-        return views[-1] if views else self._tool_view(tool_log)
-
-    def _tool_view(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> TemplateView | None:
-        """Anzeige oben: Termine, Aufgaben und Mails grafisch - nur für Gruppen, deren Einstellung
+    def _tool_view(self, tool_log: list[tuple[ToolCall, ToolResult]]) -> View | None:
+        """Anzeige oben: Liefert ein Werkzeug eine eigene Ansicht (z. B. Reiseplan mit Karte), gilt die
+        letzte davon. Sonst Termine, Aufgaben und Mails grafisch - nur für Gruppen, deren Einstellung
         "Anzeige oben" an ist. Nach Änderungen lädt sie die gemerkten Abfragen neu (live_view.py)."""
         done = [(call, result) for call, result in tool_log if result.content != CONFIRM_REQUEST]
-        return self.live_view.after_round(done, self.tools, self.settings, self.clock())
+        live = self.live_view.after_round(done, self.tools, self.settings, self.clock())
+        own = [result.view for _, result in done if result.view is not None]
+        return own[-1] if own else live
 
     def refresh_view(self) -> TemplateView | None:
         """Anzeige oben mit frischen Daten (ohne Sprachmodell); None, wenn es nichts zu aktualisieren gibt."""
@@ -195,7 +195,24 @@ class ModelAssistant:
                 self.history.append(ChatMessage("tool", content, tool_name=call.name, tool_call_id=call.id))
         return "Ich habe zu viele Werkzeuge nacheinander aufgerufen und breche ab. Versuch es bitte genauer."
 
+    def _report(self, activity: dict) -> None:
+        if self.on_tool is None:
+            return
+        try:
+            self.on_tool(activity)
+        except Exception:   # die Anzeige darf den Werkzeugaufruf nie stören
+            log.exception("Werkzeug-Meldung fehlgeschlagen")
+
     def _call_tool(self, call: ToolCall) -> ToolResult:
+        """Jeder Werkzeugaufruf aller Anbieter läuft hier durch (Claude über seinen Rückruf) - deshalb
+        wird auch hier ans Popup gemeldet, welches Werkzeug gerade läuft."""
+        group = self.settings.group_of(call.name).title
+        self._report(tool_activity("start", call.name, group))
+        result = self._execute_tool(call)
+        self._report(tool_activity("end", call.name, group, result.is_error))
+        return result
+
+    def _execute_tool(self, call: ToolCall) -> ToolResult:
         log.info("Werkzeug %s(%s)", call.name, call.arguments)
         if is_internal_tool(call.name):
             return ToolResult(f"Unbekanntes Werkzeug: {call.name!r}", is_error=True)

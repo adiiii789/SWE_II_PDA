@@ -110,6 +110,7 @@ backend/                      BACKEND: läuft in Python
   rendering.py                macht aus einer Anfrage HTML (Jinja2 bzw. eigenes HTML)
   preferences.py              Kontextwissen, persönliche Präferenzen (JsonPreferenceStore)
   speech.py                   Spracheingabe (faster-whisper) und -ausgabe (Piper/Windows-Stimme)
+  voice_settings.py           Einstellungen → Stimme: Piper-Stimme, Sprecher und Tempo
   assistant/                  Fachlogik: Assistent hinter dem Chat
     base.py                   Assistant-Protokoll, AssistantReply, ModelSelection
     commands.py               CommandAssistant (feste Befehle, auch im KI-Assistenten gültig)
@@ -649,9 +650,12 @@ reply(message):
     trotzdem auf, kommt ein Fehler zurück.
   - „Ergebnis im Chat“, „Darstellung“ und die Mail-Felder → Sätze in der Systemanweisung, nur für
     Werkzeuge, die gerade angeboten werden.
-  - „Tabelle oben“ → `_tool_view`: Zeile weglassen, gekürzt (300 Zeichen) oder vollständig.
-  - Bekannte Gruppen in `TOOL_GROUPS` (E-Mail, Uhrzeit/Rechnen); jedes andere Werkzeug bildet
-    automatisch eine Gruppe `tool:<name>` mit den Grundeinstellungen.
+  - „Anzeige oben“ (Mail, Kalender, Aufgaben) → `_tool_view`: Ergebnisse grafisch über
+    `live_view.py`; nach Änderungen laden die gemerkten Abfragen neu. Liefert ein Werkzeug eine eigene
+    Ansicht (`ToolResult.view`, z. B. der Reiseplan), hat die letzte davon Vorrang.
+  - Bekannte Gruppen in `TOOL_GROUPS` (E-Mail, Kalender, Aufgaben, Uhrzeit/Rechnen, Reise-Assistent,
+    Wetter und Börse); jedes andere Werkzeug bildet automatisch eine Gruppe `tool:<name>` mit den
+    Grundeinstellungen.
   - Assistent und Popup nutzen denselben Store (`preferences.default_store()`), sonst würde einer
     die Änderungen des anderen überschreiben.
 - **Fehler von Werkzeugen** (auch erfundene Werkzeugnamen) gehen als `"Fehler: …"` an das Modell

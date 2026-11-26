@@ -43,6 +43,9 @@ def read_env_file(path: Path) -> dict[str, str]:
 ENV_FILE = Path(os.environ.get("PDA_ENV_FILE")
                 or (app_data_dir() if hasattr(sys, "_MEIPASS") else ROOT_DIR) / ".env")
 _ENV = {**read_env_file(ENV_FILE), **os.environ}
+# Früherer Ort der Mail-Einstellungen (vor Sprint 3): Fehlende Einträge übernimmt backend/api_keys.py beim
+# Start in ENV_FILE. Die alte Datei bleibt, wie sie ist.
+LEGACY_MCP_ENV_FILE = Path(os.environ.get("PDA_LEGACY_MCP_ENV_FILE") or ROOT_DIR / "mcp_servers" / ".env")
 
 # "models" (Ollama, Gemini, Claude), einzelner Anbieter oder "commands" (nur feste Befehle).
 # Siehe backend/assistant/__init__.py (_BACKENDS). Die Tests setzen "commands" (tests/conftest.py).
@@ -125,3 +128,15 @@ POPUP_BACKGROUND = "transparent"
 POPUP_MARGIN_PX = 0                   # Abstand zum Rand macht die Seite selbst (popup.css), passend zum Design
 POPUP_SLIDE_IN_OFFSET_PX = 50         # Start der Animation unterhalb der Endposition
 POPUP_ANIMATION_MS = 500
+
+# 3D-Begleiter: eigenes durchsichtiges Fenster links neben dem Popup (backend/desktop/companion_window.py).
+# "0" schaltet ihn ganz ab; im Popup lässt er sich unter "Design" aus- und einblenden.
+COMPANION_ENABLED = _ENV.get("PDA_COMPANION", "1") != "0"
+COMPANION_PAGE = FRONTEND_DIR / "companion.html"
+# Eigenes 3D-Modell (glTF/GLB) statt der eingebauten Figur; fehlt die Datei, bleibt die eingebaute.
+COMPANION_MODELS_DIR = FRONTEND_DIR / "models"   # zur Auswahl in den Einstellungen (backend/companion_models.py)
+COMPANION_MODEL = Path(_ENV.get("PDA_COMPANION_MODEL") or FRONTEND_DIR / "models" / "companion.glb")
+COMPANION_HEIGHT_RATIO = 0.34         # Höhe als Anteil der Bildschirmhöhe (höchstens so hoch wie das Popup)
+COMPANION_ASPECT = 0.7                # Breite / Höhe
+COMPANION_GAP_PX = 4                  # Abstand zum Popup
+COMPANION_POINTER_MS = 50             # so oft schaut der Begleiter nach dem Mauszeiger

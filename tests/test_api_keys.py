@@ -75,22 +75,37 @@ class ApiKeysTest(unittest.TestCase):
             api.reset_settings()
         self.assertEqual(api_keys.get("PDA_ORS_KEY"), "ors")                  # Zurücksetzen lässt Keys stehen
 
-    def test_legacy_files_move_into_the_env(self):
+    def test_legacy_files_are_copied_into_the_env_and_kept(self):
         (self.dir / "gemini-api-key.txt").write_text("gemini-key\n", encoding="utf-8")
         (self.dir / "alphavantage-api-key.txt").write_text("av-key\n", encoding="utf-8")
         self.env.write_text("PDA_ALPHAVANTAGE_KEY=schon-da\n", encoding="utf-8")
         self.assertEqual(api_keys.migrate_legacy_files(self.dir), ["GEMINI_API_KEY"])
         self.assertEqual(api_keys.get("GEMINI_API_KEY"), "gemini-key")
-        self.assertFalse((self.dir / "gemini-api-key.txt").exists())
+        self.assertTrue((self.dir / "gemini-api-key.txt").exists())          # bleibt liegen
         self.assertEqual(api_keys.get("PDA_ALPHAVANTAGE_KEY"), "schon-da")
         self.assertTrue((self.dir / "alphavantage-api-key.txt").exists())   # steht schon drin: nicht anfassen
         self.assertEqual(api_keys.migrate_legacy_files(self.dir), [])
+
+    def test_old_mcp_env_is_copied_where_missing_and_kept(self):
+        old = self.dir / "mcp.env"
+        old.write_text("# Mail\nPDA_SMTP_HOST=smtp.example.org\nPDA_SMTP_PASSWORD=geheim\nPDA_MAIL_RECIPIENTS=a@b.de\n",
+                       encoding="utf-8")
+        before = old.read_text(encoding="utf-8")
+        self.env.write_text("PDA_SMTP_HOST=neu.example.org\n", encoding="utf-8")
+        self.assertEqual(api_keys.migrate_legacy_env(old, self.env), ["PDA_SMTP_PASSWORD", "PDA_MAIL_RECIPIENTS"])
+        values = config.read_env_file(self.env)
+        self.assertEqual(values["PDA_SMTP_HOST"], "neu.example.org")              # neue .env gewinnt
+        self.assertEqual((values["PDA_SMTP_PASSWORD"], values["PDA_MAIL_RECIPIENTS"]), ("geheim", "a@b.de"))
+        self.assertEqual(old.read_text(encoding="utf-8"), before)                # alte Datei unverändert
+        self.assertEqual(api_keys.migrate_legacy_env(old, self.env), [])
+        self.assertEqual(api_keys.migrate_legacy_env(self.dir / "fehlt.env", self.env), [])
 
     def test_tests_never_touch_the_real_files(self):
         # tests/conftest.py: eigene .env und eigener App-Datenordner im Temp-Ordner
         temp = Path(tempfile.gettempdir()).resolve()
         self.assertTrue(config.APP_DATA_DIR.resolve().is_relative_to(temp), config.APP_DATA_DIR)
         self.assertTrue(Path(os.environ["PDA_ENV_FILE"]).resolve().is_relative_to(temp))
+        self.assertTrue(config.LEGACY_MCP_ENV_FILE.resolve().is_relative_to(temp), config.LEGACY_MCP_ENV_FILE)
 
 
 if __name__ == "__main__":

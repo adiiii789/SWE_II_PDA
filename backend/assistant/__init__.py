@@ -8,6 +8,7 @@ Aufbau:
   ollama.py            OllamaModel - lokal installierte Modelle
   claude_code.py       ClaudeCodeModel - Claude über die Claude-Code-Anmeldung (eigenes Claude-Abo)
   model_assistant.py   Gemeinsamer Verlauf und Werkzeugaufrufe für je einen Anbieter
+  tool_activity.py     Welches Werkzeug gerade läuft - Anzeige im Popup
   model_picker.py      Wechsel zwischen den Anbietern
   tools.py             ToolProvider-Protokoll (Integrationen, MCP) + CompositeToolProvider
   skills/              Fähigkeiten des Assistenten (morning, travel, organization)
@@ -45,9 +46,10 @@ def _model_assistant(backend: str) -> Assistant:
     instructions = "\n\n".join(skill.instructions for skill in SKILLS)
     preferences = default_store()
     args = (tools, preferences, instructions, config.ASSISTANT_MAX_TOOL_ROUNDS, config.ASSISTANT_MAX_HISTORY)
-    shared = {"live_view": LiveView()}   # eine Anzeige für alle Anbieter
-    gemini = GeminiAssistant(GeminiModel(config.GEMINI_MODEL, config.GEMINI_TIMEOUT_S),
-                             *args, **shared)
+    from backend.events import TOOL_ACTIVITY, events
+    # eine Anzeige für alle Anbieter; laufende Werkzeugaufrufe gehen ans Popup ("Termine abrufen …")
+    shared = {"live_view": LiveView(), "on_tool": partial(events.publish, TOOL_ACTIVITY)}
+    gemini = GeminiAssistant(GeminiModel(config.GEMINI_MODEL, config.GEMINI_TIMEOUT_S), *args, **shared)
     ollama = OllamaAssistant(OllamaModel(OllamaClient(config.OLLAMA_TIMEOUT_S, config.OLLAMA_CATALOG_TIMEOUT_S)),
                              *args, **shared)
     claude = ClaudeCodeAssistant(ClaudeCodeModel(config.CLAUDE_MODEL, config.CLAUDE_WORK_DIR,

@@ -43,7 +43,7 @@ class ToolResult:
     # (backend/business_views.py). Das Sprachmodell sieht nur content.
     data: dict[str, Any] | None = None
     # Eigene Ansicht fürs iframe, z. B. Reiseplan mit Karte. Nur eigene Integrationen -
-    # MCP-Server liefern keine. Ohne zeigt der Assistent die Tabelle der Werkzeugaufrufe.
+    # MCP-Server liefern keine.
     view: View | None = None
 
 

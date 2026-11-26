@@ -38,6 +38,12 @@ _HEX_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 
 
 # --- Einstieg ----------------------------------------------------------------------------------
+def is_view_data(data: Any) -> bool:
+    """Daten, aus denen die Anzeige etwas macht (Termine, Aufgaben, Mails). Der MCP-Server schickt auch
+    bei reinen Text-Werkzeugen wie create_task structuredContent mit ({"result": "..."}) - das zählt nicht."""
+    return isinstance(data, Mapping) and data.get("type") in _BUILDERS
+
+
 def components(results: Iterable[Mapping[str, Any]], now: dt.datetime) -> list[dict[str, Any]]:
     """Komponenten aus den Daten der Werkzeug-Ergebnisse, in Aufrufreihenfolge, doppelte nur einmal."""
     found, seen = [], set()

@@ -155,5 +155,11 @@
       </div>
     </section>
   </main>
+  <script>
+{% include "view_size.js" %}
+EveViewSize.reportContent();
+window.addEventListener("resize", EveViewSize.reportContent);
+window.addEventListener("load", EveViewSize.reportContent);   // nach dem Cover-Bild
+  </script>
 </body>
 </html>

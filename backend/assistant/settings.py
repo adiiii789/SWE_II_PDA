@@ -28,8 +28,9 @@ from backend.preferences import PreferenceStore
 ANSWER_KEY = "answer_settings"
 TOOLS_KEY = "tool_settings"
 PROACTIVE_KEY = "proactive_settings"      # Schema: backend/proactive_settings.py
+VOICE_KEY = "voice_settings"              # Schema: backend/voice_settings.py
 TRAVEL_KEY = "travel_settings"            # Schema: backend/assistant/skills/travel/settings.py
-SETTINGS_KEYS = (ANSWER_KEY, TOOLS_KEY, PROACTIVE_KEY, TRAVEL_KEY)   # nicht als "Bekanntes über den Nutzer" ans Modell
+SETTINGS_KEYS = (ANSWER_KEY, TOOLS_KEY, PROACTIVE_KEY, VOICE_KEY, TRAVEL_KEY)   # nicht als "Bekanntes über den Nutzer" ans Modell
 
 MAX_TEXT_CHARS = 1000                     # Freitext - schützt das Kontextfenster
 INTERNAL_TOOL_PREFIX = "watch_"           # nur für den Wächter (backend/watcher.py), nie fürs Sprachmodell
@@ -261,6 +262,10 @@ TOOL_GROUPS: tuple[ToolGroup, ...] = (
               "Aufgaben lesen, erstellen, ändern, erledigen, löschen und verschieben", TASKS_SETTINGS),
     ToolGroup("basics", "Uhrzeit und Rechnen", ("get_current_time", "calculate"),
               "Aktuelle Uhrzeit, Rechenaufgaben"),
+    ToolGroup("travel", "Reise-Assistent", ("plan_trip_to_next_appointment", "plan_trip", "plan_trip_home",
+                                            "set_home_address", "set_place_address"),
+              "Weg zum nächsten Termin, zu anderen Zielen und nach Hause planen; Heimatadresse und Ortskürzel "
+              "merken (Einstellungen dazu unter ⚙ → Reise)"),
     ToolGroup("weather_stocks", "Wetter und Börse", ("get_weather_forecast", "get_stock_quotes"),
               "Wettervorhersage (Open-Meteo) und Aktienkurse (Alpha Vantage) - dieselben Quellen wie das "
               "Morning-Briefing, das sie auch abgeschaltet nutzt"),

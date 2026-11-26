@@ -59,20 +59,21 @@ class LiveView:
             except Exception as error:   # Netz weg o. ä.: dann eben die bisherige Anzeige
                 log.warning("Anzeige nicht aktualisiert, %s fehlgeschlagen: %s", call.name, error)
                 continue
-            if not result.is_error and result.data:
+            if not result.is_error and business_views.is_view_data(result.data):
                 data.append(result.data)
         return _view(data, now) if data else None
 
 
 def _is_query(call: ToolCall, result: ToolResult, settings: AssistantSettings) -> bool:
-    return not result.is_error and bool(result.data) and settings.view_shown(call.name)
+    return not result.is_error and business_views.is_view_data(result.data) and settings.view_shown(call.name)
 
 
 def _is_change(call: ToolCall, result: ToolResult, settings: AssistantSettings) -> bool:
     """Erfolgreicher Aufruf aus einem angezeigten Bereich, der selbst nichts auflistet (ändert also etwas
-    oder markiert z. B. eine Mail als gelesen). Rückfragen vor riskanten Aufrufen filtert der Assistent
+    oder markiert z. B. eine Mail als gelesen). Text-Werkzeuge liefern vom MCP-Server trotzdem Daten
+    ({"result": "..."}), zählen also nach ihrer Art, nicht danach, ob Daten da sind. Rückfragen vor riskanten Aufrufen filtert der Assistent
     vorher heraus (model_assistant.py)."""
-    return not result.is_error and not result.data and settings.view_shown(call.name)
+    return not result.is_error and not business_views.is_view_data(result.data) and settings.view_shown(call.name)
 
 
 def _unique(calls) -> list[ToolCall]:

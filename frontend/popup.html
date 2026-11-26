@@ -81,6 +81,13 @@
     <div id="design-description"></div>
     <div class="design-label">Avatar</div>
     <div id="design-avatars"></div>
+    <!-- 3D-Begleiter links neben dem Fenster (frontend/companion.js, backend/desktop/companion_window.py) -->
+    <div class="design-label">Begleiter (3D-Figur neben dem Fenster)</div>
+    <div id="companion-choice" class="segmented" role="radiogroup">
+      <button type="button" data-companion="left" role="radio">Links</button>
+      <button type="button" data-companion="right" role="radio">Rechts</button>
+      <button type="button" data-companion="off" role="radio">Aus</button>
+    </div>
   </section>
 
   <!-- Einstellungen (settings.js): legt sich über das ganze Popup; Formular kommt aus get_settings() -->
@@ -90,8 +97,10 @@
       <nav id="settings-tabs">
         <button type="button" data-tab="answer">Antworten</button>
         <button type="button" data-tab="tools">Werkzeuge</button>
-        <button type="button" data-tab="proactive">Proaktive Meldungen</button>
+        <button type="button" data-tab="proactive" title="Proaktive Meldungen">Meldungen</button>
+        <button type="button" data-tab="voice">Stimme</button>
         <button type="button" data-tab="travel">Reise</button>
+        <button type="button" data-tab="companion">Begleiter</button>
         <button type="button" data-tab="keys">Zugangsdaten</button>
       </nav>
       <button type="button" id="settings-close" class="icon-button small" data-icon="close" title="Schließen ohne Speichern (Escape)">✕</button>

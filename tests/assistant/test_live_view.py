@@ -44,7 +44,11 @@ class TaskTools:
             return ToolResult("Aufgaben ...", data={"type": "tasks", "tasks": tasks})
         if name == "update_task":
             self.titles[arguments["task_id"]] = arguments["title"]
-            return ToolResult("Geändert")
+            # wie der echte MCP-Server: auch Text-Werkzeuge haben structuredContent
+            return ToolResult("Geändert", data={"result": "Geändert"})
+        if name == "create_task":
+            self.titles[f"l::{len(self.titles) + 1}"] = arguments["title"]
+            return ToolResult("Angelegt", data={"result": "Angelegt"})
         return ToolResult("ok")
 
 
@@ -75,6 +79,14 @@ class LiveViewTest(unittest.TestCase):
         view = self.round(("update_task", {"task_id": "l::1", "title": "Steuer 2026"}))
         self.assertEqual(titles(view), ["Steuer 2026"])
         self.assertEqual(self.tools.calls[-1], ("list_tasks", {}))   # mit denselben Argumenten
+
+    def test_text_result_with_data_counts_as_change_not_query(self):
+        self.round(("list_tasks", {}))
+        view = self.round(("create_task", {"title": "Einkaufen"}))
+        self.assertEqual(titles(view), ["Steuer", "Einkaufen"])
+        self.assertEqual([call.name for call in self.live.calls], ["list_tasks"])   # create_task nie erneut
+        self.live.refresh(self.tools, self.settings, NOW)
+        self.assertEqual([name for name, _ in self.tools.calls].count("create_task"), 1)
 
     def test_change_after_query_in_same_round_reloads(self):
         view = self.round(("list_tasks", {}), ("update_task", {"task_id": "l::1", "title": "Neu"}))

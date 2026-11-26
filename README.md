@@ -127,6 +127,11 @@ beim Start aus PyCharm kann die Freigabe PyCharm oder Python zugeordnet sein. An
 `PDA_WHISPER_MODEL` (`tiny`, `base`, `medium` …), `PDA_PIPER_VOICE` und `PDA_SPEECH_LANGUAGE`
 (siehe [config.py](backend/config.py)). `PDA_MAC_VOICE` legt optional eine installierte Mac-Stimme fest.
 
+In den Einstellungen (⚙ → Stimme) lässt sich die Piper-Stimme samt Tempo wählen und vorher
+anhören: die Thorsten-Stimmen von Piper, auch die emotionale mit acht Sprechern (neutral, müde,
+flüsternd …). Eine neue Stimme wird beim ersten Vorlesen einmal heruntergeladen (≈ 63–114 MB);
+„Standard“ ist die Stimme aus `PDA_PIPER_VOICE`.
+
 ### Keys und Zugangsdaten (`.env`)
 
 Alle API-Keys und Zugangsdaten stehen in **einer** Datei `.env` im Projektordner (im gepackten
@@ -149,9 +154,9 @@ vor der Datei und lassen sich im Formular nicht ändern. Auch die übrigen `PDA_
 Neustart.
 
 Früher lagen der Gemini- und der Alpha-Vantage-Schlüssel als `gemini-api-key.txt` bzw.
-`alphavantage-api-key.txt` im App-Datenordner. Beim Start übernimmt EVE sie in die `.env` und
-löscht die Textdatei. Steht der Key schon in der `.env`, bleibt die Datei liegen, wird aber nicht
-mehr gelesen.
+`alphavantage-api-key.txt` im App-Datenordner und die Mail-Einstellungen in `mcp_servers/.env`. Beim
+Start übernimmt EVE, was davon in der `.env` noch fehlt. Die alten Dateien bleiben unverändert liegen,
+gelesen wird danach nur noch die `.env`.
 
 Die `.env` ist Klartext wie vorher die Textdateien. Sie sollte also nur für dein Benutzerkonto
 lesbar sein (unter macOS/Linux setzt EVE beim Speichern `chmod 600`).

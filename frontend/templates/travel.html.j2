@@ -47,6 +47,7 @@
   <style>
 {% include "theme.css" %}
 {% include "view.css" %}
+    :focus { outline: none; }   /* kein Fokusrahmen, wie im Rest der Anzeige */
     .route { margin-bottom: 12px; }
     .pick { position: absolute; opacity: 0; pointer-events: none; }
     .tabs { display: flex; flex-wrap: wrap; margin-bottom: 6px; }
@@ -99,7 +100,7 @@
     .tl .halt strong { font-weight: 600; }
     .tl .platform { margin-left: 8px; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px;
                     font-size: 12px; color: var(--text-muted); }
-    .tl .wait { color: #ffd43b; font-size: 12px; }
+    .tl .wait { color: var(--warning); font-size: 12px; }
     .tl .link .track span { width: 6px; background: var(--line); }
     .tl .link-walk .track span { width: 0; border-left: 3px dotted #8b949e; border-radius: 0; background: none; }
     .tl .link-transit .track span { width: 0; border-left: 4px dashed var(--line); border-radius: 0; background: none; }
@@ -110,7 +111,7 @@
     .tl summary { cursor: pointer; font-size: 12px; }
     .tl .stops { list-style: none; padding: 2px 0 0 0; font-size: 12px; }
     .tl .stops span { display: inline-block; width: 40px; font-variant-numeric: tabular-nums; }
-    .tl .msg { margin-top: 4px; font-size: 12px; color: #e3b341; }
+    .tl .msg { margin-top: 4px; font-size: 12px; color: var(--warning); }
     /* Deutschlandticket gilt nicht (Fernverkehr): roter Bereich vom Einstieg bis zum Ausstieg */
     .tl .no-ticket { background: rgba(229, 83, 75, .16); box-shadow: inset 3px 0 0 #e5534b; }
     .tl .halt.no-ticket-start { border-top-left-radius: 6px; border-top-right-radius: 6px; padding-top: 4px; }
@@ -146,7 +147,6 @@
     .map-hint { position: absolute; right: 8px; bottom: 8px; padding: 2px 6px; border-radius: 4px; font-size: 11px;
                 background: rgba(0, 0, 0, .6); color: #ffffff; pointer-events: none; }
     .map-tools { display: none; }
-    .zoom:focus-visible + .map-box .map { outline: 2px solid #6c8ad8; outline-offset: 2px; }
     .zoom:checked + .map-box { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 30;   /* kein inset: Qt-Chromium zu alt */
                                margin: 0; max-width: none; padding: 8px;
                                box-sizing: border-box; background: var(--background); }
@@ -174,9 +174,11 @@
     small { display: block; margin-top: 8px; color: var(--text-muted); }
     {%- for option in options %}
     #mode-{{ option.index }}:checked ~ .panels #panel-{{ option.index }} { display: block; }
-    #mode-{{ option.index }}:checked ~ .tabs label[for="mode-{{ option.index }}"] { background: var(--accent); border-color: #6c8ad8; }
-    #mode-{{ option.index }}:focus-visible ~ .tabs label[for="mode-{{ option.index }}"] { outline: 2px solid #6c8ad8; outline-offset: 1px; }
-    #mode-{{ option.index }}:checked ~ .compare tr[data-row="{{ option.index }}"] td { background: var(--surface); }
+    #mode-{{ option.index }}:checked ~ .tabs label[for="mode-{{ option.index }}"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+    #mode-{{ option.index }}:checked ~ .tabs label[for="mode-{{ option.index }}"] .meta,
+    #mode-{{ option.index }}:checked ~ .tabs label[for="mode-{{ option.index }}"] .free,
+    #mode-{{ option.index }}:checked ~ .tabs label[for="mode-{{ option.index }}"] .badge { color: inherit; opacity: 0.85; }
+    #mode-{{ option.index }}:checked ~ .compare tr[data-row="{{ option.index }}"] td { background: rgba(128, 128, 128, 0.12); }
     {%- endfor %}
   </style>
 </head>
@@ -461,6 +463,14 @@
     for (const input of document.querySelectorAll(".pick")) input.addEventListener("change", () => requestAnimationFrame(units));
     units();
   })();
+
+{% include "view_size.js" %}
+  // Höhe ans Popup melden (Aufteilung Ansicht/Chat); ein anderer Reiter ist anders hoch
+  EveViewSize.reportContent();
+  window.addEventListener("resize", EveViewSize.reportContent);
+  for (const input of document.querySelectorAll(".pick")) {
+    input.addEventListener("change", () => requestAnimationFrame(EveViewSize.reportContent));
+  }
   </script>
 </body>
 </html>

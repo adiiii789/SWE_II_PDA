@@ -54,7 +54,6 @@ const VIEW_REDRAW_MS = 10 * 60000;  // spätestens dann auch ohne geänderte Dat
 // briefing: Morning-Briefing - weitere Hintergrundmeldungen verdrängen es nicht (showReply).
 function showView(html, {refreshed = false, briefing = false} = {}) {
   briefingActive = briefing;
-  document.body.classList.toggle("briefing-view", briefing);
   if (html !== viewHtml) {
     viewTaskState = {};
     viewSize = null;   // bis die neue Ansicht ihre Höhe meldet, bleibt die bisherige Aufteilung
@@ -146,6 +145,67 @@ function updateAgentState() {
   else if (speaking) Avatar.setState("speaking");
   else if (replyPending) Avatar.setState("thinking");
   else Avatar.setState("idle");
+  tellCompanion("state", {state: Avatar.state});
+}
+
+// 3D-Begleiter neben dem Popup (frontend/companion.js): Zustand und Gesten gehen sofort über den
+// EventBus hinüber, nicht über den Bridge-Thread - sonst kämen sie erst nach der Antwort an.
+let companionState = "";
+function tellCompanion(kind, details = {}) {
+  if (!window.notifyPython) return;
+  if (kind === "state") {
+    if (details.state === companionState) return;
+    companionState = details.state;
+  }
+  notifyPython("companion", Object.assign({kind}, details));
+}
+
+// Welche Figur der Begleiter zeigt (Einstellungen → Begleiter): Kennung aus companion_models() oder
+// "builtin"; leer = das Startmodell (backend/config.py). Nur im Browser-Speicher, wie das Design.
+const COMPANION_MODEL_KEY = "pda.companionModel";
+let companionModels = null;   // Antwort von companion_models()
+
+function storedCompanionModel() {
+  try { return localStorage.getItem(COMPANION_MODEL_KEY) || ""; } catch (error) { return ""; }
+}
+
+async function loadCompanionModels() {
+  if (!companionModels) {
+    try { companionModels = await companion_models(); } catch (error) { companionModels = {models: [], start: "builtin"}; }
+  }
+  return companionModels;
+}
+
+// Die gewählte Figur: Kennung, die gerade gilt (gespeichert oder Startmodell)
+async function currentCompanionModel() {
+  const {models, start} = await loadCompanionModels();
+  const stored = storedCompanionModel();
+  return stored === "builtin" || models.some(model => model.id === stored) ? stored : start;
+}
+
+async function sendCompanionModel() {
+  const {models} = await loadCompanionModels();
+  const model = models.find(item => item.id === (storedCompanionModel() || null));
+  if (model) tellCompanion("model", {url: model.url, options: model.options});
+  else if (storedCompanionModel() === "builtin") tellCompanion("model", {url: ""});
+  // sonst: nichts schicken - der Begleiter zeigt schon das Startmodell
+}
+
+async function chooseCompanionModel(id) {
+  try { localStorage.setItem(COMPANION_MODEL_KEY, id); } catch (error) { /* nur für diese Sitzung */ }
+  const {models} = await loadCompanionModels();
+  const model = models.find(item => item.id === id);
+  tellCompanion("model", model ? {url: model.url, options: model.options} : {url: ""});
+}
+
+// Der Begleiter ist (neu) geladen: alles schicken, was er wissen muss
+function syncCompanion() {
+  companionState = "";
+  sendCompanionModel();
+  tellCompanion("side", {value: Appearance.companionSide});
+  tellCompanion("visible", {value: Appearance.companionShown});
+  tellCompanion("theme", {accent: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()});
+  tellCompanion("state", {state: Avatar.state});
 }
 
 function isNearBottom() {
@@ -210,6 +270,7 @@ function createMessage(text, role) {
 }
 
 function addMessage(text, role) {
+  if (role === "error") tellCompanion("error");
   const element = createMessage(text, role);
   appendToChat(element, role === "user");
   return element;
@@ -268,6 +329,7 @@ function addAttachments(message, attachments) {
 // Proaktive Meldungen (backend/proactive.py) haben zusätzlich "proactive": true und "title".
 function showReply(reply) {
   const message = createMessage(reply.text, "assistant");
+  tellCompanion(reply.proactive ? "proactive" : "reply");
   if (reply.proactive) {
     markProactive(message, reply.title);
     Avatar.flash();
@@ -304,6 +366,53 @@ function markProactive(message, title) {
   message.prepend(label);
 }
 
+// "denkt nach …" unter der Nachricht des Nutzers; zeigt auch, welches Werkzeug gerade läuft
+// (Ereignis tool_activity, backend/assistant/tool_activity.py) und welche schon fertig sind.
+let pendingBubble = null;   // {node, label, steps, running}
+const THINKING_LABEL = "denkt nach …";
+
+function createPending() {
+  const pending = document.createElement("div");
+  pending.className = "pending";
+  const row = pending.appendChild(document.createElement("div"));
+  row.className = "pending-row";
+  row.appendChild(Avatar.create(16, "orb pending-orb"));
+  const dots = row.appendChild(document.createElement("span"));
+  dots.className = "think-dots";
+  for (let i = 0; i < 3; i++) dots.appendChild(document.createElement("i"));
+  const label = row.appendChild(document.createElement("span"));
+  label.className = "pending-label";
+  label.textContent = THINKING_LABEL;
+  const steps = pending.appendChild(document.createElement("ul"));
+  steps.className = "tool-steps";
+  steps.hidden = true;
+  pendingBubble = {node: pending, label, steps, running: null};
+  return pending;
+}
+
+function showToolActivity(activity) {
+  if (!pendingBubble || !activity || typeof activity.label !== "string") return;
+  const bubble = pendingBubble;
+  const status = document.getElementById("agent-status");
+  if (activity.phase === "start") {
+    bubble.label.textContent = `${activity.label} …`;   // nur Text: Namen können von fremden MCP-Servern kommen
+    bubble.label.title = activity.group || "";
+    bubble.running = activity.label;
+    if (status && Avatar.state === "thinking") status.textContent = activity.label.toLowerCase() + " …";
+  } else if (activity.phase === "end") {
+    const step = bubble.steps.appendChild(document.createElement("li"));
+    step.className = activity.error ? "tool-step failed" : "tool-step";
+    step.textContent = activity.label;
+    if (activity.group) step.title = activity.group;
+    bubble.steps.hidden = false;
+    bubble.running = null;
+    bubble.label.textContent = THINKING_LABEL;
+    bubble.label.title = "";
+    if (status && Avatar.state === "thinking") status.textContent = "denkt nach";
+  }
+  if (isNearBottom()) scrollToBottom();
+}
+
 // spoken: Nachricht kam per Spracheingabe - dann wird die Antwort vorgelesen.
 async function submitText(text, spoken = false) {
   if (modelSelect.disabled) {
@@ -313,10 +422,7 @@ async function submitText(text, spoken = false) {
   // Verlauf ganz zugezogen: wieder aufmachen, sonst sieht man die Antwort nicht
   if (document.body.classList.contains("history-closed")) resetSplit();
   addMessage(text, "user");
-  const pending = document.createElement("div");
-  pending.className = "pending";
-  pending.appendChild(Avatar.create(16, "orb pending-orb"));
-  pending.appendChild(document.createElement("span")).textContent = "denkt nach …";
+  const pending = createPending();
   appendToChat(pending, true);
   replyPending = true;
   updateRecordButton();
@@ -338,6 +444,7 @@ async function submitText(text, spoken = false) {
     addMessage(error.message, "error");
   } finally {
     pending.remove();
+    if (pendingBubble && pendingBubble.node === pending) pendingBubble = null;
     replyPending = false;
     updateRecordButton();
   }
@@ -612,6 +719,11 @@ chatMaxButton.addEventListener("click", toggleChatMaximized);
 enlargeButton.addEventListener("click", toggleEnlarged);
 document.addEventListener("keydown", onKeyDown);
 onPythonEvent("assistant_message", showReply);   // Nachrichten, die das Backend von sich aus schickt
+onPythonEvent("companion_ready", syncCompanion);  // 3D-Begleiter geladen
+onPythonEvent("tool_activity", showToolActivity);  // welches Werkzeug der Assistent gerade aufruft
+document.addEventListener("appearancechange", syncCompanion);
+// Popup geht auf: der Begleiter winkt
+document.addEventListener("visibilitychange", () => { if (!document.hidden) tellCompanion("hello"); });
 start_view().then(showView);
 updateLayoutButtons();
 addMessage('Hallo! Frag mich etwas oder schreib "hilfe" für die festen Befehle.', "assistant");

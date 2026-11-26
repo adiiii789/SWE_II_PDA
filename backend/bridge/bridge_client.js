@@ -45,6 +45,12 @@
     }));
   }
 
+  // Ereignis sofort an Python (EventBus) - ohne Antwort und ohne auf laufende Aufrufe zu warten.
+  // Nur Namen, die web_bridge.attach(notifications=...) für diese Seite freigibt.
+  window.notifyPython = (name, payload) => {
+    getBridge().then(b => b.notify(name, JSON.stringify(payload === undefined ? null : payload)));
+  };
+
   window.onPythonEvent = (name, handler) => {
     if (!eventHandlers.has(name)) eventHandlers.set(name, []);
     eventHandlers.get(name).push(handler);

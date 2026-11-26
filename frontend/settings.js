@@ -12,7 +12,7 @@ const settingsResetButton = document.getElementById("settings-reset");
 const settingsTabs = Array.from(document.querySelectorAll("#settings-tabs button"));
 
 let settingsForm = null;       // letzte Antwort von get_settings()
-let settingsTab = "answer";    // "answer" | "tools" | "proactive" | "travel" | "keys"
+let settingsTab = "answer";    // "answer" | "tools" | "proactive" | "voice" | "travel" | "companion" | "keys"
 let resetArmed = false;        // Zurücksetzen braucht einen zweiten Klick
 
 function element(tag, className, text) {
@@ -107,12 +107,26 @@ function buildFields(container, fields, values, idPrefix) {
 
 let readSettings = () => ({});
 
+let companionChoice = {models: [], value: "builtin"};   // für das Feld "Figur", siehe openSettings
+
+function companionFields() {
+  return [
+    {key: "shown", kind: "bool", label: "3D-Begleiter anzeigen"},
+    {key: "model", kind: "choice", label: "Figur",
+      help: "Modelle aus dem Ordner frontend/models. Anpassen lässt sich jedes über eine gleichnamige .json-Datei.",
+      choices: [...companionChoice.models.map(model => ({value: model.id, label: model.title})),
+        {value: "builtin", label: "Eingebaute Figur"}]},
+    {key: "side", kind: "choice", label: "Position", help: "Auf welcher Seite des Fensters die Figur steht.",
+      choices: [{value: "left", label: "Links vom Fenster"}, {value: "right", label: "Rechts vom Fenster"}]},
+  ];
+}
+
 function renderSettings() {
   // nicht replaceChildren(): das Chromium von Qt 5 kennt es noch nicht
   while (settingsBody.firstChild) settingsBody.removeChild(settingsBody.firstChild);
   resetArmed = false;
   updateResetButton();
-  const {answer, tools, proactive, travel} = settingsForm;
+  const {answer, tools, proactive, voice, travel} = settingsForm;
 
   const answerSection = element("section", "settings-section");
   answerSection.dataset.tab = "answer";
@@ -133,12 +147,35 @@ function renderSettings() {
     "Wann sich der PDA von selbst meldet. Gilt ab der nächsten Prüfung."));
   const proactiveReaders = buildGroups(proactiveSection, proactive, "proactive");
 
+  // Stimme (backend/voice_settings.py): Probe mit den Werten im Formular, noch ohne zu speichern
+  const voiceSection = element("section", "settings-section");
+  voiceSection.dataset.tab = "voice";
+  voiceSection.appendChild(element("p", "settings-intro",
+    "Mit welcher Stimme der Assistent vorliest. Eine neue Stimme lädt beim ersten Vorlesen einmal herunter."));
+  const readVoice = buildFields(voiceSection, voice.fields, voice.values, "voice");
+  const previewRow = voiceSection.appendChild(element("div", "setting"));
+  const previewButton = previewRow.appendChild(element("button", "", "Probe anhören"));
+  previewButton.type = "button";
+  previewButton.disabled = !speech.output;
+  if (!speech.output) previewRow.appendChild(element("div", "setting-help", "Sprachausgabe ist nicht verfügbar."));
+  previewButton.addEventListener("click", () => previewVoice(readVoice()));
+
+  // Reise-Assistent (backend/assistant/skills/travel/settings.py)
   const travelSection = element("section", "settings-section");
   travelSection.dataset.tab = "travel";
   travelSection.appendChild(element("p", "settings-intro",
     "Reise-Assistent: wie er Verkehrsmittel abwägt, an die Abfahrt erinnert und den Heimweg zeigt. Gilt ab dem nächsten Plan."));
   const travelReaders = buildGroups(travelSection, travel || [], "travel");
 
+  // Begleiter: nur im Browser gespeichert (appearance.js), deshalb nicht im Schema von get_settings()
+  const companionSection = element("section", "settings-section");
+  companionSection.dataset.tab = "companion";
+  companionSection.appendChild(element("p", "settings-intro",
+    "Die 3D-Figur neben dem Fenster. Sie zeigt mit Augen und Licht, ob der Assistent zuhört, nachdenkt oder spricht."));
+  const readCompanion = buildFields(companionSection, companionFields(),
+    {shown: Appearance.companionShown, side: Appearance.companionSide, model: companionChoice.value}, "companion");
+
+  // Zugangsdaten (backend/api_keys.py): Werte kommen nie zurück ins Popup
   const keySection = element("section", "settings-section");
   keySection.dataset.tab = "keys";
   keySection.appendChild(element("p", "settings-intro",
@@ -146,10 +183,11 @@ function renderSettings() {
     "leer lassen = unverändert. Gilt ab der nächsten Anfrage (die Reise-Erinnerung ab dem nächsten Start)."));
   const readKeys = buildKeys(keySection, settingsForm.keys || []);
 
-  settingsBody.append(answerSection, toolSection, proactiveSection, travelSection, keySection);
+  settingsBody.append(answerSection, toolSection, proactiveSection, voiceSection, travelSection, companionSection,
+    keySection);
   const readAll = readers => Object.fromEntries(Object.entries(readers).map(([id, read]) => [id, read()]));
   readSettings = () => ({answer: readAnswer(), tools: readAll(toolReaders), proactive: readAll(proactiveReaders),
-                         travel: readAll(travelReaders), keys: readKeys()});
+    voice: readVoice(), travel: readAll(travelReaders), keys: readKeys(), companion: readCompanion()});
   showSettingsTab(settingsTab);
 }
 
@@ -243,9 +281,20 @@ async function openSettings() {
   settingsButton.classList.add("active");
   setSettingsStatus("lädt …");
   try {
-    settingsForm = await get_settings();
+    const [form, models, current] = await Promise.all([get_settings(), loadCompanionModels(), currentCompanionModel()]);
+    settingsForm = form;
+    companionChoice = {models: models.models, value: current};
     renderSettings();
     setSettingsStatus("");
+  } catch (error) {
+    setSettingsStatus(error.message, true);
+  }
+}
+
+async function previewVoice(values) {
+  setSettingsStatus("Probe läuft … (eine neue Stimme lädt erst herunter)");
+  try {
+    await preview_voice(values);
   } catch (error) {
     setSettingsStatus(error.message, true);
   }
@@ -260,7 +309,13 @@ function closeSettings() {
 async function saveSettings() {
   settingsSaveButton.disabled = true;
   try {
-    settingsForm = await save_settings(readSettings());
+    const {companion, ...values} = readSettings();
+    settingsForm = await save_settings(values);
+    Appearance.applyCompanion(companion.shown ? companion.side : "off");
+    if (companion.model !== companionChoice.value) {
+      companionChoice.value = companion.model;
+      chooseCompanionModel(companion.model);
+    }
     closeSettings();
     addMessage("Einstellungen gespeichert - sie gelten ab sofort.", "assistant");
   } catch (error) {
@@ -283,6 +338,7 @@ async function resetSettings() {
   }
   try {
     settingsForm = await reset_settings();
+    Appearance.applyCompanion("left");
     renderSettings();
     setSettingsStatus("Standardwerte wiederhergestellt.");
   } catch (error) {

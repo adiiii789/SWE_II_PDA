@@ -39,6 +39,11 @@ class PopupWindow(QWidget):
                                                     if sys.platform == "darwin"
                                                     else self._screen().availableGeometry().bottomRight())
         self.tray_geometry: Callable[[], QRect] = QRect
+        # Fläche, deren Klicks das Popup nicht schließen (3D-Begleiter daneben, companion_window.py)
+        self.companion_geometry: Callable[[], QRect] = QRect
+        # Platz (links, rechts) in Pixeln, den das Popup am Bildschirmrand frei lässt - z. B. für den
+        # Begleiter rechts neben dem Popup, obwohl das Popup selbst ganz rechts am Tray sitzt
+        self.side_reserve: Callable[[], tuple[int, int]] = lambda: (0, 0)
         self.enlarge_requested.connect(self.set_enlarged)
         self.show_requested.connect(self._on_show_requested)
         self.outside_click_detected.connect(self._hide_after_outside_click)
@@ -96,7 +101,7 @@ class PopupWindow(QWidget):
         self._last_anchor = QPoint(corner)
         self._animation.stop()
         width, height = self._target_size()
-        end = popup_geometry(corner, self._screen().availableGeometry(), width, height, sys.platform == "darwin")
+        end = popup_geometry(corner, self._available(), width, height, sys.platform == "darwin")
         self.setFixedSize(end.size())
         start = (end.translated(0, -min(24, config.POPUP_SLIDE_IN_OFFSET_PX)) if sys.platform == "darwin"
                  else end.translated(width, height + config.POPUP_SLIDE_IN_OFFSET_PX))
@@ -119,7 +124,7 @@ class PopupWindow(QWidget):
         width, height = self._target_size()
         from_top = sys.platform == "darwin"
         corner = (self._last_anchor or self.anchor()) if from_top else self.geometry().bottomRight() + QPoint(1, 1)
-        rect = popup_geometry(corner, self._screen().availableGeometry(), width, height, from_top)
+        rect = popup_geometry(corner, self._available(), width, height, from_top)
         self.setFixedSize(rect.size())
         self.setGeometry(rect)
 
@@ -127,6 +132,15 @@ class PopupWindow(QWidget):
         geo = self._screen().geometry()
         width_ratio, height_ratio = config.POPUP_ENLARGED_SIZE_RATIO if self._enlarged else config.POPUP_SIZE_RATIO
         return int(geo.width() * width_ratio), int(geo.height() * height_ratio)
+
+    def _available(self) -> QRect:
+        left, right = self.side_reserve()
+        return self._screen().availableGeometry().adjusted(left, 0, -right, 0)
+
+    def relayout(self) -> None:
+        """Lage neu berechnen, z. B. wenn der Begleiter die Seite wechselt."""
+        if self.isVisible():
+            self.set_enlarged(self._enlarged)
 
     def _screen(self):
         return QGuiApplication.screenAt(self._last_anchor or QCursor.pos()) or QGuiApplication.primaryScreen()
@@ -143,7 +157,8 @@ class PopupWindow(QWidget):
             if QApplication.activePopupWidget() is not None:
                 return super().eventFilter(watched, event)
             pos = event.globalPos()
-            if not self.geometry().contains(pos) and not self.tray_geometry().contains(pos):
+            if not (self.geometry().contains(pos) or self.tray_geometry().contains(pos)
+                    or self.companion_geometry().contains(pos)):
                 self.hide()
         return super().eventFilter(watched, event)
 
@@ -160,8 +175,9 @@ class PopupWindow(QWidget):
             self._hide_after_outside_click()
 
     def _hide_after_outside_click(self) -> None:
-        # Den Klick auf das Symbol verarbeitet ausschließlich das Tray-Signal.
-        if not self.tray_geometry().contains(QCursor.pos()):
+        # Den Klick auf das Symbol verarbeitet ausschließlich das Tray-Signal; der Begleiter gehört dazu.
+        pos = QCursor.pos()
+        if not (self.tray_geometry().contains(pos) or self.companion_geometry().contains(pos)):
             self.hide()
 
     def release_desktop_resources(self) -> None:

@@ -14,13 +14,16 @@ Sicherheit:
   lesbar (0600). Die .env ist in .gitignore. Fehlermeldungen nennen nie den Wert.
 - Ein Key aus einer Umgebungsvariablen lässt sich hier nicht ändern (die Datei würde nie gelten).
 
-Früher lagen manche Keys als Textdatei im App-Datenordner (z. B. gemini-api-key.txt).
-migrate_legacy_files() übernimmt sie beim Start in die .env und löscht die Datei danach.
+Früher lagen manche Keys als Textdatei im App-Datenordner (z. B. gemini-api-key.txt) und die
+Mail-Einstellungen in mcp_servers/.env. migrate_legacy_files() und migrate_legacy_env() übernehmen sie
+beim Start in die .env, wenn sie dort noch fehlen. Die alten Dateien bleiben unverändert liegen - es
+wird nichts gelöscht; gelesen wird danach nur noch die .env.
 """
 from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 import tempfile
 from collections.abc import Mapping
@@ -148,9 +151,8 @@ def _write(path: Path, values: Mapping[str, str]) -> None:
 
 
 def migrate_legacy_files(app_data_dir: Path | None = None, path: Path | None = None) -> list[str]:
-    """Keys aus den früheren Textdateien in die .env übernehmen und die Datei löschen. Steht der
-    Key schon in der .env, bleibt die Datei unangetastet (sie wird nur nicht mehr gelesen).
-    Gibt die Namen der übernommenen Keys zurück."""
+    """Keys aus den früheren Textdateien in die .env kopieren, wenn sie dort noch fehlen. Die Dateien
+    bleiben liegen (sie werden nur nicht mehr gelesen). Gibt die Namen der übernommenen Keys zurück."""
     app_data_dir = app_data_dir or config.APP_DATA_DIR
     path = path or config.ENV_FILE
     moved = []
@@ -171,7 +173,31 @@ def migrate_legacy_files(app_data_dir: Path | None = None, path: Path | None = N
         except (OSError, UnicodeError, ValueError) as error:
             log.warning("%s nicht in die .env übernommen: %s", legacy, error)
             continue
-        legacy.unlink()
         moved.append(key.name)
         log.info("%s aus %s in %s übernommen", key.name, legacy, path)
     return moved
+
+
+_ENV_NAME = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
+
+
+def migrate_legacy_env(legacy: Path | None = None, path: Path | None = None) -> list[str]:
+    """Einträge der früheren mcp_servers/.env (Mail-Server, Benutzer, Passwort, Empfänger …) in die .env
+    kopieren, soweit sie dort fehlen. Die alte Datei bleibt unverändert. Gibt die übernommenen Namen zurück."""
+    legacy = legacy or config.LEGACY_MCP_ENV_FILE
+    path = path or config.ENV_FILE
+    if not legacy.is_file() or legacy.resolve() == path.resolve():
+        return []
+    try:
+        old = config.read_env_file(legacy)
+        current = config.read_env_file(path)
+    except (OSError, UnicodeError) as error:
+        log.warning("%s nicht gelesen: %s", legacy, error)
+        return []
+    missing = {name: value for name, value in old.items()
+               if _ENV_NAME.fullmatch(name) and value and not current.get(name)
+               and not any(character in value for character in "\r\n\0")}
+    if missing:
+        _write(path, missing)
+        log.info("%s aus %s in %s übernommen", ", ".join(missing), legacy, path)
+    return list(missing)

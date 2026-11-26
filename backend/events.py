@@ -31,6 +31,19 @@ PROACTIVE_NOTICE = "proactive_notice"
 POPUP_ENLARGED = "popup_enlarged"
 # Fortschritt beim Hochfahren für den Ladebildschirm, Payload wie Startup.status() (backend/startup.py)
 STARTUP_PROGRESS = "startup_progress"
+# 3D-Begleiter neben dem Popup (frontend/companion.js): das Popup meldet per notifyPython
+# {"kind": "state", "state": ...}, {"kind": "reply" | "proactive" | "error" | "hello"},
+# {"kind": "theme", "accent": "#RRGGBB"}, {"kind": "visible", "value": bool} und
+# {"kind": "side", "value": "left" | "right"} (Seite neben dem Popup)
+COMPANION = "companion"
+# Die Seite des Begleiters ist geladen - das Popup schickt daraufhin Zustand und Design erneut
+COMPANION_READY = "companion_ready"
+# Der Begleiter wurde angeklickt und soll einmal ums Popup fahren (Modell-Option "click": "lap",
+# backend/companion_models.py) - backend/desktop/companion_window.py bewegt das Fenster
+COMPANION_LAP = "companion_lap"
+# Der Assistent ruft gerade ein Werkzeug auf (backend/assistant/tool_activity.py):
+# {"phase": "start" | "end", "tool", "label", "group", "error" (nur bei "end")}
+TOOL_ACTIVITY = "tool_activity"
 
 
 class EventBus:

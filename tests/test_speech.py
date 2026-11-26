@@ -131,9 +131,11 @@ class FakeSynthesizer:
     def __init__(self, error=None):
         self.error = error
         self.texts = []
+        self.voices = []
 
-    def synthesize(self, text):
+    def synthesize(self, text, voice=None):
         self.texts.append(text)
+        self.voices.append(voice)
         if self.error:
             raise self.error
         return np.zeros(10, dtype=np.int16), 22050
@@ -186,13 +188,19 @@ class VoiceOutputTest(unittest.TestCase):
         output = speech.VoiceOutput(FakeSynthesizer(), player)
 
         class StoppingSynthesizer(FakeSynthesizer):
-            def synthesize(self, text):
+            def synthesize(self, text, voice=None):
                 output.stop()   # Escape kommt, während die Stimme noch rechnet
-                return super().synthesize(text)
+                return super().synthesize(text, voice)
 
         output._synthesizer = StoppingSynthesizer()
         output.speak("Hallo")
         self.assertEqual(player.played, [])
+
+    def test_voice_for_one_text_is_passed_on(self):
+        synthesizer = FakeSynthesizer()
+        probe = speech.Voice("de_DE-thorsten-high")
+        speech.VoiceOutput(synthesizer, FakePlayer()).speak("Probe", probe)
+        self.assertEqual(synthesizer.voices, [probe])
 
     def test_synthesis_error_is_only_logged(self):
         player = FakePlayer()
@@ -224,6 +232,7 @@ class PiperSynthesizerTest(unittest.TestCase):
         self.voice_dir = Path(tmp.name) / "piper"
         self.voice = mock.Mock()
         self.voice.config.sample_rate = 22050
+        self.voice.config.speaker_id_map = {"neutral": 4, "whisper": 7}
         self.voice.synthesize.return_value = [mock.Mock(audio_int16_array=np.ones(3, dtype=np.int16)),
                                               mock.Mock(audio_int16_array=np.ones(2, dtype=np.int16))]
         for name, attribute, value in (("download", "piper.download_voices.download_voice", None),
@@ -239,6 +248,34 @@ class PiperSynthesizerTest(unittest.TestCase):
         self.download.assert_called_once_with("de_DE-thorsten-medium", self.voice_dir)
         self.load.assert_called_once_with(self.voice_dir / "de_DE-thorsten-medium.onnx")
         self.assertEqual((len(audio), rate), (5, 22050))
+
+    def test_speaker_and_speed_go_to_piper(self):
+        voice = speech.Voice("de_DE-thorsten_emotional-medium", "whisper", 0.85)
+        speech.PiperSynthesizer(voice, self.voice_dir).synthesize("Hallo")
+        synthesis = self.voice.synthesize.call_args.args[1]
+        self.assertEqual((synthesis.speaker_id, synthesis.length_scale), (7, 0.85))
+
+    def test_unknown_speaker_falls_back_to_default(self):
+        voice = speech.Voice("de_DE-thorsten_emotional-medium", "laut")
+        with self.assertLogs(speech.log, "WARNING"):
+            speech.PiperSynthesizer(voice, self.voice_dir).synthesize("Hallo")
+        self.assertIsNone(self.voice.synthesize.call_args.args[1].speaker_id)
+
+    def test_changed_setting_loads_the_other_voice(self):
+        chosen = [speech.Voice("de_DE-thorsten-medium")]
+        synthesizer = speech.PiperSynthesizer(lambda: chosen[0], self.voice_dir)
+        synthesizer.synthesize("eins")
+        synthesizer.synthesize("zwei")
+        chosen[0] = speech.Voice("de_DE-thorsten-high")
+        synthesizer.synthesize("drei")
+        self.assertEqual([call.args[0] for call in self.load.call_args_list],
+                         [self.voice_dir / "de_DE-thorsten-medium.onnx", self.voice_dir / "de_DE-thorsten-high.onnx"])
+
+    def test_preview_voice_does_not_change_the_setting(self):
+        synthesizer = speech.PiperSynthesizer("de_DE-thorsten-medium", self.voice_dir)
+        synthesizer.synthesize("Probe", speech.Voice("de_DE-thorsten-high"))
+        synthesizer.synthesize("Antwort")
+        self.assertEqual(self.load.call_args.args[0], self.voice_dir / "de_DE-thorsten-medium.onnx")
 
     def test_existing_voice_is_not_downloaded(self):
         self.voice_dir.mkdir()
