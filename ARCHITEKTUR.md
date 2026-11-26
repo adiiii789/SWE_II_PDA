@@ -142,6 +142,8 @@ backend/                      BACKEND: läuft in Python
     foreground.py             Fenster ohne Klick des Nutzers in den Vordergrund holen (Fokussperre)
     hotkey.py                 globales Tastenkürzel (Test-Makro für proaktive Meldungen)
     popup_window.py           Popup-Fenster + Einfahr-Animation
+    layout.py                 Fenstergröße und Zoom der Oberfläche relativ zum Bildschirm
+    screens.py                bemerkt Bildschirm-Änderungen zur Laufzeit (Beamer, Auflösung, DPI)
     web_view.py               Browser-Ansicht mit angehängter Brücke
 
 tests/                        automatische Tests (pytest), gegliedert wie backend/
@@ -278,9 +280,16 @@ erzeugen, weil die Tests schon eine eigene `QApplication` haben.
 
 - `Qt.Tool | Qt.FramelessWindowHint` zeigt ein Fenster ohne Rahmen. Beim Klick daneben blendet
   es sich aus. Der Klick auf das Symbol wird separat verarbeitet.
-- Die Größe ist ein Anteil des Bildschirms (`POPUP_SIZE_RATIO`). Die Öffnungsanimation endet
-  am Symbol, unterhalb der Menüleiste auf dem Mac und oberhalb der Taskleiste bei der
-  üblichen Windows-Anordnung.
+- Größe und Maßstab sind relativ zum Bildschirm ([layout.py](backend/desktop/layout.py)): Das Popup
+  nimmt einen Anteil der Bildschirmhöhe mit festem Seitenverhältnis ein (gleich auf 4:3, 16:10, 16:9 und
+  Ultrawide), die Seite wird passend gezoomt (`WebView.set_ui_scale`). Die px-Werte im CSS sind damit
+  Entwurfsmaße für 1080p; auf 4K wächst alles mit, auf kleinen Bildschirmen (480p) gilt ein lesbarer
+  Mindest-Zoom und eine Mindestgröße (`POPUP_MIN_CSS_SIZE`), `popup.css` stapelt dann Bedienelemente.
+- Ändern sich die Bildschirme im Betrieb (Beamer angesteckt/dupliziert, Auflösung, Skalierung),
+  meldet [screens.py](backend/desktop/screens.py) das gebündelt, und `adapt_to_screens()` rechnet
+  Zoom, Größe und Lage neu - am Symbol, das danach woanders liegen kann.
+- Die Öffnungsanimation endet am Symbol, unterhalb der Menüleiste auf dem Mac und oberhalb der
+  Taskleiste bei der üblichen Windows-Anordnung.
 - `closeEvent` versteckt das Fenster nur, statt es zu zerstören. Der Chat-Verlauf bleibt dadurch
   erhalten, wenn man das Popup wieder öffnet.
 

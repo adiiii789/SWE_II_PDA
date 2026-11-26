@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import QApplication, QVBoxLayout, QWidget
 
 from backend import config
 from backend.desktop.foreground import bring_to_front
+from backend.desktop.layout import popup_size, ui_scale
 
 
 def popup_geometry(anchor: QPoint, available: QRect, width: int, height: int, from_top: bool) -> QRect:
@@ -100,7 +101,7 @@ class PopupWindow(QWidget):
     def _show_with_corner(self, corner: QPoint) -> None:
         self._last_anchor = QPoint(corner)
         self._animation.stop()
-        width, height = self._target_size()
+        width, height = self._fit_to_screen()
         end = popup_geometry(corner, self._available(), width, height, sys.platform == "darwin")
         self.setFixedSize(end.size())
         start = (end.translated(0, -min(24, config.POPUP_SLIDE_IN_OFFSET_PX)) if sys.platform == "darwin"
@@ -120,18 +121,38 @@ class PopupWindow(QWidget):
         self._enlarged = enlarged
         if not self.isVisible():
             return   # gilt beim nächsten show_at_cursor
-        self._animation.stop()
-        width, height = self._target_size()
         from_top = sys.platform == "darwin"
-        corner = (self._last_anchor or self.anchor()) if from_top else self.geometry().bottomRight() + QPoint(1, 1)
-        rect = popup_geometry(corner, self._available(), width, height, from_top)
+        self._place((self._last_anchor or self.anchor()) if from_top
+                    else self.geometry().bottomRight() + QPoint(1, 1))
+
+    def adapt_to_screens(self) -> None:
+        """Bildschirme haben sich geändert (backend/desktop/screens.py), z. B. Beamer angesteckt und
+        dupliziert: Maßstab, Größe und Lage neu berechnen - am Symbol, das jetzt woanders liegen kann.
+        Der alte Ankerpunkt gilt nicht mehr, er liegt evtl. auf einem abgesteckten Bildschirm."""
+        self._last_anchor = None
+        if not self.isVisible():
+            self._fit_to_screen()   # Seite schon im neuen Maßstab, falls sie gleich aufgeht
+            return
+        corner = self.anchor()
+        self._last_anchor = QPoint(corner)
+        self._place(corner)
+
+    def _place(self, corner: QPoint) -> None:
+        """Ohne Animation an die Ecke setzen (Symbol oder bisherige Kante)."""
+        self._animation.stop()
+        width, height = self._fit_to_screen()
+        rect = popup_geometry(corner, self._available(), width, height, sys.platform == "darwin")
         self.setFixedSize(rect.size())
         self.setGeometry(rect)
 
-    def _target_size(self) -> tuple[int, int]:
-        geo = self._screen().geometry()
-        width_ratio, height_ratio = config.POPUP_ENLARGED_SIZE_RATIO if self._enlarged else config.POPUP_SIZE_RATIO
-        return int(geo.width() * width_ratio), int(geo.height() * height_ratio)
+    def _fit_to_screen(self) -> tuple[int, int]:
+        """Maßstab an die Seite geben und die Fenstergröße dazu liefern (backend/desktop/layout.py)."""
+        available = self._screen().availableGeometry()
+        scale = ui_scale(available.width(), available.height())
+        set_scale = getattr(self.content, "set_ui_scale", None)   # Web-Ansicht; in Tests ein QLabel
+        if set_scale is not None:
+            set_scale(scale)
+        return popup_size(available.width(), available.height(), scale, self._enlarged)
 
     def _available(self) -> QRect:
         left, right = self.side_reserve()

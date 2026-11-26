@@ -18,6 +18,7 @@ from backend.companion_models import is_model, model_entry
 from backend.desktop.companion_window import CompanionWindow
 from backend.desktop.hotkey import GlobalHotkey
 from backend.desktop.popup_window import PopupWindow
+from backend.desktop.screens import ScreenWatcher
 from backend.desktop.tray_icon import TrayIcon
 from backend.desktop.web_view import WebView
 from backend.events import COMPANION, COMPANION_LAP, COMPANION_READY, POPUP_ENLARGED, PROACTIVE_NOTICE, EventBus, events
@@ -141,6 +142,9 @@ class Application:
         self.popup.anchor = self.tray.anchor
         self.popup.tray_geometry = self.tray.geometry
         self.tray.left_clicked.connect(self.popup.toggle_at_anchor)
+        # Beamer/Monitor an- oder abgesteckt, dupliziert, Auflösung oder Skalierung geändert: live anpassen
+        self.screens = ScreenWatcher(qt_app)
+        self.screens.changed.connect(self.adapt_to_screens)
         self.tray.quit_requested.connect(qt_app.quit)
         self.tray.show()
 
@@ -162,9 +166,15 @@ class Application:
         self.stop_triggers = start_triggers()   # autonome Fähigkeiten, z. B. Reise-Erinnerung
         qt_app.aboutToQuit.connect(self.shutdown)
 
+    def adapt_to_screens(self) -> None:
+        self.popup.adapt_to_screens()
+        if self.companion is not None and self.companion.isVisible():
+            self.companion.follow()   # Größe hängt an der Bildschirmhöhe, auch wenn das Popup gleich bleibt
+
     def shutdown(self) -> None:
         """Bridge-Thread beenden und Web-View freigeben (vermeidet WebEngine-Warnungen)."""
         self.stop_triggers()
+        self.screens.stop()
         if self.watcher is not None:
             self.watcher.stop()
         for unsubscribe in self._unsubscribe:

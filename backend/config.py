@@ -120,8 +120,24 @@ PROACTIVE_STATE_FILE = APP_DATA_DIR / "proactive_state.json"   # was schon gemel
 STARTUP_OPEN_POPUP = _ENV.get("PDA_STARTUP_OPEN_POPUP", "1") != "0"
 
 POPUP_PAGE = FRONTEND_DIR / "popup.html"
-POPUP_SIZE_RATIO = (0.3, 0.6)         # Anteil des Bildschirms (Breite, Höhe)
-POPUP_ENLARGED_SIZE_RATIO = (0.55, 0.9)   # vergrößertes Popup (Knopf im Chat)
+# Größen relativ zum Bildschirm (backend/desktop/layout.py), gerechnet mit der freien Fläche in logischen
+# Pixeln. Die px-Werte in den CSS-Dateien sind Entwurfsmaße für UI_REFERENCE_SCREEN (1080p ohne
+# Taskleiste) und werden mit dem Maßstab gezoomt: 4K/1440p größer, kleine Bildschirme kleiner.
+UI_REFERENCE_SCREEN = (1440, 1040)    # bei dieser Fläche Maßstab 1 (Breite zählt erst bei schmalen Bildschirmen)
+UI_SCALE_RANGE = (0.9, 2.5)           # darunter wird Text zu klein zum Lesen, Knöpfe zu klein zum Treffen
+POPUP_HEIGHT_RATIO = 0.6              # Anteil der Bildschirmhöhe
+POPUP_ASPECT = 0.9                    # Breite / Höhe - gleich auf 4:3, 16:10, 16:9 und Ultrawide
+POPUP_MAX_WIDTH_RATIO = 0.45          # höchstens dieser Anteil der Breite (hochkant, 4:3)
+POPUP_ENLARGED_HEIGHT_RATIO = 0.9     # vergrößertes Popup (Knopf im Chat)
+POPUP_ENLARGED_ASPECT = 1.15
+POPUP_ENLARGED_MAX_WIDTH_RATIO = 0.7
+# Kleinste Fläche, auf der Kopfzeile, Chat, Eingabe und Einstellungen bedienbar bleiben - in CSS-Pixeln,
+# wird mit dem Maßstab multipliziert. Auf sehr kleinen Bildschirmen (480p) wird das Popup lieber fast
+# bildschirmfüllend als unbedienbar; mehr als den Bildschirm nimmt es nie.
+POPUP_MIN_CSS_SIZE = (360, 460)
+# Bildschirm geändert (Beamer angesteckt/dupliziert, Auflösung, Skalierung, Taskleiste): so lange warten,
+# bis Windows/macOS fertig umgeschaltet haben - dabei kommen meist mehrere Meldungen kurz hintereinander.
+SCREEN_CHANGE_DELAY_MS = 300
 # Seitenhintergrund der Web-Ansicht vor dem Laden: durchsichtig - das Fenster ist es auch, die Seite
 # zeichnet Fläche und Ecken selbst (--window-shape in frontend/theme.css). Kein weißes Aufblitzen.
 POPUP_BACKGROUND = "transparent"

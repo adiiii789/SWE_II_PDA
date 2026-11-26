@@ -112,6 +112,20 @@ class ApplicationTest(unittest.TestCase):
         self.assertEqual(self.application.popup.size(), normal)
         self.application.popup.hide()
 
+    def test_page_is_zoomed_to_the_screen(self):
+        from backend.desktop.layout import ui_scale
+        popup = self.application.popup
+        popup.show_at_cursor()
+        available = popup._screen().availableGeometry()
+        self.assertAlmostEqual(popup.content.zoomFactor(), ui_scale(available.width(), available.height()), places=2)
+        popup.hide()
+
+    def test_screen_change_adapts_popup_and_companion(self):
+        # Beamer angesteckt, dupliziert, Auflösung oder Skalierung geändert (backend/desktop/screens.py)
+        with mock.patch.object(self.application.popup, "adapt_to_screens") as adapt:
+            self.application.screens.changed.emit()
+        adapt.assert_called_once_with()
+
     def test_shutdown_hides_tray(self):
         self.application.shutdown()
         self.assertFalse(self.application.tray.isVisible())

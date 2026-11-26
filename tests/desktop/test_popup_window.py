@@ -2,15 +2,21 @@ import unittest
 import sys
 from unittest import mock
 
-from PyQt5.QtCore import QPoint, QRect, Qt
+from PyQt5.QtCore import QAbstractAnimation, QPoint, QRect, Qt
 from PyQt5.QtGui import QCloseEvent, QCursor, QGuiApplication
 from PyQt5.QtWidgets import QLabel
 
 from tests.qt_helpers import qt_app, wait_until
 
-from backend import config
 from backend.desktop import popup_window
+from backend.desktop.layout import popup_size, ui_scale
 from backend.desktop.popup_window import PopupWindow, popup_geometry
+
+
+def expected_size(enlarged: bool = False) -> tuple[int, int]:
+    available = QGuiApplication.primaryScreen().availableGeometry()
+    scale = ui_scale(available.width(), available.height())
+    return popup_size(available.width(), available.height(), scale, enlarged)
 
 
 class PopupWindowTest(unittest.TestCase):
@@ -35,12 +41,10 @@ class PopupWindowTest(unittest.TestCase):
         self.assertIs(self.popup.content, self.content)
         self.assertIs(self.content.parent(), self.popup)
 
-    def test_show_at_cursor_uses_screen_ratio_and_ends_at_cursor(self):
+    def test_show_at_cursor_uses_relative_size_and_ends_at_cursor(self):
         QCursor.setPos(QPoint(800, 600))
         cursor = QCursor.pos()
-        geo = QGuiApplication.primaryScreen().geometry()
-        width = int(geo.width() * config.POPUP_SIZE_RATIO[0])
-        height = int(geo.height() * config.POPUP_SIZE_RATIO[1])
+        width, height = expected_size()
 
         self.popup.show_at_cursor()
 
@@ -78,8 +82,7 @@ class PopupWindowTest(unittest.TestCase):
     def test_enlarged_size_is_used_on_next_show(self):
         self.popup.set_enlarged(True)
         self.popup.show_at_cursor()
-        geo = QGuiApplication.primaryScreen().geometry()
-        self.assertEqual(self.popup.width(), int(geo.width() * config.POPUP_ENLARGED_SIZE_RATIO[0]))
+        self.assertEqual(self.popup.width(), expected_size(enlarged=True)[0])
 
     def test_enlarge_while_visible_keeps_bottom_right_corner_on_screen(self):
         QCursor.setPos(QPoint(800, 600))
@@ -90,14 +93,41 @@ class PopupWindowTest(unittest.TestCase):
 
         self.popup.set_enlarged(True)
 
-        geo = QGuiApplication.primaryScreen().geometry()
-        self.assertEqual(self.popup.width(), int(geo.width() * config.POPUP_ENLARGED_SIZE_RATIO[0]))
+        self.assertEqual(self.popup.width(), expected_size(enlarged=True)[0])
         available = QGuiApplication.primaryScreen().availableGeometry()
         self.assertTrue(available.contains(self.popup.geometry().topLeft()))
         self.assertLessEqual(self.popup.geometry().bottom(), max(corner.y(), available.bottom()))
 
         self.popup.set_enlarged(False)
-        self.assertEqual(self.popup.width(), int(geo.width() * config.POPUP_SIZE_RATIO[0]))
+        self.assertEqual(self.popup.width(), expected_size()[0])
+
+    def test_scale_is_passed_to_the_page(self):
+        self.content.set_ui_scale = mock.Mock()
+        self.popup.show_at_cursor()
+        available = QGuiApplication.primaryScreen().availableGeometry()
+        self.content.set_ui_scale.assert_called_with(ui_scale(available.width(), available.height()))
+
+    def test_adapt_to_screens_moves_open_popup_to_the_new_anchor(self):
+        # z. B. Beamer dupliziert: Auflösung anders, das Tray-Icon sitzt woanders
+        self.popup.anchor = lambda: QPoint(900, 700)
+        self.popup.show_at(self.popup.anchor())
+        self.popup.anchor = lambda: QPoint(600, 500)
+        self.content.set_ui_scale = mock.Mock()
+
+        self.popup.adapt_to_screens()
+
+        self.assertNotEqual(self.popup._animation.state(), QAbstractAnimation.Running)   # sofort, ohne Einfahren
+        available = self.popup._screen().availableGeometry()
+        width, height = expected_size()
+        self.assertEqual(self.popup.geometry(),
+                         popup_geometry(QPoint(600, 500), available, width, height, sys.platform == "darwin"))
+        self.content.set_ui_scale.assert_called()
+
+    def test_adapt_to_screens_keeps_hidden_popup_hidden_but_rescales_page(self):
+        self.content.set_ui_scale = mock.Mock()
+        self.popup.adapt_to_screens()
+        self.assertFalse(self.popup.isVisible())
+        self.content.set_ui_scale.assert_called_once()
 
     def test_close_only_hides(self):
         self.popup.show()

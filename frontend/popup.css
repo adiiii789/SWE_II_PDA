@@ -594,6 +594,35 @@ input[type=checkbox]:checked::after {
 .settings-description { color: var(--text-muted); margin-bottom: 6px; line-height: 1.45; }
 .settings-tools { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
 
+/* ---- Kleine Fenster --------------------------------------------------------------------------
+   Die Größen hier sind CSS-Pixel; die Web-Ansicht zoomt die Seite passend zum Bildschirm
+   (backend/desktop/layout.py). Auf kleinen Bildschirmen (480p, 4:3, hochkant) bleibt der Zoom
+   lesbar, dafür wird das Fenster in CSS-Pixeln schmaler/niedriger (mindestens 360 × 460, siehe
+   config.POPUP_MIN_CSS_SIZE). Dann stapeln sich Bedienelemente, statt aus dem Bild zu laufen. */
+@media (max-width: 460px) {
+  .setting > * + * { margin-left: 0; }
+  .setting-label { flex: 1 0 100%; margin-bottom: 4px; }
+  .setting-bool .setting-label { margin-bottom: 0; }
+  .setting select, .setting input[type=number], .setting input[type=time],
+  .setting input[type=password] { flex: 1 1 auto; min-width: 0; max-width: none; }
+  .setting > .setting-help { margin-top: 4px; }
+  #settings-footer { flex-wrap: wrap; }
+  /* umgebrochene Knöpfe: gleiche Abstände auf jeder Zeile, keine Einrückung durch "* + *" */
+  #settings-status { flex: 1 0 100%; margin: 0 3px 6px; }
+  #settings-footer button { flex: 1 1 auto; margin: 4px 3px 0; }
+  #design-panel { left: 12px; right: 12px; width: auto; }
+  .message { max-width: 92%; }
+}
+@media (max-height: 540px) {
+  body { padding-top: 6px; padding-bottom: 8px; }
+  #app-header { margin-bottom: 6px; }
+  #chat-panel { min-height: 150px; }
+  #listening-orb { width: 64px; height: 64px; }
+  #settings-panel { padding: 8px 12px; }
+  #settings-header { margin-bottom: 8px; }
+  #design-panel { top: 40px; max-height: calc(100% - 48px); }
+}
+
 /* =============================================================================================
    Stile (appearance.js, Gruppe "styles"). Nur statische Regeln; Variablen setzt appearance.js.
    ============================================================================================= */

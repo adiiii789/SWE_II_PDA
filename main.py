@@ -19,6 +19,10 @@ def configure_qt() -> None:
     """Einstellungen, die vor dem Erzeugen der QApplication gesetzt sein müssen."""
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    # Skalierung genau wie eingestellt (125 %, 150 % …) statt auf ganze Zahlen gerundet - sonst wird aus
+    # 150 % ein Faktor 2 und ein 2K-Bildschirm wirkt für die Größenberechnung (backend/desktop/layout.py)
+    # wie 1280 × 800.
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     if sys.platform == "darwin":
         QApplication.setAttribute(Qt.AA_DontUseNativeMenuBar, True)
     if sys.platform == "win32":  # eigenes Taskleisten-Icon statt python.exe
