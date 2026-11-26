@@ -325,15 +325,11 @@ function addAttachments(message, attachments) {
   message.appendChild(list);
 }
 
-// Antwort des Assistenten anzeigen: {"text", "html", "attachments"} - aus chat() oder als Push vom Backend.
-// Proaktive Meldungen (backend/proactive.py) haben zusätzlich "proactive": true und "title".
-function showReply(reply) {
+// Chat-Blase einer Antwort bauen (ohne sie einzublenden) - für neue Antworten und gespeicherte Chats.
+// time: Zeitpunkt der Meldung (ISO, aus backend/chat_history.py); fehlt er, gilt jetzt.
+function createReply(reply) {
   const message = createMessage(reply.text, "assistant");
-  tellCompanion(reply.proactive ? "proactive" : "reply");
-  if (reply.proactive) {
-    markProactive(message, reply.title);
-    Avatar.flash();
-  }
+  if (reply.proactive) markProactive(message, reply.title, reply.time);
   if (reply.attachments && reply.attachments.length) addAttachments(message, reply.attachments);
   if (reply.html && reply.view_button) {
     message.classList.add("with-view-action");
@@ -348,6 +344,15 @@ function showReply(reply) {
     });
     message.appendChild(button);
   }
+  return message;
+}
+
+// Antwort des Assistenten anzeigen: {"text", "html", "attachments"} - aus chat() oder als Push vom Backend.
+// Proaktive Meldungen (backend/proactive.py) haben zusätzlich "proactive": true und "title".
+function showReply(reply) {
+  const message = createReply(reply);
+  tellCompanion(reply.proactive ? "proactive" : "reply");
+  if (reply.proactive) Avatar.flash();
   appendToChat(message);   // erst komplett aufbauen, dann einblenden - so stimmt die Scrollposition
   if (reply.html && (reply.view_button || !reply.proactive || !briefingActive)) {
     if (reply.view_button && !reply.proactive && chatMaximized) toggleChatMaximized();
@@ -357,13 +362,51 @@ function showReply(reply) {
 }
 
 // Kennzeichnung "meldet sich von selbst" über der Nachricht - Titel nur als Text, nie als HTML.
-function markProactive(message, title) {
+function markProactive(message, title, time) {
   message.classList.add("proactive");
   const label = document.createElement("div");
   label.className = "proactive-label";
-  const time = new Date().toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
-  label.textContent = `🔔 ${title || "Meldung"} · ${time}`;
+  label.textContent = `🔔 ${title || "Meldung"} · ${formatChatTime(time ? new Date(time) : new Date())}`;
   message.prepend(label);
+}
+
+// "14:05" für heute, sonst "24.11., 14:05" (gespeicherte Chats)
+function formatChatTime(date) {
+  if (isNaN(date)) return "";
+  const clock = date.toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
+  if (date.toDateString() === new Date().toDateString()) return clock;
+  return `${date.toLocaleDateString("de-DE", {day: "2-digit", month: "2-digit"})}, ${clock}`;
+}
+
+// --- Gespeicherte Chats (frontend/chats.js) ---------------------------------------------------
+const GREETING = 'Hallo! Frag mich etwas oder schreib "hilfe" für die festen Befehle.';
+
+function clearChat() {
+  while (chatHistory.firstChild) chatHistory.removeChild(chatHistory.firstChild);
+  pendingBubble = null;
+  stickToBottom = true;
+  visibleBottom = 0;
+  onChatScroll();
+}
+
+// Neuer Chat: leerer Verlauf mit Begrüßung, oben wieder die Startansicht
+function showNewChat() {
+  clearChat();
+  addMessage(GREETING, "assistant");
+  start_view().then(html => showView(html)).catch(() => {});
+}
+
+// Gespeicherten Chat zeigen (open_chat in backend/api.py): Nachrichten ohne Animation und ohne
+// Begleiter-Gesten; Antworten mit eigener Ansicht behalten ihren "Anzeigen"-Knopf.
+function showSavedChat(saved) {
+  clearChat();
+  for (const message of saved.messages) {
+    chatHistory.appendChild(message.role === "user" ? createMessage(message.text, "user") : createReply(message));
+  }
+  if (!saved.messages.length) addMessage(GREETING, "assistant");
+  scrollToBottom();
+  onChatScroll();
+  start_view().then(html => showView(html)).catch(() => {});
 }
 
 // "denkt nach …" unter der Nachricht des Nutzers; zeigt auch, welches Werkzeug gerade läuft
@@ -428,6 +471,7 @@ async function submitText(text, spoken = false) {
   updateRecordButton();
   try {
     const reply = await chat(text);
+    if (reply.new_chat) clearChat();   // "neu": neuer gespeicherter Chat (backend/chat_history.py)
     showReply(reply);
     if (/^modell(?:e$|\s)/i.test(text)) await loadModels();
     if (spoken && speech.output && reply.text) {
@@ -726,7 +770,7 @@ document.addEventListener("appearancechange", syncCompanion);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) tellCompanion("hello"); });
 start_view().then(showView);
 updateLayoutButtons();
-addMessage('Hallo! Frag mich etwas oder schreib "hilfe" für die festen Befehle.', "assistant");
+addMessage(GREETING, "assistant");
 // Erst schreiben, wenn der Assistent bereit ist; Modellliste und Sprache setzen ihn voraus.
 messageInput.disabled = true;
 LoadingScreen.begin(async () => {

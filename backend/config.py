@@ -73,6 +73,9 @@ MCP_SERVERS_FILE = ROOT_DIR / "mcp_servers.json"
 # Präferenzen (backend/preferences.py) - außerhalb des Programmordners, damit sie Updates überstehen
 APP_DATA_DIR = app_data_dir()
 PREFERENCES_FILE = APP_DATA_DIR / "preferences.json"
+# Gespeicherte Chats (backend/chat_history.py): eine JSON-Datei pro Chat, die ältesten fallen weg
+CHATS_DIR = Path(_ENV.get("PDA_CHATS_DIR") or APP_DATA_DIR / "chats")
+CHATS_MAX = 100
 # Leerer Arbeitsordner für Claude Code. Im Temp-Ordner, weil Python aus dem Microsoft Store neue Ordner
 # unter AppData umleitet - claude.exe würde sie dann nicht finden.
 CLAUDE_WORK_DIR = Path(tempfile.gettempdir()) / "PersonalDigitalAgent-claude"

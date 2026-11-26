@@ -87,6 +87,7 @@ mcp_servers/                  eigene MCP-Server (eigene Prozesse, nicht Teil von
 frontend/                     FRONTEND: läuft im Browser (HTML/CSS/JS)
   popup.html/.css/.js         Popup: Anzeige oben, Chat unten
   settings.js                 ⚙ Einstellungen: Formular, allein aus dem Schema von get_settings()
+  chats.js                    gespeicherte Chats: Liste, fortsetzen, neu, löschen (list_chats/open_chat …)
   avatar.js                   animierter, runder Avatar (Canvas) – zeigt Bereit/Denkt/Hört zu/Spricht
   appearance.js               Designs (Farbschemata) und Avatar-Stil, Auswahl über den Design-Knopf
   proactive_alert.js/.css     große Einblendung bei proaktiven Meldungen, je Design eigener Auftritt
@@ -109,6 +110,7 @@ backend/                      BACKEND: läuft in Python
   views.py                    Ansicht-Anfragen: TemplateView oder HtmlView
   rendering.py                macht aus einer Anfrage HTML (Jinja2 bzw. eigenes HTML)
   preferences.py              Kontextwissen, persönliche Präferenzen (JsonPreferenceStore)
+  chat_history.py             gespeicherte Chats: laufender Chat + Archiv (eine JSON-Datei je Chat)
   speech.py                   Spracheingabe (faster-whisper) und -ausgabe (Piper/Windows-Stimme)
   voice_settings.py           Einstellungen → Stimme: Piper-Stimme, Sprecher und Tempo
   assistant/                  Fachlogik: Assistent hinter dem Chat
@@ -714,6 +716,17 @@ die aktive Auswahl und hält getrennte Verläufe für die beiden Anbieter. Beide
 `CompositeToolProvider` für MCP und Fähigkeiten. Ollama wird über die lokale API abgefragt.
 Wenn der Dienst ausfällt, bleibt das gewählte Modell aktiv und die Anfrage meldet den Fehler.
 [api.py](backend/api.py) hält den Assistenten für die ganze Laufzeit im Cache.
+
+### Gespeicherte Chats – [chat_history.py](backend/chat_history.py)
+
+`api.chat()` hängt Nachricht und Antwort an den laufenden Chat (`ChatHistory`), proaktive Meldungen
+ebenso; `ChatStore` schreibt ihn atomar nach `config.CHATS_DIR/<id>.json`, sobald der Nutzer darin
+etwas geschrieben hat. Gespeichert wird, was im Chat zu sehen war (Text, bei Antworten mit
+„Anzeigen“-Knopf auch das HTML der Ansicht), nicht die Werkzeugaufrufe. `open_chat()` gibt die
+Nachrichten fürs Popup zurück und übergibt dem Assistenten das Gespräch als reinen Text
+(`ConversationMemory.restore_conversation`, [base.py](backend/assistant/base.py)); feste Befehle wie
+`hilfe` bleiben dabei draußen. `ModelPicker` gibt es an alle Anbieter weiter. `api.py` sperrt erst
+`_assistant_lock`, dann `_history_lock` – nie umgekehrt.
 
 ### Tool-Calling und MCP
 

@@ -379,6 +379,22 @@ Einstellbar sind:
   Grundeinstellungen. Eigene Zusatzfelder: `ToolGroup` in
   [backend/assistant/settings.py](backend/assistant/settings.py) eintragen.
 
+### Gespeicherte Chats
+
+Jedes Gespräch wird von selbst gespeichert, sobald man darin etwas geschrieben hat. Der Knopf
+**Chats** (Sprechblasen, ganz links oben) zeigt die gespeicherten Chats, zuletzt benutzte zuerst:
+
+- **Klick auf einen Chat** setzt ihn fort. Der Assistent kennt das bisherige Gespräch wieder (als
+  Text; Werkzeugergebnisse wie Mails holt er bei Bedarf neu). Antworten mit eigener Ansicht
+  (Reiseplan, Morning-Briefing) behalten ihren „Anzeigen“-Knopf.
+- **＋ Neuer Chat** (oder `neu` schreiben) beginnt ein leeres Gespräch, der alte bleibt gespeichert.
+- **Papierkorb** beim Zeigen auf einen Chat, zweiter Klick („Löschen?“) löscht ihn endgültig.
+- Ab sechs Chats erscheint ein Suchfeld für die Titel (Titel = erste eigene Nachricht).
+
+Gespeichert wird lokal im Datenordner unter `chats/` (eine JSON-Datei je Chat, höchstens 100, die
+ältesten fallen weg; eigener Ort: `PDA_CHATS_DIR`). Proaktive Meldungen landen im gerade offenen
+Chat. Das Panel ist wie die Design-Auswahl aufgebaut und passt sich jedem Design an.
+
 ### Proaktive Meldungen
 
 EVE kann sich **von sich aus** melden, ohne dass man etwas gefragt hat. Zum Vorführen gibt es

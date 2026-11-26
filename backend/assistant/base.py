@@ -5,6 +5,7 @@ Gemini/MCP-Assistent - implementiert das Protokoll Assistant.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -57,6 +58,20 @@ class ProactiveAssistant(Protocol):
     def announce(self, instruction: str) -> str | None:
         """Meldung an den Nutzer zum Auftrag `instruction` (kommt vom Programm, nicht vom Nutzer).
         Die Meldung gehört danach zum Gesprächsverlauf. None = gerade nicht möglich (z. B. kein Modell)."""
+        ...
+
+
+@runtime_checkable
+class ConversationMemory(Protocol):
+    """Optional: Assistenten mit Gesprächsverlauf - gespeicherte Chats lassen sich fortsetzen
+    (backend/chat_history.py)."""
+
+    def new_conversation(self) -> None:
+        """Verlauf vergessen."""
+        ...
+
+    def restore_conversation(self, messages: Sequence[tuple[str, str]]) -> None:
+        """Verlauf durch ein gespeichertes Gespräch ersetzen: (Rolle "user"|"assistant", Text)."""
         ...
 
 

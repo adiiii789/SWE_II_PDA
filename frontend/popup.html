@@ -32,6 +32,7 @@
       </div>
     </div>
     <div id="chat-toolbar">
+      <button type="button" id="chats-button" class="icon-button" data-icon="chats" title="Gespeicherte Chats öffnen oder neuen Chat beginnen">Chats</button>
       <button type="button" id="design-button" class="icon-button" data-icon="palette" title="Design und Avatar auswählen">Design</button>
       <button type="button" id="chat-max-button" class="icon-button" data-icon="chat-max" title="Ansicht ausblenden, Chat über die ganze Höhe">⇕ Chat groß</button>
       <button type="button" id="enlarge-button" class="icon-button" data-icon="enlarge" title="Fenster vergrößern">⤢ Fenster groß</button>
@@ -90,6 +91,19 @@
     </div>
   </section>
 
+  <!-- Gespeicherte Chats (chats.js, backend/chat_history.py): fortsetzen, neu beginnen, löschen.
+       Aufgebaut wie die Design-Auswahl, damit jedes Design es mit einfärbt. -->
+  <section id="chats-panel" hidden>
+    <header class="design-header">
+      <strong>Chats</strong>
+      <button type="button" id="chats-close" class="icon-button small" data-icon="close" title="Schließen (Escape)">✕</button>
+    </header>
+    <button type="button" id="chats-new" class="primary">＋ Neuer Chat</button>
+    <input id="chats-search" type="search" placeholder="Chats durchsuchen …" autocomplete="off">
+    <div id="chats-list" role="list"></div>
+    <div id="chats-status" aria-live="polite"></div>
+  </section>
+
   <!-- Einstellungen (settings.js): legt sich über das ganze Popup; Formular kommt aus get_settings() -->
   <section id="settings-panel" hidden>
     <header id="settings-header">
@@ -125,6 +139,7 @@
   <script src="loading_scenes.js"></script>
   <script src="loading_screen.js"></script>
   <script src="popup.js"></script>
+  <script src="chats.js"></script>
   <script src="settings.js"></script>
 </body>
 </html>

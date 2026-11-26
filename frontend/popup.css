@@ -106,6 +106,8 @@ option, optgroup { background: var(--surface); color: var(--text); }
 [data-icon=send]     { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 19V5M6 11l6-6 6 6'/></svg>"); }
 [data-icon=down]     { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 5v14M6 13l6 6 6-6'/></svg>"); }
 [data-icon=close]    { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'><path d='M6 6l12 12M18 6L6 18'/></svg>"); }
+[data-icon=chats]    { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M4 5h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-4 3v-3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z'/><path d='M16 9h4a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-1v3l-4-3h-4a1 1 0 0 1-1-1v-1'/></svg>"); }
+[data-icon=trash]    { --icon: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'><path d='M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3'/></svg>"); }
 
 /* ---- Kopfzeile ------------------------------------------------------------------------------ */
 
@@ -425,7 +427,7 @@ body[data-agent=transcribing] #input-form::before {
 
 /* ---- Design-Auswahl (appearance.js) --------------------------------------------------------- */
 
-#design-panel {
+#design-panel, #chats-panel {
   position: fixed;
   top: 46px;
   right: 12px;
@@ -480,6 +482,48 @@ body[data-agent=transcribing] #input-form::before {
 .theme-swatch-accent { position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-radius: 50%; }
 .theme-name, .avatar-name { font-size: 11px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .avatar-card .orb { width: 36px; height: 36px; margin-bottom: 4px; }
+/* ---- Gespeicherte Chats (frontend/chats.js): Panel wie die Design-Auswahl ----------------------- */
+
+#chats-panel.busy { cursor: progress; }
+#chats-new { display: block; width: 100%; margin-top: 10px; }
+#chats-search { display: block; width: 100%; box-sizing: border-box; margin-top: 8px; padding: 5px 10px; font-size: 12.5px; }
+#chats-search::placeholder { color: var(--text-muted); }
+#chats-search::-webkit-search-cancel-button { display: none; }
+#chats-list { margin-top: 8px; }
+#chats-list .chat-item {
+  display: flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+#chats-list .chat-item + .chat-item { margin-top: 2px; }
+#chats-list .chat-item:hover { background: var(--control); }
+#chats-list .chat-item.current { border-color: var(--accent); }
+#chats-list .chat-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 8px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+#chats-list .chat-open:hover { background: transparent; }
+.chat-title { max-width: 100%; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-meta { max-width: 100%; margin-top: 1px; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Papierkorb nur beim Zeigen auf den Eintrag; der zweite Klick ("Löschen?") löscht wirklich */
+#chats-list .chat-delete { margin-right: 4px; opacity: 0; }
+#chats-list .chat-item:hover .chat-delete, #chats-list .chat-delete:focus, #chats-list .chat-delete.confirm { opacity: 1; }
+#chats-list .chat-delete:hover { color: var(--danger); }
+#chats-list .chat-delete.confirm { width: auto; padding: 0 8px; font-size: 11px; font-weight: 600; color: var(--danger); }
+#chats-list .chat-delete.confirm::before { display: none; }
+#chats-status { margin-top: 8px; font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+#chats-status:empty { display: none; }
+#chats-status.error { color: var(--danger); }
 
 /* ---- Einstellungen (frontend/settings.js): Overlay über dem ganzen Popup -------------------- */
 
@@ -637,8 +681,9 @@ html[data-theme=neumorph] .assistant code, html[data-theme=neumorph] .assistant 
 html[data-theme=neumorph] #agent-orb { border-radius: 50%; box-shadow: var(--control-shadow); }
 html[data-theme=neumorph] #listening-orb { border-radius: 50%; box-shadow: var(--card-shadow); }
 html[data-theme=neumorph] #listening-overlay { border-top: none; }
-html[data-theme=neumorph] #design-panel { box-shadow: var(--card-shadow); }
+html[data-theme=neumorph] #design-panel, html[data-theme=neumorph] #chats-panel { box-shadow: var(--card-shadow); }
 html[data-theme=neumorph] .theme-card.active, html[data-theme=neumorph] .avatar-card.active { border-color: transparent; box-shadow: var(--inset-shadow); }
+html[data-theme=neumorph] #chats-list .chat-item.current { border-color: transparent; box-shadow: var(--inset-shadow); }
 html[data-theme=neumorph] #scroll-down-button { box-shadow: var(--control-shadow); }
 
 /* ---- Gameboy: das ganze Gerät - beiges Gehäuse, dunkler Rahmen mit Betriebs-LED, grüner
@@ -796,7 +841,8 @@ html[data-theme=gameboy] .proactive-label { text-transform: uppercase; }
 html[data-theme=gameboy] .message.assistant.proactive { border-left-width: 4px; }
 html[data-theme=gameboy] #scroll-down-button { background: #306230; color: #9BBC0F; border-color: #0F380F; }
 html[data-theme=gameboy] button.primary { background: #9C2A5A; border-color: #9C2A5A; color: #F3D3DF; }
-html[data-theme=gameboy] #design-panel, html[data-theme=gameboy] .settings-group { border-color: #4E4C5E; }
+html[data-theme=gameboy] #design-panel, html[data-theme=gameboy] #chats-panel, html[data-theme=gameboy] .settings-group { border-color: #4E4C5E; }
+html[data-theme=gameboy] #chats-list .chat-item.current { border-color: #306230; }
 html[data-theme=gameboy] ::-webkit-scrollbar-thumb { background: #306230; border-radius: 0; }
 
 /* ---- Maximalismus: laut, bunt, Muster, Serifen ---------------------------------------------- */
@@ -861,8 +907,9 @@ html[data-theme=brutal] #record-button.recording { background: #E0002B; color: #
 html[data-theme=brutal] button:active,
 html[data-theme=brutal] #input-form > button:active { transform: translate(2px, 2px); box-shadow: none; }
 html[data-theme=brutal] button.primary { font-weight: 800; }
-html[data-theme=brutal] #design-panel { box-shadow: 6px 6px 0 #000; }
+html[data-theme=brutal] #design-panel, html[data-theme=brutal] #chats-panel { box-shadow: 6px 6px 0 #000; }
 html[data-theme=brutal] .theme-card.active, html[data-theme=brutal] .avatar-card.active { border: 2px solid #000; background: #FFD600; }
+html[data-theme=brutal] #chats-list .chat-item.current { border: 2px solid #000; background: #FFD600; }
 html[data-theme=brutal] #listening-title { font-weight: 900; text-transform: uppercase; }
 html[data-theme=brutal] ::-webkit-scrollbar-thumb { background: #000; border-radius: 0; }
 
@@ -899,6 +946,7 @@ html[data-theme=eco] #listening-overlay { background: #7ED957; border-top: 2px s
 html[data-theme=eco] #listening-hint { color: #000; }
 html[data-theme=eco] button:not(.icon-button) { font-weight: 600; }
 html[data-theme=eco] .theme-card.active, html[data-theme=eco] .avatar-card.active { border: 2px solid #000; background: #00AEEF; }
+html[data-theme=eco] #chats-list .chat-item.current { border: 2px solid #000; background: #00AEEF; }
 html[data-theme=eco] ::-webkit-scrollbar-thumb { background: #000; border-radius: 0; }
 
 /* ---- Apple (hell und dunkel): ruhig, viel Luft, Nachrichten als iMessage-Blasen --------------- */
@@ -924,7 +972,7 @@ html[data-theme^=apple] .setting-bool input[type=checkbox]:checked::after { tran
 /* ---- Glas: halbtransparente Flächen (ohne Unschärfe - die wäre teuer) ------------------------ */
 html[data-theme=glass] #view-frame { background: rgba(255, 255, 255, 0.32); }
 html[data-theme=glass] .message.assistant { padding: 7px 12px; border-radius: var(--radius); background: rgba(255, 255, 255, 0.38); border: 1px solid rgba(255, 255, 255, 0.6); }
-html[data-theme=glass] #listening-overlay, html[data-theme=glass] #design-panel { background: rgba(255, 255, 255, 0.82); }
+html[data-theme=glass] #listening-overlay, html[data-theme=glass] #design-panel, html[data-theme=glass] #chats-panel { background: rgba(255, 255, 255, 0.82); }
 html[data-theme=glass] #settings-panel .settings-group { background: rgba(255, 255, 255, 0.38); }
 html[data-theme=glass] .icon-button { color: #2C2F5A; }
 html[data-theme=glass] .icon-button:hover { background: rgba(255, 255, 255, 0.45); }
@@ -973,9 +1021,15 @@ html[data-theme=win95] #record-button.recording { color: #C00000; }
 html[data-theme=win95] button:active { box-shadow: var(--inset-shadow); }
 html[data-theme=win95] #view-frame { background: #FFFFFF; }
 html[data-theme=win95] #listening-overlay { background: #C0C0C0; border-top: 2px solid #808080; }
-html[data-theme=win95] #design-panel { background: #C0C0C0; box-shadow: var(--control-shadow); border: none; }
+html[data-theme=win95] #design-panel, html[data-theme=win95] #chats-panel { background: #C0C0C0; box-shadow: var(--control-shadow); border: none; }
 html[data-theme=win95] .settings-group { background: #C0C0C0; box-shadow: none; border: 1px solid #808080; }
 html[data-theme=win95] .theme-card.active, html[data-theme=win95] .avatar-card.active { border: 1px dotted #000; background: transparent; }
+html[data-theme=win95] #chats-list .chat-item { border-radius: 0; }
+html[data-theme=win95] #chats-list .chat-item.current { border: 1px dotted #000; }
+html[data-theme=win95] #chats-list .chat-item:hover { background: #000080; }
+html[data-theme=win95] #chats-list .chat-item:hover .chat-open, html[data-theme=win95] #chats-list .chat-item:hover .chat-meta { color: #FFFFFF; }
+html[data-theme=win95] #chats-list .chat-delete, html[data-theme=win95] #chats-list .chat-delete:hover { width: 20px; height: 18px; background: #C0C0C0; color: #000; }
+html[data-theme=win95] #chats-list .chat-delete.confirm { width: auto; color: #C00000; }
 html[data-theme=win95] ::-webkit-scrollbar { width: 16px; background: #DFDFDF; }
 html[data-theme=win95] ::-webkit-scrollbar-thumb { background: #C0C0C0; border-radius: 0; box-shadow: var(--control-shadow); }
 
@@ -1101,7 +1155,8 @@ html[data-theme=cyber] #agent-status::before { content: "SYS:// "; color: #FF003
 html[data-theme=cyber] #view-frame,
 html[data-theme=cyber] #input-form,
 html[data-theme=cyber] .message.user,
-html[data-theme=cyber] #design-panel {
+html[data-theme=cyber] #design-panel,
+html[data-theme=cyber] #chats-panel {
   clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
 }
 /* Fenster mit abgeschnittenen Ecken wie die Nachrichten (oben rechts, unten links) */

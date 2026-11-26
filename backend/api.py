@@ -20,8 +20,11 @@ from functools import cache
 from typing import Any
 
 from backend import api_keys, config, proactive
-from backend.assistant import Assistant, ConsultingAssistant, ModelPreloading, ModelSelection, create_assistant
+from backend.assistant import (Assistant, ConsultingAssistant, ConversationMemory, ModelPreloading, ModelSelection,
+                               create_assistant)
 from backend.assistant.base import AssistantReply
+from backend.assistant.commands import is_new_conversation
+from backend.chat_history import ChatHistory, ChatStore, valid_chat_id
 from backend.assistant.settings import AssistantSettings, is_internal_tool
 from backend.assistant.skills.travel.settings import TravelSettingsForm
 from backend.assistant.tools import ToolResult
@@ -49,10 +52,83 @@ def _assistant() -> Assistant:
 
 
 def chat(message: str) -> dict[str, Any]:
-    """Antwort des Assistenten: {"text", "html", "attachments"} (siehe backend/presenter.py)."""
+    """Antwort des Assistenten: {"text", "html", "attachments"} (siehe backend/presenter.py).
+    Nachricht und Antwort kommen in den laufenden Chat (backend/chat_history.py). Nach "neu" beginnt
+    ein neuer Chat, dann steht zusätzlich "new_chat": true in der Antwort."""
     with _assistant_lock:
         reply = _assistant().reply(message)
-    return present(reply)
+    presented = present(reply)
+    with _history_lock:
+        if is_new_conversation(message):
+            _chat_history().start_new()
+            return {**presented, "new_chat": True}
+        _chat_history().record_exchange(message, presented)
+    return presented
+
+
+# --- Gespeicherte Chats (backend/chat_history.py, frontend/chats.js) ---------------------------------
+# Reihenfolge der Locks immer _assistant_lock vor _history_lock.
+_history_lock = threading.Lock()
+
+
+@cache
+def _chat_history() -> ChatHistory:
+    return ChatHistory(ChatStore(config.CHATS_DIR, config.CHATS_MAX))
+
+
+def list_chats() -> list[dict[str, Any]]:
+    """Gespeicherte Chats, zuletzt geänderte zuerst:
+    [{"id", "title", "updated" (ISO-Zeitpunkt), "count" (Nachrichten), "current" (der laufende Chat)}]"""
+    with _history_lock:
+        return _chat_history().summaries()
+
+
+def open_chat(chat_id: str) -> dict[str, Any]:
+    """Gespeicherten Chat fortsetzen: Der Assistent bekommt das Gespräch als Verlauf.
+    Gibt {"id", "title", "messages": [{"role": "user"|"assistant", "text", "time",
+    optional "proactive", "title", "html", "view_button"}]} zurück. Unbekannte ID: ValueError."""
+    if not valid_chat_id(chat_id):
+        raise ValueError("Ungültige Chat-ID")
+    with _assistant_lock, _history_lock:
+        try:
+            saved = _chat_history().open(chat_id)
+        except KeyError:
+            raise ValueError("Diesen Chat gibt es nicht mehr.") from None
+        assistant = _assistant()
+        if isinstance(assistant, ConversationMemory):
+            assistant.restore_conversation(saved.dialogue())
+        return {"id": saved.id, "title": saved.title or "Neuer Chat", "messages": saved.messages}
+
+
+def new_chat() -> None:
+    """Neuen Chat beginnen; der bisherige bleibt gespeichert. Der Assistent vergisst den Verlauf."""
+    with _assistant_lock, _history_lock:
+        assistant = _assistant()
+        if isinstance(assistant, ConversationMemory):
+            assistant.new_conversation()
+        _chat_history().start_new()
+
+
+def delete_chat(chat_id: str) -> dict[str, Any]:
+    """Gespeicherten Chat löschen: {"chats": list_chats(), "cleared": bool}. cleared = es war der
+    laufende Chat; dann beginnt ein neuer und der Assistent vergisst den Verlauf."""
+    if not valid_chat_id(chat_id):
+        raise ValueError("Ungültige Chat-ID")
+    with _assistant_lock, _history_lock:
+        cleared = _chat_history().delete(chat_id)
+        assistant = _assistant()
+        if cleared and isinstance(assistant, ConversationMemory):
+            assistant.new_conversation()
+        return {"chats": _chat_history().summaries(), "cleared": cleared}
+
+
+def _record_reply(message: dict[str, Any]) -> None:
+    """Proaktive Meldung im laufenden Chat festhalten. Aus jedem Thread aufrufbar."""
+    try:
+        with _history_lock:
+            _chat_history().record_reply(message)
+    except Exception:  # noqa: BLE001  # die Meldung ist schon im Popup
+        log.exception("Meldung nicht im Chat gespeichert")
 
 
 def render_view(request: dict[str, Any]) -> str:
@@ -232,6 +308,7 @@ def _deliver_proactive(occasion: proactive.Occasion, formulate: bool = True, spe
     with _assistant_lock:
         reply = proactive.compose(_assistant() if formulate else None, occasion)
     message = proactive.announce(present(reply), occasion, events, display)
+    _record_reply(message)
     if speak:
         _speak(occasion.fallback if occasion.chat_text is not None else reply.text)
     return message
@@ -243,6 +320,7 @@ def _announce_reply(reply: AssistantReply, title: str, trigger: str, display: st
     display wie bei proactive.announce. Aus jedem Thread aufrufbar."""
     occasion = proactive.Occasion(title, "", reply.text, trigger)
     message = proactive.announce(present(reply), occasion, events, display)
+    _record_reply(message)
     if speak:
         _speak(reply.text)
     return message

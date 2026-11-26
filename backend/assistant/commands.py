@@ -88,6 +88,17 @@ COMMANDS: dict[str, tuple[str, Callable[[], AssistantReply]]] = {
 }
 
 
+def is_command(message: str) -> bool:
+    """Fester Befehl statt einer Frage ans Sprachmodell (COMMANDS, "modelle", "modell <name>")?"""
+    command = message.strip().lower()
+    return command in COMMANDS or command == "modelle" or command.startswith("modell ")
+
+
+def is_new_conversation(message: str) -> bool:
+    """Beginnt die Nachricht ein neues Gespräch ("neu")?"""
+    return message.strip().lower() == "neu"
+
+
 class CommandAssistant:
     def reply(self, message: str) -> AssistantReply:
         command = message.strip().lower()

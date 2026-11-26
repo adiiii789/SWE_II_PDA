@@ -13,7 +13,7 @@ import datetime
 import json
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 
 from backend.assistant.base import AssistantReply, ModelSelection
@@ -89,6 +89,13 @@ class ModelAssistant:
         self.history.clear()
         self._proposed.clear()
         self._approved.clear()
+
+    def restore_conversation(self, messages: Sequence[tuple[str, str]]) -> None:
+        """Gespeichertes Gespräch fortsetzen (backend/chat_history.py): nur Text, ohne Werkzeugaufrufe."""
+        self.new_conversation()
+        self.history = [ChatMessage(role, text) for role, text in messages
+                        if role in ("user", "assistant") and text.strip()]
+        self._trim_history()
 
     # --- Assistant -------------------------------------------------------------------
     def reply(self, message: str) -> AssistantReply:

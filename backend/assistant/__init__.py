@@ -22,8 +22,8 @@ from collections.abc import Callable
 from functools import partial
 
 from backend import config
-from backend.assistant.base import (Assistant, AssistantReply, ConsultingAssistant, ModelPreloading, ModelSelection,
-                                    ProactiveAssistant)
+from backend.assistant.base import (Assistant, AssistantReply, ConsultingAssistant, ConversationMemory, ModelPreloading,
+                                    ModelSelection, ProactiveAssistant)
 from backend.assistant.commands import CommandAssistant
 
 
@@ -76,5 +76,5 @@ def create_assistant(backend: str = config.ASSISTANT_BACKEND) -> Assistant:
     return factory()
 
 
-__all__ = ["Assistant", "AssistantReply", "ConsultingAssistant", "ModelPreloading", "ModelSelection",
-           "ProactiveAssistant", "create_assistant"]
+__all__ = ["Assistant", "AssistantReply", "ConsultingAssistant", "ConversationMemory", "ModelPreloading",
+           "ModelSelection", "ProactiveAssistant", "create_assistant"]

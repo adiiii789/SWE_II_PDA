@@ -1,6 +1,8 @@
 """Wechselt zwischen lokalem Ollama, Gemini und Claude (Abo) mit getrennten Verläufen."""
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from backend.assistant.base import AssistantReply
 from backend.assistant.claude_code_assistant import ClaudeCodeAssistant
 from backend.assistant.commands import COMMANDS
@@ -40,6 +42,15 @@ class ModelPicker:
         if command.startswith("modell "):
             return model_select_reply(self, message.strip()[len("modell "):].strip())
         return self._assistants[self._provider].reply(message)
+
+    def new_conversation(self) -> None:
+        for assistant in self._assistants.values():
+            assistant.new_conversation()
+
+    def restore_conversation(self, messages: Sequence[tuple[str, str]]) -> None:
+        """Alle Anbieter kennen das gespeicherte Gespräch - auch nach einem Modellwechsel geht es weiter."""
+        for assistant in self._assistants.values():
+            assistant.restore_conversation(messages)
 
     def refresh_view(self):
         return self._assistants[self._provider].refresh_view()
